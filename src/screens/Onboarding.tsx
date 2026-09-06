@@ -5,6 +5,7 @@ import { ACTIVITY_LABEL, GOAL_LABEL, dailyNorm } from '../lib/nutrition'
 import { WEEKDAYS, householdNorms } from '../lib/menu'
 import { defaultHousehold, newEater } from '../store'
 import { CalorieRing, Card, Chip, Field, Section, Segmented, Stepper, Switch } from '../components/ui'
+import { Icon } from '../components/icons'
 
 const STEPS = ['Кто ест дома', 'Аллергии и вкусы', 'Режим питания', 'Кухня', 'Готово']
 
@@ -174,7 +175,7 @@ export function Onboarding({ initial, onDone, onCancel }: Props) {
             ))}
           </div>
 
-          <Section title="Аллергии" icon="🥗">
+          <Section title="Аллергии" icon="salad">
             <div className="chips">
               {ALLERGENS.map((a) => (
                 <Chip
@@ -186,7 +187,7 @@ export function Onboarding({ initial, onDone, onCancel }: Props) {
                     })
                   }
                 >
-                  {a.emoji} {a.label}
+                  {a.label}
                 </Chip>
               ))}
             </div>
@@ -231,7 +232,7 @@ export function Onboarding({ initial, onDone, onCancel }: Props) {
             )}
           </Section>
 
-          <Section title="Не люблю" icon="🙅">
+          <Section title="Не люблю" icon="ban">
             <div className="chips">
               {DISLIKES.map((d) => (
                 <Chip
@@ -241,7 +242,7 @@ export function Onboarding({ initial, onDone, onCancel }: Props) {
                     patchEater(activeEater.id, { dislikes: toggleIn(activeEater.dislikes, d.id) })
                   }
                 >
-                  {d.emoji} {d.label}
+                  {d.label}
                 </Chip>
               ))}
             </div>
@@ -293,7 +294,7 @@ export function Onboarding({ initial, onDone, onCancel }: Props) {
 
       {step === 2 && (
         <>
-          <Section title="Приёмы пищи" icon="🍽️">
+          <Section title="Приёмы пищи" icon="menu">
             <div className="chips">
               {MEAL_SLOTS.map((m) => (
                 <Chip
@@ -303,13 +304,13 @@ export function Onboarding({ initial, onDone, onCancel }: Props) {
                     setHousehold((h) => ({ ...h, meals: toggleIn<MealSlot>(h.meals, m.id) }))
                   }
                 >
-                  {m.emoji} {m.label}
+                  <Icon name={m.icon} size={16} /> {m.label}
                 </Chip>
               ))}
             </div>
           </Section>
 
-          <Section title="Дни готовки" icon="🍳">
+          <Section title="Дни готовки" icon="pan">
             <p className="hint" style={{ marginTop: 0 }}>
               Отметь дни, когда готовится еда на неделю. Остальные дни закроем заготовками, а что не
               доживёт в холодильнике — отправим в заморозку.
@@ -332,7 +333,7 @@ export function Onboarding({ initial, onDone, onCancel }: Props) {
             </div>
           </Section>
 
-          <Section title="Бюджет на неделю" icon="💸">
+          <Section title="Бюджет на неделю" icon="cart">
             <Field
               label="₽ на всю семью (0 — без ограничений)"
               value={household.budgetPerWeek}
@@ -343,7 +344,7 @@ export function Onboarding({ initial, onDone, onCancel }: Props) {
       )}
 
       {step === 3 && (
-        <Section title="Что на кухне" icon="🍲">
+        <Section title="Что на кухне" icon="kitchen">
           <p className="hint" style={{ marginTop: 0 }}>
             От этого зависит план готовки: на скольких конфорках можно вести блюда параллельно и
             сколько заготовок разложить по контейнерам.
@@ -436,7 +437,7 @@ export function Onboarding({ initial, onDone, onCancel }: Props) {
             </div>
           </Card>
 
-          <Section title="Проверь себя" icon="✅">
+          <Section title="Проверь себя" icon="check">
             <div className="stack small">
               <div className="row row--between">
                 <span className="muted">Едоков</span>

@@ -4,6 +4,7 @@ import { WEEKDAYS_FULL, replacementOptions } from '../lib/menu'
 import { plural } from '../lib/format'
 import { useStore } from '../store'
 import { Sheet } from './ui'
+import { Icon, recipeIcon } from './icons'
 
 const STORAGE_HINT: Record<string, string> = {
   fresh: '',
@@ -65,7 +66,9 @@ export function ReplacePicker({
 
       {shown.map((option) => (
         <button className="dish" key={option.recipe.id} onClick={() => onPick(option.recipe.id)}>
-          <span className="dish__emoji">{option.recipe.emoji}</span>
+          <span className="dish__emoji">
+            <Icon name={recipeIcon(option.recipe)} size={24} />
+          </span>
           <span style={{ flex: 1 }}>
             <span className="dish__title">{option.recipe.title}</span>
             <span className="dish__meta">

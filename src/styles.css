@@ -84,6 +84,7 @@ select {
   display: flex;
   align-items: center;
   gap: 8px;
+  color: var(--muted);
   font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -171,7 +172,7 @@ select {
 .chip {
   border: 1px solid var(--line);
   background: var(--card);
-  border-radius: 999px;
+  border-radius: 12px;
   padding: 9px 14px;
   font-size: 15px;
   display: inline-flex;
@@ -201,7 +202,7 @@ select {
   flex: 1;
   border: 1px solid var(--line);
   background: var(--card);
-  border-radius: 14px;
+  border-radius: 10px;
   padding: 12px 0;
   font-size: 14px;
   font-weight: 600;
@@ -244,7 +245,7 @@ select {
 .segmented {
   display: flex;
   background: var(--card-soft);
-  border-radius: 14px;
+  border-radius: 10px;
   padding: 3px;
   gap: 3px;
 }
@@ -253,7 +254,7 @@ select {
   flex: 1;
   border: none;
   background: transparent;
-  border-radius: 11px;
+  border-radius: 8px;
   padding: 9px 6px;
   font-size: 14px;
   font-weight: 600;
@@ -388,7 +389,7 @@ select {
 }
 
 .dish__emoji {
-  font-size: 30px;
+  color: var(--green-dark);
   line-height: 1;
   width: 46px;
   height: 46px;
@@ -416,7 +417,7 @@ select {
   display: inline-block;
   font-size: 11px;
   padding: 3px 8px;
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--green-soft);
   color: var(--green-dark);
   margin-top: 6px;
@@ -621,7 +622,7 @@ select {
 .home-pill {
   border: 1px solid var(--line);
   background: #fff;
-  border-radius: 999px;
+  border-radius: 10px;
   padding: 6px 10px;
   font-size: 12px;
   color: var(--muted);
@@ -765,7 +766,7 @@ select {
   border: none;
   background: transparent;
   padding: 6px 0;
-  border-radius: 14px;
+  border-radius: 10px;
   font-size: 11px;
   color: var(--muted);
   display: flex;
@@ -780,9 +781,8 @@ select {
   font-weight: 600;
 }
 
-.tabbar .ico {
-  font-size: 19px;
-  line-height: 1;
+.tabbar svg {
+  display: block;
 }
 
 /* ── Онбординг ────────────────────────────────────────────────────────── */

@@ -7,14 +7,15 @@ import { ProductsScreen } from './screens/ProductsScreen'
 import { ProfileScreen } from './screens/ProfileScreen'
 import { MyRecipesScreen } from './screens/MyRecipesScreen'
 import { ShoppingModeScreen } from './screens/ShoppingModeScreen'
+import { Icon, type IconName } from './components/icons'
 
 type Tab = 'menu' | 'plan' | 'products' | 'profile' | 'recipes'
 
-const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: 'menu', label: 'Меню', icon: '🍴' },
-  { id: 'plan', label: 'Готовка', icon: '👨‍🍳' },
-  { id: 'products', label: 'Продукты', icon: '🛒' },
-  { id: 'profile', label: 'Профиль', icon: '👤' },
+const TABS: { id: Tab; label: string; icon: IconName }[] = [
+  { id: 'menu', label: 'Меню', icon: 'menu' },
+  { id: 'plan', label: 'Готовка', icon: 'pot' },
+  { id: 'products', label: 'Продукты', icon: 'cart' },
+  { id: 'profile', label: 'Профиль', icon: 'user' },
 ]
 
 function Shell() {
@@ -83,7 +84,7 @@ function Shell() {
               data-active={tab === t.id || (tab === 'recipes' && t.id === 'profile')}
               onClick={() => setTab(t.id)}
             >
-              <span className="ico">{t.icon}</span>
+              <Icon name={t.icon} size={22} />
               {t.label}
             </button>
           ))}

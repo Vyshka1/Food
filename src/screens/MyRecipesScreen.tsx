@@ -8,8 +8,7 @@ import { formatQty } from '../lib/shopping'
 import { plural } from '../lib/format'
 import { useStore } from '../store'
 import { Card, Chip, Field, Section, Stepper, Switch } from '../components/ui'
-
-const EMOJI = ['🍲', '🥘', '🍜', '🥗', '🍛', '🍝', '🥞', '🍳', '🐟', '🍗', '🥩', '🥔', '🍚', '🌯', '🥧', '🍰']
+import { Icon, recipeIcon } from '../components/icons'
 
 const STATIONS: { id: Station; label: string }[] = [
   { id: 'prep', label: 'Руками' },
@@ -79,7 +78,7 @@ function Editor({
 
   return (
     <>
-      <Section title="Блюдо" icon="📝">
+      <Section title="Блюдо" icon="book">
         <div className="stack">
           <Field
             label="Название"
@@ -87,16 +86,6 @@ function Editor({
             value={recipe.title}
             onChange={(v) => patch({ title: v })}
           />
-          <div>
-            <label className="small muted">Значок</label>
-            <div className="chips" style={{ marginTop: 6 }}>
-              {EMOJI.map((e) => (
-                <Chip key={e} active={recipe.emoji === e} onClick={() => patch({ emoji: e })}>
-                  {e}
-                </Chip>
-              ))}
-            </div>
-          </div>
           <div>
             <label className="small muted">Когда подходит</label>
             <div className="chips" style={{ marginTop: 6 }}>
@@ -112,7 +101,7 @@ function Editor({
                     })
                   }
                 >
-                  {m.emoji} {m.label}
+                  <Icon name={m.icon} size={16} /> {m.label}
                 </Chip>
               ))}
             </div>
@@ -120,7 +109,7 @@ function Editor({
         </div>
       </Section>
 
-      <Section title="Продукты на одну порцию" icon="🥕">
+      <Section title="Продукты на одну порцию" icon="salad">
         {recipe.items.length === 0 && (
           <p className="hint" style={{ marginTop: 0 }}>
             Пока пусто. Количество указывайте на одного человека — приложение само умножит на
@@ -180,7 +169,7 @@ function Editor({
         </button>
       </Section>
 
-      <Section title="Шаги" icon="👩‍🍳">
+      <Section title="Шаги" icon="pot">
         <p className="hint" style={{ marginTop: 0 }}>
           Станция и «занимает руки» нужны плану готовки: пока блюдо тушится без вашего участия,
           в это время встанет другое.
@@ -254,7 +243,7 @@ function Editor({
         </button>
       </Section>
 
-      <Section title="Хранение" icon="❄️">
+      <Section title="Хранение" icon="snowflake">
         <div className="stack">
           <div className="row row--between">
             <span>Живёт в холодильнике, дней</span>
@@ -386,7 +375,9 @@ export function MyRecipesScreen({ onBack }: { onBack: () => void }) {
         const stats = recipeStats(recipe)
         return (
           <div className="dish" key={recipe.id}>
-            <span className="dish__emoji">{recipe.emoji}</span>
+            <span className="dish__emoji">
+              <Icon name={recipeIcon(recipe)} size={24} />
+            </span>
             <span style={{ flex: 1 }}>
               <span className="dish__title">{recipe.title}</span>
               <span className="dish__meta">

@@ -8,6 +8,7 @@ import { WEEKDAYS_FULL, portionOf, totalPortions } from '../lib/menu'
 import { plural } from '../lib/format'
 import { useStore } from '../store'
 import { Sheet } from './ui'
+import { Icon, recipeIcon } from './icons'
 
 const STORAGE_LABEL: Record<string, string> = {
   fresh: 'Готовим в этот день',
@@ -36,8 +37,8 @@ export function RecipeSheet({
   return (
     <Sheet onClose={onClose}>
       <div className="row" style={{ gap: 14, marginBottom: 12 }}>
-        <div className="dish__emoji" style={{ width: 56, height: 56, fontSize: 34 }}>
-          {recipe.emoji}
+        <div className="dish__emoji" style={{ width: 56, height: 56 }}>
+          <Icon name={recipeIcon(recipe)} size={30} />
         </div>
         <div>
           <div style={{ fontSize: 20, fontWeight: 700 }}>{recipe.title}</div>

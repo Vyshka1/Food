@@ -7,6 +7,7 @@ import { dailyNorm, portionWeight, recipeStats } from '../lib/nutrition'
 import { useStore } from '../store'
 import { CalorieRing, Card, Warnings } from '../components/ui'
 import { RecipeSheet } from '../components/RecipeSheet'
+import { Icon, recipeIcon } from '../components/icons'
 import { ReplacePicker } from '../components/ReplacePicker'
 
 const STORAGE_BADGE: Record<string, { label: string; cls: string } | null> = {
@@ -117,7 +118,7 @@ export function MenuScreen() {
         return (
           <div key={meal.id}>
             <div className="meal-head">
-              <span>{meal.emoji}</span>
+              <Icon name={meal.icon} size={18} />
               {meal.label}
             </div>
             {entries.length === 0 && <p className="hint">Ничего не запланировано.</p>}
@@ -129,7 +130,9 @@ export function MenuScreen() {
               const badge = STORAGE_BADGE[entry.storage]
               return (
                 <button className="dish" key={entry.id} onClick={() => setOpenEntry(entry)}>
-                  <span className="dish__emoji">{recipe.emoji}</span>
+                  <span className="dish__emoji">
+                    <Icon name={recipeIcon(recipe)} size={24} />
+                  </span>
                   <span style={{ flex: 1 }}>
                     <span className="dish__title">{recipe.title}</span>
                     <span className="dish__meta">
