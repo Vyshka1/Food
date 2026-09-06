@@ -6,6 +6,7 @@ import { useStore } from '../store'
 import { recipeById } from '../data/recipeRegistry'
 import { profileLink } from '../lib/transfer'
 import { CalorieRing, Card, Section } from '../components/ui'
+import { Icon, recipeIcon } from '../components/icons'
 
 export function ProfileScreen({
   onEdit,
@@ -70,7 +71,7 @@ export function ProfileScreen({
         </div>
       </Card>
 
-      <Section title="Дни готовки" icon="🍳">
+      <Section title="Дни готовки" icon="pan">
         <div className="day-toggle">
           {WEEKDAYS.map((label, i) => (
             <button
@@ -87,7 +88,7 @@ export function ProfileScreen({
         </p>
       </Section>
 
-      <Section title="Кто ест дома" icon="👥">
+      <Section title="Кто ест дома" icon="people">
         <div className="stack">
           {household.eaters.map((e) => {
             const norm = dailyNorm(e)
@@ -116,12 +117,13 @@ export function ProfileScreen({
       </Section>
 
       {hidden.length > 0 && (
-        <Section title="Скрытые блюда" icon="🚫">
+        <Section title="Скрытые блюда" icon="ban">
           <div className="stack">
             {hidden.map((id) => (
               <div className="row row--between" key={id}>
-                <span>
-                  {recipeById(id)?.emoji ?? '🍽️'} {recipeById(id)?.title ?? id}
+                <span className="row" style={{ gap: 8 }}>
+                  {recipeById(id) && <Icon name={recipeIcon(recipeById(id)!)} size={18} />}
+                  {recipeById(id)?.title ?? id}
                 </span>
                 <button className="btn btn--soft btn--small" onClick={() => unbanRecipe(id)}>
                   Вернуть
@@ -132,7 +134,7 @@ export function ProfileScreen({
         </Section>
       )}
 
-      <Section title="Мои рецепты" icon="📖">
+      <Section title="Мои рецепты" icon="book">
         <div className="row row--between">
           <span className="muted small">
             {customRecipes.length === 0
@@ -145,7 +147,7 @@ export function ProfileScreen({
         </div>
       </Section>
 
-      <Section title="Перенос на другое устройство" icon="🔗">
+      <Section title="Перенос на другое устройство" icon="link">
         <p className="hint" style={{ marginTop: 0 }}>
           Данные хранятся только в этом браузере. Ссылка ниже содержит анкету и свои рецепты —
           откройте её на другом устройстве, и всё перенесётся. В ней ваш вес, рост и аллергии,
@@ -211,7 +213,7 @@ export function ProfileScreen({
         )}
       </Section>
 
-      <Section title="Кухня" icon="🍲">
+      <Section title="Кухня" icon="kitchen">
         <div className="stack small">
           <div className="row row--between">
             <span className="muted">Конфорки</span>

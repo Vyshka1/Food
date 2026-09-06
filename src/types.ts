@@ -61,12 +61,13 @@ export interface Eater {
 
 export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'snack'
 
-export const MEAL_SLOTS: { id: MealSlot; label: string; emoji: string }[] = [
-  { id: 'breakfast', label: 'Завтрак', emoji: '🌤️' },
-  { id: 'lunch', label: 'Обед', emoji: '🌿' },
-  { id: 'dinner', label: 'Ужин', emoji: '🌙' },
-  { id: 'snack', label: 'Перекус', emoji: '🍏' },
-]
+export const MEAL_SLOTS: { id: MealSlot; label: string; icon: 'sun' | 'leaf' | 'moon' | 'apple' }[] =
+  [
+    { id: 'breakfast', label: 'Завтрак', icon: 'sun' },
+    { id: 'lunch', label: 'Обед', icon: 'leaf' },
+    { id: 'dinner', label: 'Ужин', icon: 'moon' },
+    { id: 'snack', label: 'Перекус', icon: 'apple' },
+  ]
 
 /** Кухня пользователя — от неё зависит точность плана готовки. */
 export interface Kitchen {

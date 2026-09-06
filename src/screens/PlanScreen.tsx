@@ -4,6 +4,8 @@ import { buildCookingPlans, formatDuration } from '../lib/cookingPlan'
 import { plural } from '../lib/format'
 import { useStore } from '../store'
 import { Card, Warnings } from '../components/ui'
+import { Icon, recipeIcon } from '../components/icons'
+import { recipeById } from '../data/recipeRegistry'
 
 const STATION_LABEL: Record<string, string> = {
   prep: 'руками',
@@ -70,7 +72,7 @@ export function PlanScreen() {
             {plural(current.coversDays.length, ['день', 'дня', 'дней'])}
           </span>
           <span className="chip">
-            👥 {household.eaters.map((e) => e.name).join(' + ')}
+            <Icon name="people" size={16} /> {household.eaters.map((e) => e.name).join(' + ')}
           </span>
         </div>
       </Card>
@@ -129,7 +131,7 @@ export function PlanScreen() {
           >
             <span className="tl-step__time">{clockFrom(startHour, step.start)}</span>
             <div className="tl-step__dish">
-              {step.emoji} {step.title}
+              {step.title}
             </div>
             <div className="tl-step__text">{step.text}</div>
             <div className="tl-step__tag">
@@ -142,7 +144,9 @@ export function PlanScreen() {
 
       {current.freeze.length > 0 && (
         <Card>
-          <div className="section-title">❄️ В морозилку</div>
+          <div className="section-title">
+            <Icon name="snowflake" size={16} />В морозилку
+          </div>
           {current.freeze.map((f) => (
             <div className="row row--between" key={f.recipeId} style={{ padding: '6px 0' }}>
               <span>{f.title}</span>
@@ -161,8 +165,11 @@ export function PlanScreen() {
         <div className="section-title">Что готовим</div>
         {current.dishes.map((d) => (
           <div className="row row--between" key={d.recipeId} style={{ padding: '6px 0' }}>
-            <span>
-              {d.emoji} {d.title}
+            <span className="row" style={{ gap: 8 }}>
+              {recipeById(d.recipeId) && (
+                <Icon name={recipeIcon(recipeById(d.recipeId)!)} size={18} />
+              )}
+              {d.title}
             </span>
             <b className="small muted">
               {d.portions.toFixed(1).replace('.0', '')}{' '}

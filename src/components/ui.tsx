@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
+import { Icon, type IconName } from './icons'
 
 export function Card({
   children,
@@ -25,14 +26,14 @@ export function Section({
   variant,
 }: {
   title: string
-  icon?: string
+  icon?: IconName
   children: ReactNode
   variant?: 'soft' | 'green'
 }) {
   return (
     <Card variant={variant}>
       <div className="section-title">
-        {icon && <span>{icon}</span>}
+        {icon && <Icon name={icon} size={16} />}
         {title}
       </div>
       {children}

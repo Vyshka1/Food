@@ -4,6 +4,7 @@ import type { IngredientCategory } from '../types'
 import { buildShoppingList, formatQty } from '../lib/shopping'
 import { useStore } from '../store'
 import { Card } from '../components/ui'
+import { Icon } from '../components/icons'
 
 export function ProductsScreen({ onShoppingMode }: { onShoppingMode: () => void }) {
   const { menu, household, atHome, bought, toggleAtHome, toggleBought } = useStore()
@@ -30,7 +31,10 @@ export function ProductsScreen({ onShoppingMode }: { onShoppingMode: () => void 
       </div>
 
       <button className="btn" style={{ marginBottom: 14 }} onClick={onShoppingMode}>
-        🛒 Иду в магазин
+        <span className="row" style={{ gap: 8, justifyContent: 'center' }}>
+          <Icon name="cart" size={20} />
+          Иду в магазин
+        </span>
       </button>
 
       <Card variant="green">
