@@ -5,18 +5,18 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Публикуем собранный dist в ветку gh-pages: GitHub Pages поднимается по факту
+# её появления. Через actions/configure-pages не получилось — GITHUB_TOKEN не
+# имеет права создавать Pages-сайт («Resource not accessible by integration»).
 permissions:
-  contents: read
-  pages: write
-  id-token: write
+  contents: write
 
-# Параллельные деплои не нужны: катим только последний коммит main.
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,23 +26,16 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      # enablement: true пробует включить Pages через API, если они ещё не включены.
-      # Работает не всегда: GITHUB_TOKEN может не иметь права создавать Pages-сайт
-      # («Resource not accessible by integration») — тогда нужно один раз включить
-      # Pages вручную: Settings → Pages → Source: GitHub Actions.
-      - uses: actions/configure-pages@v5
-        with:
-          enablement: true
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
 
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      - name: Публикация в ветку gh-pages
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          touch dist/.nojekyll
+          cd dist
+          git init -q -b gh-pages
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -q -m "Сборка ${GITHUB_SHA}"
+          git push -q --force "https://x-access-token:${TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
