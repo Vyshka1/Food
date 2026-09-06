@@ -97,7 +97,7 @@ React 18 + TypeScript + Vite, без бэкенда: состояние живё
 ```bash
 npm install
 npm run dev        # дев-сервер
-npm run test       # 38 тестов на алгоритмы
+npm run test       # 49 тестов на алгоритмы
 npm run typecheck
 npm run build
 ```
