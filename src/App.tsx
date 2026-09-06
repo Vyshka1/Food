@@ -6,6 +6,7 @@ import { PlanScreen } from './screens/PlanScreen'
 import { ProductsScreen } from './screens/ProductsScreen'
 import { ProfileScreen } from './screens/ProfileScreen'
 import { MyRecipesScreen } from './screens/MyRecipesScreen'
+import { ShoppingModeScreen } from './screens/ShoppingModeScreen'
 
 type Tab = 'menu' | 'plan' | 'products' | 'profile' | 'recipes'
 
@@ -20,6 +21,7 @@ function Shell() {
   const { household, menu, saveHousehold } = useStore()
   const [tab, setTab] = useState<Tab>('menu')
   const [editing, setEditing] = useState(false)
+  const [shopping, setShopping] = useState(false)
 
   if (!household || !menu || editing) {
     return (
@@ -35,11 +37,13 @@ function Shell() {
     )
   }
 
+  if (shopping) return <ShoppingModeScreen onExit={() => setShopping(false)} />
+
   return (
     <>
       {tab === 'menu' && <MenuScreen />}
       {tab === 'plan' && <PlanScreen />}
-      {tab === 'products' && <ProductsScreen />}
+      {tab === 'products' && <ProductsScreen onShoppingMode={() => setShopping(true)} />}
       {tab === 'profile' && (
         <ProfileScreen onEdit={() => setEditing(true)} onRecipes={() => setTab('recipes')} />
       )}

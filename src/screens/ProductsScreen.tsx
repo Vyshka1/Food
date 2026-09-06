@@ -5,7 +5,7 @@ import { buildShoppingList, formatQty } from '../lib/shopping'
 import { useStore } from '../store'
 import { Card } from '../components/ui'
 
-export function ProductsScreen() {
+export function ProductsScreen({ onShoppingMode }: { onShoppingMode: () => void }) {
   const { menu, household, atHome, bought, toggleAtHome, toggleBought } = useStore()
   const list = useMemo(() => (menu ? buildShoppingList(menu) : null), [menu])
 
@@ -28,6 +28,10 @@ export function ProductsScreen() {
       <div className="screen-sub">
         Собрано по меню на неделю. Отметь, что уже есть дома — пересчитаем сумму.
       </div>
+
+      <button className="btn" style={{ marginBottom: 14 }} onClick={onShoppingMode}>
+        🛒 Иду в магазин
+      </button>
 
       <Card variant="green">
         <div className="row row--between">
