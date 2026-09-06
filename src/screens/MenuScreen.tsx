@@ -8,6 +8,7 @@ import { useStore } from '../store'
 import { CalorieRing, Card, Warnings } from '../components/ui'
 import { RecipeSheet } from '../components/RecipeSheet'
 import { Icon, recipeIcon } from '../components/icons'
+import { plural } from '../lib/format'
 import { ReplacePicker } from '../components/ReplacePicker'
 
 const STORAGE_BADGE: Record<string, { label: string; cls: string } | null> = {
@@ -49,6 +50,18 @@ export function MenuScreen() {
     return d.getDate()
   })
 
+  const monthNames = [
+    'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+    'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
+  ]
+  const weekStart = new Date(menu.weekStart)
+  const weekEnd = new Date(menu.weekStart)
+  weekEnd.setDate(weekEnd.getDate() + 6)
+  const weekLabel =
+    weekStart.getMonth() === weekEnd.getMonth()
+      ? `${weekStart.getDate()}–${weekEnd.getDate()} ${monthNames[weekEnd.getMonth()]}`
+      : `${weekStart.getDate()} ${monthNames[weekStart.getMonth()]} — ${weekEnd.getDate()} ${monthNames[weekEnd.getMonth()]}`
+
   const pct = (fact: number, norm: number) => Math.round((fact / Math.max(1, norm)) * 100)
   const percent = pct(totals.kcal, norms.kcal)
   /** Отклонение больше 15% подсвечиваем: «99% нормы» не должно скрывать перекос по БЖУ. */
@@ -61,6 +74,21 @@ export function MenuScreen() {
 
   return (
     <div className="app">
+      <div className="row row--between" style={{ paddingTop: 10 }}>
+        <div>
+          <b>{weekLabel}</b>
+          <div className="muted small">
+            меню на {household.eaters.length}{' '}
+            {plural(household.eaters.length, ['человек', 'человека', 'человек'])} ·{' '}
+            {household.cookingDays.length}{' '}
+            {plural(household.cookingDays.length, ['день', 'дня', 'дней'])} готовки
+          </div>
+        </div>
+        <button className="btn btn--soft btn--small" onClick={() => regenerate()}>
+          Пересобрать
+        </button>
+      </div>
+
       <div className="week-strip">
         {WEEKDAYS.map((label, i) => (
           <button key={label} data-active={i === day} onClick={() => setDay(i)}>
@@ -152,10 +180,6 @@ export function MenuScreen() {
           </div>
         )
       })}
-
-      <button className="btn btn--soft" style={{ marginTop: 16 }} onClick={() => regenerate()}>
-        Пересобрать меню на неделю
-      </button>
 
       {openEntry && (
         <RecipeSheet

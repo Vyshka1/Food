@@ -634,6 +634,11 @@ select {
   color: var(--green-dark);
 }
 
+.home-pill:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* ── Модалка рецепта ──────────────────────────────────────────────────── */
 .sheet-backdrop {
   position: fixed;

@@ -7,6 +7,8 @@ import { recipeById } from '../data/recipeRegistry'
 import { profileLink } from '../lib/transfer'
 import { CalorieRing, Card, Section } from '../components/ui'
 import { Icon, recipeIcon } from '../components/icons'
+import { RECIPES } from '../data/recipes'
+import { plural } from '../lib/format'
 
 export function ProfileScreen({
   onEdit,
@@ -88,7 +90,7 @@ export function ProfileScreen({
         </p>
       </Section>
 
-      <Section title="Кто ест дома" icon="people">
+      <Section title="Состав семьи" icon="people">
         <div className="stack">
           {household.eaters.map((e) => {
             const norm = dailyNorm(e)
@@ -134,15 +136,15 @@ export function ProfileScreen({
         </Section>
       )}
 
-      <Section title="Мои рецепты" icon="book">
+      <Section title="Рецепты" icon="book">
         <div className="row row--between">
           <span className="muted small">
             {customRecipes.length === 0
-              ? 'Пока только встроенные блюда'
-              : `${customRecipes.length} своих в подборе`}
+              ? `Встроенная коллекция: ${RECIPES.length} блюд`
+              : `Встроенная коллекция и ${customRecipes.length} ${plural(customRecipes.length, ['свой рецепт', 'своих рецепта', 'своих рецептов'])}`}
           </span>
           <button className="btn btn--soft btn--small" onClick={onRecipes}>
-            Открыть
+            {customRecipes.length === 0 ? 'Добавить свой' : 'Открыть'}
           </button>
         </div>
       </Section>

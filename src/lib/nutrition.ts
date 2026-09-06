@@ -18,9 +18,9 @@ export const ACTIVITY_LABEL: Record<Activity, string> = {
 export const GOAL_FACTOR: Record<Goal, number> = { lose: 0.85, keep: 1, gain: 1.1 }
 
 export const GOAL_LABEL: Record<Goal, string> = {
-  lose: 'Снизить вес',
-  keep: 'Поддерживать',
-  gain: 'Набрать массу',
+  lose: 'Снижение веса',
+  keep: 'Поддержание веса',
+  gain: 'Набор массы',
 }
 
 /** Mifflin–St Jeor. Для детей до 18 — возрастные ориентиры ВОЗ, поэтому приблизительно. */

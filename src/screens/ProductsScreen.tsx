@@ -15,6 +15,10 @@ export function ProductsScreen({ onShoppingMode }: { onShoppingMode: () => void 
   const active = list.lines.filter((l) => !atHome.includes(l.ingredientId) && !l.staple)
   const total = active.reduce((s, l) => s + l.price, 0)
   const left = active.filter((l) => !bought.includes(l.ingredientId))
+  // сколько мы сэкономили, отметив «есть дома» — иначе непонятно, что даёт отметка
+  const atHomeSum = list.lines
+    .filter((l) => !l.staple && atHome.includes(l.ingredientId))
+    .reduce((s, l) => s + l.price, 0)
 
   const grouped = new Map<IngredientCategory, typeof list.lines>()
   for (const line of list.lines) {
@@ -40,10 +44,15 @@ export function ProductsScreen({ onShoppingMode }: { onShoppingMode: () => void 
       <Card variant="green">
         <div className="row row--between">
           <div>
-            <div style={{ fontSize: 26, fontWeight: 700 }}>{total} ₽</div>
+            <div style={{ fontSize: 26, fontWeight: 700 }}>≈ {total} ₽</div>
             <div className="muted small">
-              осталось купить {left.length} из {active.length}
+              оценка по средним ценам · осталось купить {left.length} из {active.length}
             </div>
+            {atHomeSum > 0 && (
+              <div className="muted small">
+                {total + atHomeSum} ₽ по меню, {atHomeSum} ₽ уже есть дома
+              </div>
+            )}
           </div>
           {household.budgetPerWeek > 0 && (
             <div style={{ textAlign: 'right' }}>
@@ -93,12 +102,13 @@ export function ProductsScreen({ onShoppingMode }: { onShoppingMode: () => void 
                 <button
                   className="home-pill"
                   data-on={home}
+                  disabled={line.staple}
                   onClick={() => toggleAtHome(line.ingredientId)}
                 >
-                  {home ? 'есть дома' : 'дома'}
+                  {home ? 'есть дома' : 'нужно купить'}
                 </button>
                 <span className="product__price" style={home ? { opacity: 0.35 } : undefined}>
-                  {line.price} ₽
+                  {home ? '—' : `≈ ${line.price} ₽`}
                 </span>
               </div>
             )
@@ -107,7 +117,8 @@ export function ProductsScreen({ onShoppingMode }: { onShoppingMode: () => void 
       ))}
 
       <p className="hint">
-        Специи, соль и масло помечены как «есть дома» — сними отметку, если нужно докупить.
+        Специи, соль и масло всегда считаются домашними и в сумму не входят. Цены —
+        ориентировочные, по средним значениям, а не по конкретному магазину.
       </p>
     </div>
   )
