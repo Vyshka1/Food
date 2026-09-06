@@ -74,7 +74,7 @@ export function ShoppingModeScreen({ onExit }: { onExit: () => void }) {
           ✕
         </button>
         <div className="shop__counter">
-          <b>{left.length}</b> {plural(left.length, ['позиция', 'позиции', 'позиций'])} ·{' '}
+          <b>{left.length}</b> {plural(left.length, ['позиция', 'позиции', 'позиций'])} · ≈{' '}
           {leftSum} ₽
         </div>
         <button className="shop__share" onClick={share}>
