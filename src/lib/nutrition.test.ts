@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Eater, Household } from '../types'
 import { RECIPE_BY_ID } from '../data/recipes'
 import { dailyNorm, recipeStats, slotShares } from './nutrition'
-import { buildWeekMenu, slotTargets } from './menu'
+import { buildWeekMenu, dayTotals, householdNorms, slotTargets } from './menu'
 import { buildShoppingList } from './shopping'
 
 const base: Eater = {
@@ -122,5 +122,50 @@ describe('buildShoppingList', () => {
       menu.entries.flatMap((e) => RECIPE_BY_ID[e.recipeId].items.map((i) => i.ingredientId)),
     )
     for (const line of buildShoppingList(menu).lines) expect(used.has(line.ingredientId)).toBe(true)
+  })
+})
+
+describe('баланс БЖУ по дню', () => {
+  const kirill: Eater = {
+    ...base,
+    id: 'e2',
+    name: 'Кирилл',
+    sex: 'male',
+    age: 35,
+    heightCm: 182,
+    weightKg: 84,
+    activity: 'medium',
+    goal: 'keep',
+  }
+  const family: Household = {
+    eaters: [base, kirill],
+    cookingDays: [2, 6],
+    meals: ['breakfast', 'lunch', 'dinner'],
+    kitchen: { burners: 4, hasOven: true, hasBlender: true, containers: 10, hasFreezer: true },
+    budgetPerWeek: 0,
+    weekStart: '2026-09-07',
+  }
+
+  it('держит не только калории, но и белки, жиры и углеводы', () => {
+    const norms = householdNorms(family)
+    const deviations: number[] = []
+    for (const seed of [1, 42, 777]) {
+      const { menu } = buildWeekMenu(family, seed)
+      for (let day = 0; day < 7; day++) {
+        const t = dayTotals(menu, day)
+        for (const [fact, norm] of [
+          [t.kcal, norms.kcal],
+          [t.protein, norms.protein],
+          [t.fat, norms.fat],
+          [t.carbs, norms.carbs],
+        ]) {
+          deviations.push(Math.abs((fact / norm) * 100 - 100))
+        }
+      }
+    }
+    const mean = deviations.reduce((a, b) => a + b, 0) / deviations.length
+    // до появления штрафов по БЖУ среднее отклонение было около 14%, худшее — 77%
+    expect(mean).toBeLessThan(8)
+    expect(Math.max(...deviations)).toBeLessThan(30)
   })
 })

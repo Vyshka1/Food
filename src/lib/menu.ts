@@ -128,6 +128,7 @@ interface DayAcc {
   kcal: number
   fat: number
   protein: number
+  carbs: number
 }
 
 interface PickState {
@@ -138,7 +139,7 @@ interface PickState {
 }
 
 function accOf(state: PickState, day: number): DayAcc {
-  return state.day.get(day) ?? { kcal: 0, fat: 0, protein: 0 }
+  return state.day.get(day) ?? { kcal: 0, fat: 0, protein: 0, carbs: 0 }
 }
 
 function addToDay(state: PickState, day: number, recipe: Recipe, scale: number): void {
@@ -148,6 +149,7 @@ function addToDay(state: PickState, day: number, recipe: Recipe, scale: number):
     kcal: acc.kcal + stats.kcal * scale,
     fat: acc.fat + stats.fat * scale,
     protein: acc.protein + stats.protein * scale,
+    carbs: acc.carbs + stats.carbs * scale,
   })
 }
 
@@ -196,8 +198,18 @@ function scoreRecipe(
   const projectedKcal = acc.kcal + achieved
   const fatBudget = (projectedKcal * targetMacros.fat) / 9
   const proteinBudget = (projectedKcal * targetMacros.protein) / 4
-  score += Math.max(0, acc.fat + stats.fat * scale - fatBudget) * 3
-  score += Math.max(0, proteinBudget - (acc.protein + stats.protein * scale)) * 1.5
+  const carbBudget = (projectedKcal * targetMacros.carbs) / 4
+  const projFat = acc.fat + stats.fat * scale
+  const projProtein = acc.protein + stats.protein * scale
+  const projCarbs = acc.carbs + stats.carbs * scale
+  // перебор жира дороже всего: именно он тянет день в сторону от нормы
+  score += Math.max(0, projFat - fatBudget) * 8
+  score += Math.max(0, fatBudget - projFat) * 2
+  score += Math.max(0, proteinBudget - projProtein) * 4
+  score += Math.max(0, projProtein - proteinBudget) * 2.5
+  // углеводы раньше не отслеживались вовсе — отсюда провалы до 75% нормы
+  score += Math.max(0, carbBudget - projCarbs) * 4
+  score += Math.max(0, projCarbs - carbBudget) * 1.5
 
   // и немного — по самому блюду, чтобы не собирать день из крайностей
   const shares = macroShares(stats)

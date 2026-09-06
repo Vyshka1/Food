@@ -78,17 +78,22 @@ export function PlanScreen() {
       <div className="plan-stats">
         <div className="plan-stat">
           <b>{formatDuration(current.makespan)}</b>
-          <span>всего у плиты</span>
+          <span>от начала до конца</span>
         </div>
         <div className="plan-stat">
           <b>{formatDuration(current.handsOnMinutes)}</b>
-          <span>руки заняты</span>
+          <span>активная работа</span>
         </div>
         <div className="plan-stat">
           <b>{formatDuration(Math.max(0, current.makespan - current.handsOnMinutes))}</b>
-          <span>свободно</span>
+          <span>ожидание</span>
         </div>
       </div>
+      <p className="hint" style={{ marginTop: -4 }}>
+        Одновременно в работе до {current.maxParallel}{' '}
+        {plural(current.maxParallel, ['блюда', 'блюд', 'блюд'])}: пока одно доходит само,
+        руки заняты следующим.
+      </p>
 
       <Card>
         <div className="row row--between">

@@ -39,7 +39,15 @@ export function MenuScreen() {
     return d.getDate()
   })
 
-  const percent = Math.round((totals.kcal / Math.max(1, norms.kcal)) * 100)
+  const pct = (fact: number, norm: number) => Math.round((fact / Math.max(1, norm)) * 100)
+  const percent = pct(totals.kcal, norms.kcal)
+  /** Отклонение больше 15% подсвечиваем: «99% нормы» не должно скрывать перекос по БЖУ. */
+  const off = (value: number) => (Math.abs(value - 100) > 15 ? { color: 'var(--warn)' } : undefined)
+  const macros = [
+    { label: 'Белки', color: '#8ec06c', fact: totals.protein, norm: norms.protein },
+    { label: 'Жиры', color: '#e0b352', fact: totals.fat, norm: norms.fat },
+    { label: 'Углеводы', color: '#3f7233', fact: totals.carbs, norm: norms.carbs },
+  ]
 
   return (
     <div className="app">
@@ -60,36 +68,23 @@ export function MenuScreen() {
         <div className="ring-row">
           <CalorieRing {...totals} label={`из ${norms.kcal} ккал`} />
           <div style={{ flex: 1 }}>
-            <div className="macro">
-              <span>
-                <i className="dot" style={{ background: '#8ec06c' }} />
-                Белки
-              </span>
-              <b>
-                {totals.protein} / {norms.protein} г
-              </b>
-            </div>
-            <div className="macro">
-              <span>
-                <i className="dot" style={{ background: '#e0b352' }} />
-                Жиры
-              </span>
-              <b>
-                {totals.fat} / {norms.fat} г
-              </b>
-            </div>
-            <div className="macro">
-              <span>
-                <i className="dot" style={{ background: '#3f7233' }} />
-                Углеводы
-              </span>
-              <b>
-                {totals.carbs} / {norms.carbs} г
-              </b>
-            </div>
+            {macros.map((m) => (
+              <div className="macro" key={m.label}>
+                <span>
+                  <i className="dot" style={{ background: m.color }} />
+                  {m.label}
+                </span>
+                <b>
+                  {m.fact} / {m.norm} г{' '}
+                  <span className="small" style={off(pct(m.fact, m.norm))}>
+                    {pct(m.fact, m.norm)}%
+                  </span>
+                </b>
+              </div>
+            ))}
             <div className="macro muted small">
-              <span>{percent}% нормы на день</span>
-              <span>{totals.price} ₽</span>
+              <span style={off(percent)}>калории {percent}%</span>
+              <span>≈ {totals.price} ₽</span>
             </div>
           </div>
         </div>
