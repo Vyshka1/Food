@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { Eater, Household, WeekMenu } from './types'
+import type { Eater, Household, Recipe, WeekMenu } from './types'
 import { buildWeekMenu, replaceEntry } from './lib/menu'
+import { setCustomRecipes } from './data/recipeRegistry'
 
 const STORAGE_KEY = 'menu-nedelya.v1'
 /** Ключ до переименования проекта: читаем один раз, чтобы не потерять анкету. */
@@ -14,9 +15,18 @@ export interface AppState {
   atHome: string[]
   bought: string[]
   warnings: string[]
+  /** Рецепты, добавленные вручную. */
+  customRecipes: Recipe[]
 }
 
-const emptyState: AppState = { household: null, menu: null, atHome: [], bought: [], warnings: [] }
+const emptyState: AppState = {
+  household: null,
+  menu: null,
+  atHome: [],
+  bought: [],
+  warnings: [],
+  customRecipes: [],
+}
 
 export function mondayOf(date = new Date()): string {
   const d = new Date(date)
@@ -61,6 +71,8 @@ interface Store extends AppState {
   toggleAtHome: (ingredientId: string) => void
   toggleBought: (ingredientId: string) => void
   banRecipe: (eaterId: string, recipeId: string) => void
+  saveCustomRecipe: (recipe: Recipe) => void
+  deleteCustomRecipe: (recipeId: string) => void
   reset: () => void
 }
 
@@ -72,7 +84,10 @@ function load(): AppState {
     const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
     if (!raw) return emptyState
     const parsed = JSON.parse(raw) as Partial<AppState>
-    return { ...emptyState, ...parsed }
+    const state = { ...emptyState, ...parsed }
+    // реестр должен знать о своих рецептах до первой сборки меню
+    setCustomRecipes(state.customRecipes)
+    return state
   } catch {
     return emptyState
   }
@@ -89,10 +104,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [state])
 
-  const generateFor = useCallback((household: Household, seed: number): AppState => {
-    const { menu, warnings } = buildWeekMenu(household, seed)
-    return { household, menu, atHome: [], bought: [], warnings }
-  }, [])
+  const generateFor = useCallback(
+    (household: Household, seed: number): Pick<AppState, 'household' | 'menu' | 'warnings'> => {
+      const { menu, warnings } = buildWeekMenu(household, seed)
+      return { household, menu, warnings }
+    },
+    [],
+  )
 
   const saveHousehold = useCallback(
     (household: Household) => {
@@ -158,8 +176,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  /** Свой рецепт меняет пул блюд, поэтому меню пересобирается на том же seed. */
+  const saveCustomRecipe = useCallback((recipe: Recipe) => {
+    setState((prev) => {
+      const exists = prev.customRecipes.some((r) => r.id === recipe.id)
+      const customRecipes = exists
+        ? prev.customRecipes.map((r) => (r.id === recipe.id ? recipe : r))
+        : [...prev.customRecipes, recipe]
+      setCustomRecipes(customRecipes)
+      if (!prev.household || !prev.menu) return { ...prev, customRecipes }
+      const { menu, warnings } = buildWeekMenu(prev.household, prev.menu.seed)
+      return { ...prev, customRecipes, menu, warnings }
+    })
+  }, [])
+
+  const deleteCustomRecipe = useCallback((recipeId: string) => {
+    setState((prev) => {
+      const customRecipes = prev.customRecipes.filter((r) => r.id !== recipeId)
+      setCustomRecipes(customRecipes)
+      if (!prev.household || !prev.menu) return { ...prev, customRecipes }
+      const { menu, warnings } = buildWeekMenu(prev.household, prev.menu.seed)
+      return { ...prev, customRecipes, menu, warnings }
+    })
+  }, [])
+
   const reset = useCallback(() => {
     setState(emptyState)
+    setCustomRecipes([])
     try {
       localStorage.removeItem(STORAGE_KEY)
     } catch {
@@ -176,9 +219,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toggleAtHome,
       toggleBought,
       banRecipe,
+      saveCustomRecipe,
+      deleteCustomRecipe,
       reset,
     }),
-    [state, saveHousehold, regenerate, swapDish, toggleAtHome, toggleBought, banRecipe, reset],
+    [
+      state,
+      saveHousehold,
+      regenerate,
+      swapDish,
+      toggleAtHome,
+      toggleBought,
+      banRecipe,
+      saveCustomRecipe,
+      deleteCustomRecipe,
+      reset,
+    ],
   )
 
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>

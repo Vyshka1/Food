@@ -4,8 +4,14 @@ import { GOAL_LABEL, dailyNorm } from '../lib/nutrition'
 import { useStore } from '../store'
 import { CalorieRing, Card, Section } from '../components/ui'
 
-export function ProfileScreen({ onEdit }: { onEdit: () => void }) {
-  const { household, saveHousehold, reset } = useStore()
+export function ProfileScreen({
+  onEdit,
+  onRecipes,
+}: {
+  onEdit: () => void
+  onRecipes: () => void
+}) {
+  const { household, saveHousehold, reset, customRecipes } = useStore()
   if (!household) return null
   const norms = householdNorms(household)
 
@@ -99,6 +105,19 @@ export function ProfileScreen({ onEdit }: { onEdit: () => void }) {
               </div>
             )
           })}
+        </div>
+      </Section>
+
+      <Section title="Мои рецепты" icon="📖">
+        <div className="row row--between">
+          <span className="muted small">
+            {customRecipes.length === 0
+              ? 'Пока только встроенные блюда'
+              : `${customRecipes.length} своих в подборе`}
+          </span>
+          <button className="btn btn--soft btn--small" onClick={onRecipes}>
+            Открыть
+          </button>
         </div>
       </Section>
 

@@ -156,6 +156,8 @@ export interface Recipe {
   fridgeDays: number
   /** Требует духовку / блендер. */
   needs?: ('oven' | 'blender')[]
+  /** Добавлен пользователем, а не из встроенной базы. */
+  custom?: boolean
 }
 
 export type Storage = 'fresh' | 'fridge' | 'freezer'

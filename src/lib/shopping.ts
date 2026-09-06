@@ -1,5 +1,5 @@
 import { CATEGORY_ORDER, INGREDIENT_BY_ID } from '../data/ingredients'
-import { RECIPE_BY_ID } from '../data/recipes'
+import { recipeById } from '../data/recipeRegistry'
 import type { ShoppingLine, WeekMenu } from '../types'
 import { cookTasks } from './menu'
 
@@ -17,7 +17,7 @@ export function buildShoppingList(menu: WeekMenu): ShoppingList {
   const needed = new Map<string, number>()
 
   for (const task of cookTasks(menu)) {
-    const recipe = RECIPE_BY_ID[task.recipeId]
+    const recipe = recipeById(task.recipeId)
     if (!recipe) continue
     const portions = task.servings * task.scale
     for (const item of recipe.items) {

@@ -5,8 +5,9 @@ import { MenuScreen } from './screens/MenuScreen'
 import { PlanScreen } from './screens/PlanScreen'
 import { ProductsScreen } from './screens/ProductsScreen'
 import { ProfileScreen } from './screens/ProfileScreen'
+import { MyRecipesScreen } from './screens/MyRecipesScreen'
 
-type Tab = 'menu' | 'plan' | 'products' | 'profile'
+type Tab = 'menu' | 'plan' | 'products' | 'profile' | 'recipes'
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'menu', label: 'Меню', icon: '🍴' },
@@ -39,12 +40,19 @@ function Shell() {
       {tab === 'menu' && <MenuScreen />}
       {tab === 'plan' && <PlanScreen />}
       {tab === 'products' && <ProductsScreen />}
-      {tab === 'profile' && <ProfileScreen onEdit={() => setEditing(true)} />}
+      {tab === 'profile' && (
+        <ProfileScreen onEdit={() => setEditing(true)} onRecipes={() => setTab('recipes')} />
+      )}
+      {tab === 'recipes' && <MyRecipesScreen onBack={() => setTab('profile')} />}
 
       <nav className="tabbar">
         <div className="tabbar__inner">
           {TABS.map((t) => (
-            <button key={t.id} data-active={tab === t.id} onClick={() => setTab(t.id)}>
+            <button
+              key={t.id}
+              data-active={tab === t.id || (tab === 'recipes' && t.id === 'profile')}
+              onClick={() => setTab(t.id)}
+            >
               <span className="ico">{t.icon}</span>
               {t.label}
             </button>
