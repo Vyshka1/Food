@@ -1,4 +1,4 @@
-import { CATEGORY_ORDER, INGREDIENT_BY_ID } from '../data/ingredients'
+import { CATEGORY_LABEL, CATEGORY_ORDER, INGREDIENT_BY_ID } from '../data/ingredients'
 import { recipeById } from '../data/recipeRegistry'
 import type { ShoppingLine, WeekMenu } from '../types'
 import { cookTasks } from './menu'
@@ -59,6 +59,30 @@ export function buildShoppingList(menu: WeekMenu): ShoppingList {
 
   const total = lines.filter((l) => !l.staple).reduce((s, l) => s + l.price, 0)
   return { lines, total }
+}
+
+/** Текст списка для мессенджера: категории, позиции, итог. */
+export function shoppingListText(
+  list: ShoppingList,
+  opts: { atHome: string[]; weekStart: string },
+): string {
+  const skip = new Set(opts.atHome)
+  const lines = list.lines.filter((l) => !l.staple && !skip.has(l.ingredientId))
+  const start = new Date(opts.weekStart)
+  const end = new Date(start)
+  end.setDate(end.getDate() + 6)
+  const fmt = (d: Date) => `${d.getDate()}.${String(d.getMonth() + 1).padStart(2, '0')}`
+
+  const out: string[] = [`Продукты на неделю ${fmt(start)}–${fmt(end)}`, '']
+  for (const category of CATEGORY_ORDER) {
+    const group = lines.filter((l) => l.category === category)
+    if (group.length === 0) continue
+    out.push(CATEGORY_LABEL[category])
+    for (const line of group) out.push(`— ${line.name}, ${formatQty(line.buy, line.unit)}`)
+    out.push('')
+  }
+  out.push(`Итого примерно ${lines.reduce((s, l) => s + l.price, 0)} ₽`)
+  return out.join('\n')
 }
 
 export function formatQty(qty: number, unit: 'g' | 'ml' | 'pcs'): string {
