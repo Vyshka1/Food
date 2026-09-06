@@ -60,6 +60,16 @@ npm run typecheck
 npm run build
 ```
 
+## Деплой
+
+`.github/workflows/ci.yml` — на каждый PR и push в `main`: typecheck, тесты, сборка.
+`.github/workflows/deploy.yml` — на push в `main` собирает и публикует `dist` на
+GitHub Pages. Сборка идёт с относительными путями (`base: './'`), поэтому одинаково
+работает и локально, и в подпапке репозитория на Pages.
+
+Один раз нужно включить Pages вручную: **Settings → Pages → Source: GitHub Actions**.
+После этого приложение открывается по адресу `https://vyshka1.github.io/Food/`.
+
 ## Структура
 
 ```
