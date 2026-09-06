@@ -232,6 +232,8 @@ export interface CookingPlan {
   makespan: number
   /** Сколько минут повар реально занят руками. */
   handsOnMinutes: number
+  /** Максимум блюд, идущих одновременно. */
+  maxParallel: number
   freeze: FreezeTask[]
   /** Дни, которые закрывает эта готовка. */
   coversDays: number[]

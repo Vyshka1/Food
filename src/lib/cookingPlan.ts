@@ -37,6 +37,7 @@ export interface ScheduleResult {
   steps: PlannedStep[]
   makespan: number
   handsOnMinutes: number
+  maxParallel: number
   warnings: string[]
 }
 
@@ -144,7 +145,11 @@ export function scheduleSteps(tasks: SchedTask[], burners: number, ovens: number
 
   const makespan = planned.reduce((max, s) => Math.max(max, s.end), 0)
   planned.sort((a, b) => a.start - b.start || a.end - b.end)
-  return { steps: planned, makespan, handsOnMinutes, warnings }
+  const maxParallel = planned.reduce((max, step) => {
+    const at = planned.filter((s) => s.start <= step.start && step.start < s.end).length
+    return Math.max(max, at)
+  }, 0)
+  return { steps: planned, makespan, handsOnMinutes, maxParallel, warnings }
 }
 
 function toSchedTask(task: CookTask, index: number): SchedTask | null {
@@ -204,6 +209,12 @@ export function buildCookingPlans(menu: WeekMenu, household: Household): Cooking
       if (freeze.length > 0 && !household.kitchen.hasFreezer) {
         warnings.push('В анкете нет морозилки, а часть порций рассчитана на заморозку.')
       }
+      // четыре часа безостановочной работы руками — это не план, а испытание
+      if (result.handsOnMinutes > 150) {
+        warnings.push(
+          `Активной работы ${formatDuration(result.handsOnMinutes)} почти без пауз. Стоит добавить ещё один день готовки — тогда блюда разойдутся по двум дням.`,
+        )
+      }
 
       const coversDays = [...new Set(tasks.flatMap((t) => t.eatDays))].sort((a, b) => a - b)
 
@@ -219,6 +230,7 @@ export function buildCookingPlans(menu: WeekMenu, household: Household): Cooking
         steps: result.steps,
         makespan: result.makespan,
         handsOnMinutes: result.handsOnMinutes,
+        maxParallel: result.maxParallel,
         freeze,
         coversDays,
         warnings,
