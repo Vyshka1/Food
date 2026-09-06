@@ -64,6 +64,15 @@ describe('buildWeekMenu', () => {
     }
   })
 
+  it('разные seed дают заметно разные меню', () => {
+    const h = household()
+    const a = new Set(buildWeekMenu(h, 1).menu.entries.map((e) => e.recipeId))
+    const b = new Set(buildWeekMenu(h, 2).menu.entries.map((e) => e.recipeId))
+    const union = new Set([...a, ...b])
+    // вторая неделя приносит хотя бы несколько блюд, которых не было в первой
+    expect(union.size).toBeGreaterThan(a.size + 2)
+  })
+
   it('детерминирован по seed', () => {
     const h = household()
     expect(buildWeekMenu(h, 7).menu.entries).toEqual(buildWeekMenu(h, 7).menu.entries)
