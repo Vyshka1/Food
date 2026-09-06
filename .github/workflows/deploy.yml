@@ -26,8 +26,10 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
-      # enablement: true включает Pages через API, если они ещё не включены
-      # в настройках репозитория — иначе шаг падает с «Get Pages site failed»
+      # enablement: true пробует включить Pages через API, если они ещё не включены.
+      # Работает не всегда: GITHUB_TOKEN может не иметь права создавать Pages-сайт
+      # («Resource not accessible by integration») — тогда нужно один раз включить
+      # Pages вручную: Settings → Pages → Source: GitHub Actions.
       - uses: actions/configure-pages@v5
         with:
           enablement: true
