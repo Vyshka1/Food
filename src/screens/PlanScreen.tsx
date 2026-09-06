@@ -165,7 +165,8 @@ export function PlanScreen() {
               {d.emoji} {d.title}
             </span>
             <b className="small muted">
-              {d.servings} {plural(d.servings, ['порция', 'порции', 'порций'])}
+              {d.portions.toFixed(1).replace('.0', '')}{' '}
+              {plural(Math.round(d.portions), ['порция', 'порции', 'порций'])}
             </b>
           </div>
         ))}

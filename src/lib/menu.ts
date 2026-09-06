@@ -3,7 +3,9 @@ import { allRecipes, recipeById } from '../data/recipeRegistry'
 import type {
   Allergen,
   Eater,
+  EaterPortion,
   Household,
+  MealSlot,
   MenuEntry,
   Norms,
   Recipe,
@@ -122,6 +124,34 @@ export function isRecipeAllowed(recipe: Recipe, household: Household): boolean {
 export function portionScale(recipe: Recipe, targetKcal: number): number {
   const perServing = recipeStats(recipe).kcal || 1
   return Math.min(1.75, Math.max(0.6, Math.round((targetKcal / perServing) * 20) / 20))
+}
+
+/**
+ * Сколько порций рецепта нужно каждому едоку: готовим одно блюдо, но Юлии с
+ * нормой 1316 ккал и Кириллу с 2802 достаются разные объёмы. Это и есть
+ * семейный расчёт — без него «общее меню на разные нормы» не работает.
+ */
+export function portionsFor(recipe: Recipe, household: Household, slot: MealSlot): EaterPortion[] {
+  const shares = slotShares(household.meals)
+  const perServing = recipeStats(recipe).kcal || 1
+  return household.eaters.map((eater) => {
+    const target = dailyNorm(eater).kcal * (shares[slot] ?? 0.3)
+    const raw = target / perServing
+    return {
+      eaterId: eater.id,
+      factor: Math.min(2.5, Math.max(0.4, Math.round(raw * 20) / 20)),
+    }
+  })
+}
+
+/** Сколько порций готовим всего — сумма личных долей. */
+export function totalPortions(entry: MenuEntry): number {
+  return entry.portions.reduce((sum, p) => sum + p.factor, 0)
+}
+
+/** Доля конкретного едока; для неизвестного id — 0. */
+export function portionOf(entry: MenuEntry, eaterId: string): number {
+  return entry.portions.find((p) => p.eaterId === eaterId)?.factor ?? 0
 }
 
 interface DayAcc {
@@ -279,7 +309,6 @@ export function buildWeekMenu(household: Household, seed: number): MenuBuildResu
   }
 
   const pool = allRecipes().filter((r) => isRecipeAllowed(r, household))
-  const servings = Math.max(1, household.eaters.length)
 
   for (const slot of household.meals) {
     const slotPool = pool.filter((r) => r.slots.includes(slot))
@@ -312,6 +341,7 @@ export function buildWeekMenu(household: Household, seed: number): MenuBuildResu
         const near = ranked.filter((c) => c.score <= ranked[0].score + NEAR_SCORE_MARGIN)
         const best = near[Math.floor(rnd() * near.length)].recipe
         const scale = portionScale(best, target)
+        const portions = portionsFor(best, household, slot)
         let produced = 0
         for (let k = 0; k < MAX_RUN && cursor + k < segment.days.length; k++) {
           const eatDay = segment.days[cursor + k]
@@ -323,8 +353,7 @@ export function buildWeekMenu(household: Household, seed: number): MenuBuildResu
             slot,
             day: eatDay,
             cookDay: segment.cookDay,
-            servings,
-            scale,
+            portions,
             storage,
           })
           produced++
@@ -349,8 +378,7 @@ export function buildWeekMenu(household: Household, seed: number): MenuBuildResu
             slot,
             day,
             cookDay: segment.cookDay,
-            servings,
-            scale: fbScale,
+            portions: portionsFor(fallback.recipe, household, slot),
             storage: storageFor(
               fallback.recipe,
               day - segment.cookDay,
@@ -460,12 +488,11 @@ export function replaceEntryWith(
   if (!entry || !recipe) return menu
   const storage = storageFor(recipe, entry.day - entry.cookDay, household.kitchen.hasFreezer)
   if (!storage) return menu
-  const target = slotTargets(household)[entry.slot] ?? 500
   const replaced: MenuEntry = {
     ...entry,
     id: `${entry.slot}-${entry.day}-${recipe.id}`,
     recipeId: recipe.id,
-    scale: portionScale(recipe, target),
+    portions: portionsFor(recipe, household, entry.slot),
     storage,
   }
   return { ...menu, entries: menu.entries.map((e) => (e.id === entryId ? replaced : e)) }
@@ -475,15 +502,18 @@ export interface DayTotals extends Norms {
   price: number
 }
 
-/** Итоги дня по всей семье: порция × количество едоков. */
-export function dayTotals(menu: WeekMenu, day: number): DayTotals {
+/**
+ * Итоги дня. Без eaterId — по всей семье, с eaterId — личная тарелка одного
+ * человека: те же блюда, но его доля.
+ */
+export function dayTotals(menu: WeekMenu, day: number, eaterId?: string): DayTotals {
   const acc: DayTotals = { kcal: 0, protein: 0, fat: 0, carbs: 0, price: 0 }
   for (const entry of menu.entries) {
     if (entry.day !== day) continue
     const recipe = recipeById(entry.recipeId)
     if (!recipe) continue
     const s = recipeStats(recipe)
-    const factor = entry.scale * entry.servings
+    const factor = eaterId ? portionOf(entry, eaterId) : totalPortions(entry)
     acc.kcal += s.kcal * factor
     acc.protein += s.protein * factor
     acc.fat += s.fat * factor
@@ -503,9 +533,8 @@ export interface CookTask {
   key: string
   recipeId: string
   cookDay: number
-  /** Суммарно порций за одну готовку. */
-  servings: number
-  scale: number
+  /** Суммарно порций за одну готовку — уже с учётом личных долей. */
+  portions: number
   eatDays: number[]
   freezerPortions: number
 }
@@ -516,19 +545,19 @@ export function cookTasks(menu: WeekMenu): CookTask[] {
   for (const entry of menu.entries) {
     const key = `${entry.recipeId}|${entry.cookDay}`
     const task = map.get(key)
+    const portions = totalPortions(entry)
     if (task) {
-      task.servings += entry.servings
+      task.portions += portions
       task.eatDays.push(entry.day)
-      if (entry.storage === 'freezer') task.freezerPortions += entry.servings
+      if (entry.storage === 'freezer') task.freezerPortions += portions
     } else {
       map.set(key, {
         key,
         recipeId: entry.recipeId,
         cookDay: entry.cookDay,
-        servings: entry.servings,
-        scale: entry.scale,
+        portions,
         eatDays: [entry.day],
-        freezerPortions: entry.storage === 'freezer' ? entry.servings : 0,
+        freezerPortions: entry.storage === 'freezer' ? portions : 0,
       })
     }
   }

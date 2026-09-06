@@ -122,6 +122,8 @@ export interface Ingredient {
   tags: string[]
   /** Шаг фасовки в базовых единицах (пачка 200 г и т.п.). */
   pack?: number
+  /** Для штучных продуктов — примерный вес одной штуки, чтобы считать вес порции. */
+  pieceGrams?: number
   /** Обычно есть дома и не попадает в список покупок. */
   staple?: boolean
 }
@@ -162,6 +164,12 @@ export interface Recipe {
 
 export type Storage = 'fresh' | 'fridge' | 'freezer'
 
+/** Доля одного едока в блюде: 1.0 — «стандартная» порция рецепта. */
+export interface EaterPortion {
+  eaterId: string
+  factor: number
+}
+
 export interface MenuEntry {
   id: string
   recipeId: string
@@ -170,10 +178,11 @@ export interface MenuEntry {
   day: number
   /** Индекс дня недели, когда блюдо готовят. */
   cookDay: number
-  /** Порции (по числу едоков с учётом их норм). */
-  servings: number
-  /** Масштаб порции, чтобы попасть в норму по калориям. */
-  scale: number
+  /**
+   * Сколько порций достаётся каждому едоку. Готовим одно блюдо, но Юлии и
+   * Кириллу нужны разные объёмы — здесь и живёт вся семейная арифметика.
+   */
+  portions: EaterPortion[]
   storage: Storage
 }
 
@@ -226,7 +235,7 @@ export interface FreezeTask {
 
 export interface CookingPlan {
   cookDay: number
-  dishes: { recipeId: string; title: string; emoji: string; servings: number; scale: number }[]
+  dishes: { recipeId: string; title: string; emoji: string; portions: number }[]
   steps: PlannedStep[]
   /** Общая длительность, мин. */
   makespan: number

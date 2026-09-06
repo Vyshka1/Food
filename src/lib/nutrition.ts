@@ -76,6 +76,18 @@ export interface RecipeStats extends Norms {
   price: number
 }
 
+/** Примерный вес порции в граммах: штучное считаем по среднему весу штуки. */
+export function portionWeight(recipe: Recipe, factor: number): number {
+  let grams = 0
+  for (const item of recipe.items) {
+    const ing = INGREDIENT_BY_ID[item.ingredientId]
+    if (!ing) continue
+    const perServing = ing.unit === 'pcs' ? item.qty * (ing.pieceGrams ?? 0) : item.qty
+    grams += perServing * factor
+  }
+  return Math.round(grams / 5) * 5
+}
+
 const statsCache = new Map<string, RecipeStats>()
 
 /** Ккал, БЖУ и цена одной порции рецепта. */

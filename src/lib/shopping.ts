@@ -19,7 +19,7 @@ export function buildShoppingList(menu: WeekMenu): ShoppingList {
   for (const task of cookTasks(menu)) {
     const recipe = recipeById(task.recipeId)
     if (!recipe) continue
-    const portions = task.servings * task.scale
+    const portions = task.portions
     for (const item of recipe.items) {
       needed.set(item.ingredientId, (needed.get(item.ingredientId) ?? 0) + item.qty * portions)
     }
