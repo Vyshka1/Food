@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import type { Eater, Household, Recipe, WeekMenu } from './types'
 import { buildWeekMenu, replaceEntry } from './lib/menu'
 import { setCustomRecipes } from './data/recipeRegistry'
+import { decodeProfile } from './lib/transfer'
 
 const STORAGE_KEY = 'menu-nedelya.v1'
 /** Ключ до переименования проекта: читаем один раз, чтобы не потерять анкету. */
@@ -71,6 +72,7 @@ interface Store extends AppState {
   toggleAtHome: (ingredientId: string) => void
   toggleBought: (ingredientId: string) => void
   banRecipe: (eaterId: string, recipeId: string) => void
+  importProfile: (input: string) => boolean
   saveCustomRecipe: (recipe: Recipe) => void
   deleteCustomRecipe: (recipeId: string) => void
   reset: () => void
@@ -176,6 +178,24 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  /** Профиль из ссылки или кода: анкета и свои рецепты, меню собирается заново. */
+  const importProfile = useCallback((input: string): boolean => {
+    const payload = decodeProfile(input)
+    if (!payload) return false
+    setCustomRecipes(payload.customRecipes)
+    const { menu, warnings } = buildWeekMenu(payload.household, Math.floor(Math.random() * 1e9))
+    setState((prev) => ({
+      ...prev,
+      household: payload.household,
+      customRecipes: payload.customRecipes,
+      menu,
+      warnings,
+      atHome: [],
+      bought: [],
+    }))
+    return true
+  }, [])
+
   /** Свой рецепт меняет пул блюд, поэтому меню пересобирается на том же seed. */
   const saveCustomRecipe = useCallback((recipe: Recipe) => {
     setState((prev) => {
@@ -219,6 +239,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toggleAtHome,
       toggleBought,
       banRecipe,
+      importProfile,
       saveCustomRecipe,
       deleteCustomRecipe,
       reset,
@@ -231,6 +252,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toggleAtHome,
       toggleBought,
       banRecipe,
+      importProfile,
       saveCustomRecipe,
       deleteCustomRecipe,
       reset,

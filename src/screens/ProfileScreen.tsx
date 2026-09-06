@@ -1,7 +1,9 @@
+import { useState } from 'react'
 import { ALLERGENS } from '../types'
 import { WEEKDAYS, householdNorms } from '../lib/menu'
 import { GOAL_LABEL, dailyNorm } from '../lib/nutrition'
 import { useStore } from '../store'
+import { profileLink } from '../lib/transfer'
 import { CalorieRing, Card, Section } from '../components/ui'
 
 export function ProfileScreen({
@@ -11,7 +13,10 @@ export function ProfileScreen({
   onEdit: () => void
   onRecipes: () => void
 }) {
-  const { household, saveHousehold, reset, customRecipes } = useStore()
+  const { household, saveHousehold, reset, customRecipes, importProfile } = useStore()
+  const [transferNote, setTransferNote] = useState('')
+  const [pasted, setPasted] = useState('')
+  const [showPaste, setShowPaste] = useState(false)
   if (!household) return null
   const norms = householdNorms(household)
 
@@ -119,6 +124,72 @@ export function ProfileScreen({
             Открыть
           </button>
         </div>
+      </Section>
+
+      <Section title="Перенос на другое устройство" icon="🔗">
+        <p className="hint" style={{ marginTop: 0 }}>
+          Данные хранятся только в этом браузере. Ссылка ниже содержит анкету и свои рецепты —
+          откройте её на другом устройстве, и всё перенесётся. В ней ваш вес, рост и аллергии,
+          поэтому не публикуйте её.
+        </p>
+        <div className="row" style={{ gap: 10 }}>
+          <button
+            className="btn btn--soft btn--small"
+            onClick={async () => {
+              const link = profileLink(
+                { household, customRecipes },
+                window.location.origin + window.location.pathname,
+              )
+              const nav = navigator as Navigator & { share?: (d: { url: string }) => Promise<void> }
+              try {
+                if (nav.share) await nav.share({ url: link })
+                else {
+                  await navigator.clipboard.writeText(link)
+                  setTransferNote('Ссылка скопирована')
+                }
+              } catch {
+                setTransferNote('Не удалось скопировать ссылку')
+              }
+              setTimeout(() => setTransferNote(''), 4000)
+            }}
+          >
+            Ссылка с данными
+          </button>
+          <button className="btn btn--ghost btn--small" onClick={() => setShowPaste((v) => !v)}>
+            Вставить ссылку
+          </button>
+        </div>
+        {transferNote && (
+          <p className="small" style={{ color: 'var(--green-dark)' }}>
+            {transferNote}
+          </p>
+        )}
+        {showPaste && (
+          <div className="stack" style={{ marginTop: 10 }}>
+            <div className="field">
+              <input
+                type="text"
+                placeholder="Вставьте сюда ссылку или код"
+                value={pasted}
+                onChange={(e) => setPasted(e.target.value)}
+              />
+            </div>
+            <button
+              className="btn btn--small btn--soft"
+              onClick={() => {
+                const ok = importProfile(pasted)
+                setTransferNote(ok ? 'Данные загружены' : 'Ссылка не распознана')
+                if (ok) {
+                  setPasted('')
+                  setShowPaste(false)
+                }
+                setTimeout(() => setTransferNote(''), 4000)
+              }}
+            >
+              Загрузить
+            </button>
+          </div>
+        )}
       </Section>
 
       <Section title="Кухня" icon="🍲">
