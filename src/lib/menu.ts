@@ -240,6 +240,9 @@ export interface MenuBuildResult {
 /** Максимум дней подряд с одним и тем же блюдом в одном приёме пищи. */
 const MAX_RUN = 2
 
+/** Насколько кандидат может уступать лучшему, чтобы всё ещё попасть в жеребьёвку. */
+const NEAR_SCORE_MARGIN = 50
+
 export function buildWeekMenu(household: Household, seed: number): MenuBuildResult {
   const rnd = mulberry32(seed)
   const warnings: string[] = []
@@ -285,7 +288,10 @@ export function buildWeekMenu(household: Household, seed: number): MenuBuildResu
           }))
           .sort((a, b) => a.score - b.score)
 
-        const best = ranked[0].recipe
+        // среди почти одинаковых по качеству вариантов выбираем случайный:
+        // иначе каждую неделю выпадают одни и те же «лучшие» блюда
+        const near = ranked.filter((c) => c.score <= ranked[0].score + NEAR_SCORE_MARGIN)
+        const best = near[Math.floor(rnd() * near.length)].recipe
         const scale = portionScale(best, target)
         let produced = 0
         for (let k = 0; k < MAX_RUN && cursor + k < segment.days.length; k++) {

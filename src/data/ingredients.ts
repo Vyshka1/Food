@@ -189,6 +189,20 @@ export const INGREDIENTS: Ingredient[] = [
     staple: true,
     pack: 60,
   }),
+  // Добавлено для расширения базы рецептов
+  ing('sweet_potato', 'Батат', 'g', 'veg', [86, 1.6, 0.1, 20.1], 250),
+  ing('leek', 'Лук-порей', 'g', 'veg', [61, 2, 0.3, 14.2], 300, { tags: ['onion'] }),
+  ing('mint', 'Мята', 'g', 'veg', [70, 3.8, 0.9, 14.9], 900, { pack: 30 }),
+  ing('basil', 'Базилик', 'g', 'veg', [23, 3.2, 0.6, 2.7], 900, { pack: 50 }),
+  ing('pollock', 'Минтай', 'g', 'fish', [72, 15.9, 0.9, 0], 400, { allergens: ['fish'], pack: 500 }),
+  ing('minced_turkey', 'Фарш индейки', 'g', 'meat', [161, 19, 9, 0], 500, { pack: 400 }),
+  ing('feta', 'Фета', 'g', 'dairy', [264, 14.2, 21.3, 4.1], 1200, { allergens: ['lactose'], pack: 200 }),
+  ing('coconut_yogurt', 'Кокосовый йогурт', 'g', 'dairy', [97, 1, 8, 5], 900, { pack: 300 }),
+  ing('rice_noodles', 'Рисовая лапша', 'g', 'grain', [364, 6, 0.6, 82], 300, { pack: 300 }),
+  ing('buckwheat_flour', 'Гречневая мука', 'g', 'grain', [335, 13, 3, 62], 200, { pack: 500 }),
+  ing('cornmeal', 'Кукурузная крупа', 'g', 'grain', [328, 8.3, 1.2, 71], 120, { pack: 600 }),
+  ing('chia', 'Семена чиа', 'g', 'nuts', [486, 16.5, 30.7, 42.1], 1400, { pack: 200 }),
+  ing('cinnamon', 'Корица', 'g', 'pantry', [247, 4, 1.2, 27.5], 2000, { staple: true, pack: 30 }),
 ]
 
 export const INGREDIENT_BY_ID: Record<string, Ingredient> = Object.fromEntries(
