@@ -3,6 +3,7 @@ import { ALLERGENS } from '../types'
 import { WEEKDAYS, householdNorms } from '../lib/menu'
 import { GOAL_LABEL, dailyNorm } from '../lib/nutrition'
 import { useStore } from '../store'
+import { recipeById } from '../data/recipeRegistry'
 import { profileLink } from '../lib/transfer'
 import { CalorieRing, Card, Section } from '../components/ui'
 
@@ -13,12 +14,13 @@ export function ProfileScreen({
   onEdit: () => void
   onRecipes: () => void
 }) {
-  const { household, saveHousehold, reset, customRecipes, importProfile } = useStore()
+  const { household, saveHousehold, reset, customRecipes, importProfile, unbanRecipe } = useStore()
   const [transferNote, setTransferNote] = useState('')
   const [pasted, setPasted] = useState('')
   const [showPaste, setShowPaste] = useState(false)
   if (!household) return null
   const norms = householdNorms(household)
+  const hidden = [...new Set(household.eaters.flatMap((e) => e.bannedRecipes))]
 
   const toggleCookingDay = (day: number) => {
     const cookingDays = household.cookingDays.includes(day)
@@ -112,6 +114,23 @@ export function ProfileScreen({
           })}
         </div>
       </Section>
+
+      {hidden.length > 0 && (
+        <Section title="Скрытые блюда" icon="🚫">
+          <div className="stack">
+            {hidden.map((id) => (
+              <div className="row row--between" key={id}>
+                <span>
+                  {recipeById(id)?.emoji ?? '🍽️'} {recipeById(id)?.title ?? id}
+                </span>
+                <button className="btn btn--soft btn--small" onClick={() => unbanRecipe(id)}>
+                  Вернуть
+                </button>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
 
       <Section title="Мои рецепты" icon="📖">
         <div className="row row--between">

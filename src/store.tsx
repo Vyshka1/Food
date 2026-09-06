@@ -72,6 +72,7 @@ interface Store extends AppState {
   toggleAtHome: (ingredientId: string) => void
   toggleBought: (ingredientId: string) => void
   banRecipe: (eaterId: string, recipeId: string) => void
+  unbanRecipe: (recipeId: string) => void
   importProfile: (input: string) => boolean
   saveCustomRecipe: (recipe: Recipe) => void
   deleteCustomRecipe: (recipeId: string) => void
@@ -178,6 +179,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  /** Вернуть скрытое блюдо всем едокам сразу. */
+  const unbanRecipe = useCallback((recipeId: string) => {
+    setState((prev) => {
+      if (!prev.household || !prev.menu) return prev
+      const household: Household = {
+        ...prev.household,
+        eaters: prev.household.eaters.map((e) => ({
+          ...e,
+          bannedRecipes: e.bannedRecipes.filter((id) => id !== recipeId),
+        })),
+      }
+      const { menu, warnings } = buildWeekMenu(household, prev.menu.seed)
+      return { ...prev, household, menu, warnings }
+    })
+  }, [])
+
   /** Профиль из ссылки или кода: анкета и свои рецепты, меню собирается заново. */
   const importProfile = useCallback((input: string): boolean => {
     const payload = decodeProfile(input)
@@ -239,6 +256,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toggleAtHome,
       toggleBought,
       banRecipe,
+      unbanRecipe,
       importProfile,
       saveCustomRecipe,
       deleteCustomRecipe,
@@ -252,6 +270,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       toggleAtHome,
       toggleBought,
       banRecipe,
+      unbanRecipe,
       importProfile,
       saveCustomRecipe,
       deleteCustomRecipe,
