@@ -1,11 +1,12 @@
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { recipeById } from '../data/recipeRegistry'
 import type { MenuEntry } from '../types'
-import { recipeStats } from '../lib/nutrition'
+import { portionWeight, recipeStats } from '../lib/nutrition'
 import { formatQty } from '../lib/shopping'
 import { formatDuration } from '../lib/cookingPlan'
-import { WEEKDAYS_FULL } from '../lib/menu'
+import { WEEKDAYS_FULL, portionOf, totalPortions } from '../lib/menu'
 import { plural } from '../lib/format'
+import { useStore } from '../store'
 import { Sheet } from './ui'
 
 const STORAGE_LABEL: Record<string, string> = {
@@ -25,10 +26,11 @@ export function RecipeSheet({
   onSwap: () => void
   onBan: () => void
 }) {
+  const { household } = useStore()
   const recipe = recipeById(entry.recipeId)
-  if (!recipe) return null
+  if (!recipe || !household) return null
   const stats = recipeStats(recipe)
-  const scale = entry.scale
+  const total = totalPortions(entry)
   const totalMinutes = recipe.steps.reduce((s, st) => s + st.minutes, 0)
 
   return (
@@ -40,39 +42,53 @@ export function RecipeSheet({
         <div>
           <div style={{ fontSize: 20, fontWeight: 700 }}>{recipe.title}</div>
           <div className="muted small">
-            {Math.round(stats.kcal * scale)} ккал · {formatDuration(totalMinutes)} ·{' '}
-            {Math.round(stats.price * scale)} ₽ порция
+            {formatDuration(totalMinutes)} · {Math.round(stats.price * total)} ₽ на всех ·{' '}
+            {WEEKDAYS_FULL[entry.day]}
           </div>
         </div>
       </div>
 
+      <div className="card">
+        <div className="section-title">Кому сколько</div>
+        {household.eaters.map((eater) => {
+          const factor = portionOf(entry, eater.id)
+          return (
+            <div className="ing-line" key={eater.id}>
+              <span>{eater.name}</span>
+              <b>
+                {portionWeight(recipe, factor)} г · {Math.round(stats.kcal * factor)} ккал
+              </b>
+            </div>
+          )
+        })}
+        <p className="hint" style={{ marginBottom: 0 }}>
+          Одно блюдо, разные порции: каждому столько, сколько нужно по его норме.
+        </p>
+      </div>
+
       <div className="card card--soft">
         <div className="row row--between small">
-          <span className="muted">Белки</span>
-          <b>{Math.round(stats.protein * scale)} г</b>
+          <span className="muted">Белки · жиры · углеводы на всё блюдо</span>
+          <b>
+            {Math.round(stats.protein * total)} · {Math.round(stats.fat * total)} ·{' '}
+            {Math.round(stats.carbs * total)} г
+          </b>
         </div>
-        <div className="row row--between small">
-          <span className="muted">Жиры</span>
-          <b>{Math.round(stats.fat * scale)} г</b>
-        </div>
-        <div className="row row--between small">
-          <span className="muted">Углеводы</span>
-          <b>{Math.round(stats.carbs * scale)} г</b>
-        </div>
-        <div className="row row--between small" style={{ marginTop: 8 }}>
-          <span className="muted">{WEEKDAYS_FULL[entry.day]}</span>
+        <div className="row row--between small" style={{ marginTop: 6 }}>
+          <span className="muted">Хранение</span>
           <b>{STORAGE_LABEL[entry.storage]}</b>
         </div>
       </div>
 
       <div className="card">
         <div className="section-title">
-          Ингредиенты · {entry.servings} {plural(entry.servings, ['порция', 'порции', 'порций'])}
+          Продукты · {total.toFixed(1).replace('.0', '')}{' '}
+          {plural(Math.round(total), ['порция', 'порции', 'порций'])}
         </div>
         {recipe.items.map((item) => {
           const ing = INGREDIENT_BY_ID[item.ingredientId]
           if (!ing) return null
-          const qty = item.qty * scale * entry.servings
+          const qty = item.qty * total
           return (
             <div className="ing-line" key={item.ingredientId}>
               <span>{ing.name}</span>

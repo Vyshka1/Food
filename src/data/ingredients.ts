@@ -5,6 +5,7 @@ interface Opts {
   tags?: string[]
   pack?: number
   staple?: boolean
+  pieceGrams?: number
 }
 
 /** Ккал/БЖУ — на 100 г, 100 мл или 1 шт. Цена — за 1000 г, 1000 мл или 1 шт. */
@@ -32,6 +33,7 @@ function ing(
     tags: opts.tags ?? [],
     pack: opts.pack,
     staple: opts.staple,
+    pieceGrams: opts.pieceGrams,
   }
 }
 
@@ -58,7 +60,7 @@ export const INGREDIENTS: Ingredient[] = [
   ing('green_beans', 'Стручковая фасоль', 'g', 'veg', [31, 1.8, 0.1, 7], 300, { pack: 400 }),
   ing('green_peas', 'Зелёный горошек', 'g', 'veg', [73, 5, 0.2, 12.8], 200, { pack: 400 }),
   ing('corn', 'Кукуруза консервированная', 'g', 'veg', [58, 2.2, 0.4, 11.2], 300, { pack: 340 }),
-  ing('avocado', 'Авокадо', 'pcs', 'veg', [230, 2.8, 21, 3], 130),
+  ing('avocado', 'Авокадо', 'pcs', 'veg', [230, 2.8, 21, 3], 130, { pieceGrams: 200 }),
   ing('cherry_tomato', 'Черри', 'g', 'veg', [20, 1.1, 0.2, 3.7], 500, { pack: 250 }),
   ing('eggplant', 'Баклажан', 'g', 'veg', [24, 1.2, 0.2, 4.5], 200, { tags: ['eggplant'] }),
   ing('olives', 'Оливки', 'g', 'veg', [115, 0.8, 10.7, 6.3], 900, { tags: ['olives'], pack: 300 }),
@@ -68,11 +70,11 @@ export const INGREDIENTS: Ingredient[] = [
   ing('chili', 'Перец чили', 'g', 'veg', [40, 2, 0.2, 9.5], 800, { tags: ['spicy'], pack: 50 }),
 
   // Фрукты и ягоды
-  ing('apple', 'Яблоко', 'pcs', 'fruit', [72, 0.4, 0.2, 17], 25),
-  ing('banana', 'Банан', 'pcs', 'fruit', [105, 1.3, 0.4, 27], 25),
+  ing('apple', 'Яблоко', 'pcs', 'fruit', [72, 0.4, 0.2, 17], 25, { pieceGrams: 180 }),
+  ing('banana', 'Банан', 'pcs', 'fruit', [105, 1.3, 0.4, 27], 25, { pieceGrams: 120 }),
   ing('lemon', 'Лимон', 'g', 'fruit', [29, 1.1, 0.3, 9.3], 250),
-  ing('orange', 'Апельсин', 'pcs', 'fruit', [62, 1.2, 0.2, 15.4], 40),
-  ing('pear', 'Груша', 'pcs', 'fruit', [101, 0.6, 0.2, 27], 45),
+  ing('orange', 'Апельсин', 'pcs', 'fruit', [62, 1.2, 0.2, 15.4], 40, { pieceGrams: 150 }),
+  ing('pear', 'Груша', 'pcs', 'fruit', [101, 0.6, 0.2, 27], 45, { pieceGrams: 180 }),
   ing('berries', 'Ягоды замороженные', 'g', 'fruit', [50, 0.8, 0.4, 10], 450, { pack: 300 }),
   ing('raisins', 'Изюм', 'g', 'fruit', [299, 3.1, 0.5, 79], 400, { pack: 200 }),
   ing('dates', 'Финики', 'g', 'fruit', [277, 1.8, 0.2, 75], 700, { pack: 250 }),
@@ -117,7 +119,7 @@ export const INGREDIENTS: Ingredient[] = [
   ing('cheese', 'Сыр твёрдый', 'g', 'dairy', [364, 24, 29, 0.3], 900, { allergens: ['lactose'], pack: 200 }),
   ing('cream_10', 'Сливки 10%', 'ml', 'dairy', [118, 3, 10, 4], 300, { allergens: ['lactose'], pack: 500 }),
   ing('oat_milk', 'Овсяное молоко', 'ml', 'dairy', [45, 0.5, 1.5, 7], 200, { pack: 1000 }),
-  ing('egg', 'Яйцо', 'pcs', 'egg', [72, 6.3, 5, 0.4], 15, { allergens: ['eggs'], pack: 10 }),
+  ing('egg', 'Яйцо', 'pcs', 'egg', [72, 6.3, 5, 0.4], 15, { allergens: ['eggs'], pack: 10, pieceGrams: 55 }),
 
   // Крупы, мука, хлеб
   ing('oats', 'Овсяные хлопья', 'g', 'grain', [352, 12.3, 6.2, 59.5], 120, {
@@ -134,7 +136,7 @@ export const INGREDIENTS: Ingredient[] = [
     allergens: ['gluten'],
     pack: 400,
   }),
-  ing('tortilla', 'Тортилья', 'pcs', 'bakery', [150, 4, 3.5, 25], 40, { allergens: ['gluten'], pack: 6 }),
+  ing('tortilla', 'Тортилья', 'pcs', 'bakery', [150, 4, 3.5, 25], 40, { allergens: ['gluten'], pack: 6, pieceGrams: 45 }),
   ing('breadcrumbs', 'Панировочные сухари', 'g', 'grain', [347, 11, 2, 72], 200, {
     allergens: ['gluten'],
     pack: 200,

@@ -11,6 +11,7 @@ import {
   isRecipeAllowed,
   replaceEntryWith,
   replacementOptions,
+  totalPortions,
 } from './menu'
 
 function eater(patch: Partial<Eater> = {}): Eater {
@@ -164,7 +165,7 @@ describe('buildWeekMenu', () => {
       const entries = menu.entries.filter(
         (e) => e.recipeId === task.recipeId && e.cookDay === task.cookDay,
       )
-      expect(task.servings).toBe(entries.reduce((s, e) => s + e.servings, 0))
+      expect(task.portions).toBeCloseTo(entries.reduce((s, e) => s + totalPortions(e), 0), 5)
       expect(task.eatDays.sort()).toEqual(entries.map((e) => e.day).sort())
     }
   })
@@ -259,7 +260,7 @@ describe('выбор блюда на замену', () => {
     const updated = replaceEntryWith(menu, h, entry.id, pick.recipe.id)
     const replaced = updated.entries.find((e) => e.day === entry.day && e.slot === entry.slot)
     expect(replaced?.recipeId).toBe(pick.recipe.id)
-    expect(replaced?.scale).toBe(pick.scale)
+    expect(totalPortions(replaced!)).toBeGreaterThan(0)
     expect(updated.entries.length).toBe(menu.entries.length)
     const untouched = updated.entries.filter((e) => e.id !== replaced?.id)
     expect(untouched).toEqual(menu.entries.filter((e) => e.id !== entry.id))

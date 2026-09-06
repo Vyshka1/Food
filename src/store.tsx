@@ -90,6 +90,12 @@ function load(): AppState {
     const state = { ...emptyState, ...parsed }
     // реестр должен знать о своих рецептах до первой сборки меню
     setCustomRecipes(state.customRecipes)
+    // меню, собранные до появления личных порций, пересобираем на том же seed
+    const outdated = state.menu?.entries.some((e) => !Array.isArray(e.portions))
+    if (state.household && state.menu && outdated) {
+      const { menu, warnings } = buildWeekMenu(state.household, state.menu.seed)
+      return { ...state, menu, warnings }
+    }
     return state
   } catch {
     return emptyState

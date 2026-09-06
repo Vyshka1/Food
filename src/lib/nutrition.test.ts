@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Eater, Household } from '../types'
 import { RECIPE_BY_ID } from '../data/recipes'
 import { dailyNorm, recipeStats, slotShares } from './nutrition'
-import { buildWeekMenu, dayTotals, householdNorms, slotTargets } from './menu'
+import { buildWeekMenu, dayTotals, householdNorms, slotTargets, totalPortions } from './menu'
 import { buildShoppingList } from './shopping'
 
 const base: Eater = {
@@ -64,7 +64,7 @@ describe('меню и норма', () => {
     for (let day = 0; day < 7; day++) {
       const kcal = menu.entries
         .filter((e) => e.day === day)
-        .reduce((s, e) => s + recipeStats(RECIPE_BY_ID[e.recipeId]).kcal * e.scale, 0)
+        .reduce((s, e) => s + recipeStats(RECIPE_BY_ID[e.recipeId]).kcal * totalPortions(e), 0)
       expect(kcal).toBeGreaterThan(norm * 0.88)
       expect(kcal).toBeLessThan(norm * 1.12)
     }
@@ -78,7 +78,7 @@ describe('меню и норма', () => {
       const entries = menu.entries.filter((e) => e.day === day)
       const stats = entries.map((e) => ({
         s: recipeStats(RECIPE_BY_ID[e.recipeId]),
-        scale: e.scale,
+        scale: totalPortions(e),
       }))
       const kcal = stats.reduce((s, x) => s + x.s.kcal * x.scale, 0)
       const fat = stats.reduce((s, x) => s + x.s.fat * x.scale, 0)
@@ -145,6 +145,29 @@ describe('баланс БЖУ по дню', () => {
     budgetPerWeek: 0,
     weekStart: '2026-09-07',
   }
+
+  it('даёт каждому едоку его порцию, а не среднюю по семье', () => {
+    const { menu } = buildWeekMenu(family, 42)
+    const normYulia = dailyNorm(base).kcal
+    const normKirill = dailyNorm(kirill).kcal
+
+    for (const entry of menu.entries) {
+      const yulia = entry.portions.find((p) => p.eaterId === base.id)!.factor
+      const kir = entry.portions.find((p) => p.eaterId === kirill.id)!.factor
+      // Кириллу нужно вдвое больше калорий — и порция у него больше
+      expect(kir).toBeGreaterThan(yulia)
+    }
+
+    for (let day = 0; day < 7; day++) {
+      const forYulia = dayTotals(menu, day, base.id)
+      const forKirill = dayTotals(menu, day, kirill.id)
+      expect(Math.abs(forYulia.kcal / normYulia - 1)).toBeLessThan(0.12)
+      expect(Math.abs(forKirill.kcal / normKirill - 1)).toBeLessThan(0.12)
+      // и сумма личных тарелок сходится с общей
+      const family = dayTotals(menu, day)
+      expect(forYulia.kcal + forKirill.kcal).toBeCloseTo(family.kcal, -1)
+    }
+  })
 
   it('держит не только калории, но и белки, жиры и углеводы', () => {
     const norms = householdNorms(family)

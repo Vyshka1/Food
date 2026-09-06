@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react'
 import { recipeById } from '../data/recipeRegistry'
 import { MEAL_SLOTS } from '../types'
 import type { MenuEntry } from '../types'
-import { WEEKDAYS, dayTotals, householdNorms } from '../lib/menu'
-import { recipeStats } from '../lib/nutrition'
+import { WEEKDAYS, dayTotals, householdNorms, portionOf, totalPortions } from '../lib/menu'
+import { dailyNorm, portionWeight, recipeStats } from '../lib/nutrition'
 import { useStore } from '../store'
 import { CalorieRing, Card, Warnings } from '../components/ui'
 import { RecipeSheet } from '../components/RecipeSheet'
@@ -27,9 +27,18 @@ export function MenuScreen() {
   const [openEntry, setOpenEntry] = useState<MenuEntry | null>(null)
   const [note, setNote] = useState('')
   const [replacing, setReplacing] = useState<MenuEntry | null>(null)
+  /** null — вся семья, иначе тарелка одного едока. */
+  const [who, setWho] = useState<string | null>(null)
 
-  const norms = useMemo(() => (household ? householdNorms(household) : null), [household])
-  const totals = useMemo(() => (menu ? dayTotals(menu, day) : null), [menu, day])
+  const eater = household?.eaters.find((e) => e.id === who) ?? null
+  const norms = useMemo(
+    () => (eater ? dailyNorm(eater) : household ? householdNorms(household) : null),
+    [eater, household],
+  )
+  const totals = useMemo(
+    () => (menu ? dayTotals(menu, day, eater?.id) : null),
+    [menu, day, eater],
+  )
 
   if (!household || !menu || !norms || !totals) return null
 
@@ -59,6 +68,19 @@ export function MenuScreen() {
           </button>
         ))}
       </div>
+
+      {household.eaters.length > 1 && (
+        <div className="segmented" style={{ marginBottom: 12 }}>
+          <button data-active={who === null} onClick={() => setWho(null)}>
+            Семья
+          </button>
+          {household.eaters.map((e) => (
+            <button key={e.id} data-active={who === e.id} onClick={() => setWho(e.id)}>
+              {e.name}
+            </button>
+          ))}
+        </div>
+      )}
 
       <Warnings items={warnings} />
 
@@ -103,6 +125,7 @@ export function MenuScreen() {
               const recipe = recipeById(entry.recipeId)
               if (!recipe) return null
               const stats = recipeStats(recipe)
+              const factor = eater ? portionOf(entry, eater.id) : totalPortions(entry)
               const badge = STORAGE_BADGE[entry.storage]
               return (
                 <button className="dish" key={entry.id} onClick={() => setOpenEntry(entry)}>
@@ -110,8 +133,9 @@ export function MenuScreen() {
                   <span style={{ flex: 1 }}>
                     <span className="dish__title">{recipe.title}</span>
                     <span className="dish__meta">
-                      {Math.round(stats.kcal * entry.scale)} ккал ·{' '}
-                      {Math.round(stats.price * entry.scale)} ₽ порция
+                      {eater
+                        ? `${portionWeight(recipe, factor)} г · ${Math.round(stats.kcal * factor)} ккал`
+                        : `на всех: ${Math.round(stats.kcal * factor)} ккал · ≈ ${Math.round(stats.price * factor)} ₽`}
                     </span>
                     <br />
                     {badge && <span className={badge.cls}>{badge.label}</span>}

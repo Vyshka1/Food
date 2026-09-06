@@ -155,7 +155,7 @@ export function scheduleSteps(tasks: SchedTask[], burners: number, ovens: number
 function toSchedTask(task: CookTask, index: number): SchedTask | null {
   const recipe = recipeById(task.recipeId)
   if (!recipe) return null
-  const portions = task.servings * task.scale
+  const portions = task.portions
   const steps = recipe.steps.map((step) => ({ step, minutes: scaledMinutes(step, portions) }))
   const remaining: number[] = new Array(steps.length).fill(0)
   for (let i = steps.length - 1; i >= 0; i--) {
@@ -224,8 +224,7 @@ export function buildCookingPlans(menu: WeekMenu, household: Household): Cooking
           recipeId: t.recipeId,
           title: recipeById(t.recipeId)?.title ?? t.recipeId,
           emoji: recipeById(t.recipeId)?.emoji ?? '🍽️',
-          servings: t.servings,
-          scale: t.scale,
+          portions: t.portions,
         })),
         steps: result.steps,
         makespan: result.makespan,
