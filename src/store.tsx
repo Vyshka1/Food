@@ -3,7 +3,9 @@ import type { ReactNode } from 'react'
 import type { Eater, Household, WeekMenu } from './types'
 import { buildWeekMenu, replaceEntry } from './lib/menu'
 
-const STORAGE_KEY = 'ufff.food.v1'
+const STORAGE_KEY = 'menu-nedelya.v1'
+/** Ключ до переименования проекта: читаем один раз, чтобы не потерять анкету. */
+const LEGACY_STORAGE_KEY = 'ufff.food.v1'
 
 export interface AppState {
   household: Household | null
@@ -67,7 +69,7 @@ const StoreContext = createContext<Store | null>(null)
 function load(): AppState {
   if (typeof localStorage === 'undefined') return emptyState
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
     if (!raw) return emptyState
     const parsed = JSON.parse(raw) as Partial<AppState>
     return { ...emptyState, ...parsed }
