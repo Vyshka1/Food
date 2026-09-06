@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { RECIPE_BY_ID } from '../data/recipes'
+import { recipeById } from '../data/recipeRegistry'
 import { MEAL_SLOTS } from '../types'
 import type { MenuEntry } from '../types'
 import { WEEKDAYS, dayTotals, householdNorms } from '../lib/menu'
@@ -100,7 +100,7 @@ export function MenuScreen() {
             </div>
             {entries.length === 0 && <p className="hint">Ничего не запланировано.</p>}
             {entries.map((entry) => {
-              const recipe = RECIPE_BY_ID[entry.recipeId]
+              const recipe = recipeById(entry.recipeId)
               if (!recipe) return null
               const stats = recipeStats(recipe)
               const badge = STORAGE_BADGE[entry.storage]

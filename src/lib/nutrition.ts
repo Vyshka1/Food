@@ -80,7 +80,7 @@ const statsCache = new Map<string, RecipeStats>()
 
 /** Ккал, БЖУ и цена одной порции рецепта. */
 export function recipeStats(recipe: Recipe): RecipeStats {
-  const cached = statsCache.get(recipe.id)
+  const cached = recipe.custom ? undefined : statsCache.get(recipe.id)
   if (cached) return cached
   let kcal = 0
   let protein = 0
@@ -104,6 +104,6 @@ export function recipeStats(recipe: Recipe): RecipeStats {
     carbs: Math.round(carbs),
     price: Math.round(price),
   }
-  statsCache.set(recipe.id, stats)
+  if (!recipe.custom) statsCache.set(recipe.id, stats)
   return stats
 }

@@ -1,5 +1,5 @@
 import { INGREDIENT_BY_ID } from '../data/ingredients'
-import { RECIPES, RECIPE_BY_ID } from '../data/recipes'
+import { allRecipes, recipeById } from '../data/recipeRegistry'
 import type {
   Allergen,
   Eater,
@@ -207,6 +207,10 @@ function scoreRecipe(
       Math.abs(shares.carbs - targetMacros.carbs)) *
     20
 
+  // свои рецепты предпочитаем встроенным, но не любой ценой:
+  // бонус не перебивает ни аллергии (жёсткий фильтр), ни сильный промах по калориям
+  if (recipe.custom) score -= CUSTOM_RECIPE_BONUS
+
   // «не люблю» — мягкий, но очень заметный штраф
   for (const eater of household.eaters) score += dislikeHits(recipe, eater).length * 60
 
@@ -243,6 +247,9 @@ const MAX_RUN = 2
 /** Насколько кандидат может уступать лучшему, чтобы всё ещё попасть в жеребьёвку. */
 const NEAR_SCORE_MARGIN = 50
 
+/** Свои рецепты добавляют не просто так — при прочих равных они идут первыми. */
+const CUSTOM_RECIPE_BONUS = 100
+
 export function buildWeekMenu(household: Household, seed: number): MenuBuildResult {
   const rnd = mulberry32(seed)
   const warnings: string[] = []
@@ -259,7 +266,7 @@ export function buildWeekMenu(household: Household, seed: number): MenuBuildResu
     )
   }
 
-  const pool = RECIPES.filter((r) => isRecipeAllowed(r, household))
+  const pool = allRecipes().filter((r) => isRecipeAllowed(r, household))
   const servings = Math.max(1, household.eaters.length)
 
   for (const slot of household.meals) {
@@ -382,7 +389,7 @@ export function replaceEntry(
     state.lastDay.set(e.recipeId, e.day)
   }
 
-  const candidate = RECIPES.filter(
+  const candidate = allRecipes().filter(
     (r) =>
       r.slots.includes(entry.slot) &&
       isRecipeAllowed(r, household) &&
@@ -428,7 +435,7 @@ export function dayTotals(menu: WeekMenu, day: number): DayTotals {
   const acc: DayTotals = { kcal: 0, protein: 0, fat: 0, carbs: 0, price: 0 }
   for (const entry of menu.entries) {
     if (entry.day !== day) continue
-    const recipe = RECIPE_BY_ID[entry.recipeId]
+    const recipe = recipeById(entry.recipeId)
     if (!recipe) continue
     const s = recipeStats(recipe)
     const factor = entry.scale * entry.servings

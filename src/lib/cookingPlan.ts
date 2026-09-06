@@ -1,4 +1,4 @@
-import { RECIPE_BY_ID } from '../data/recipes'
+import { recipeById } from '../data/recipeRegistry'
 import type { CookingPlan, FreezeTask, Household, PlannedStep, RecipeStep, WeekMenu } from '../types'
 import { WEEKDAYS_FULL, cookTasks, type CookTask } from './menu'
 
@@ -148,7 +148,7 @@ export function scheduleSteps(tasks: SchedTask[], burners: number, ovens: number
 }
 
 function toSchedTask(task: CookTask, index: number): SchedTask | null {
-  const recipe = RECIPE_BY_ID[task.recipeId]
+  const recipe = recipeById(task.recipeId)
   if (!recipe) return null
   const portions = task.servings * task.scale
   const steps = recipe.steps.map((step) => ({ step, minutes: scaledMinutes(step, portions) }))
@@ -189,7 +189,7 @@ export function buildCookingPlans(menu: WeekMenu, household: Household): Cooking
         .filter((t) => t.freezerPortions > 0)
         .map((t) => ({
           recipeId: t.recipeId,
-          title: RECIPE_BY_ID[t.recipeId]?.title ?? t.recipeId,
+          title: recipeById(t.recipeId)?.title ?? t.recipeId,
           portions: t.freezerPortions,
           eatOnDays: [...t.eatDays].sort((a, b) => a - b),
         }))
@@ -211,8 +211,8 @@ export function buildCookingPlans(menu: WeekMenu, household: Household): Cooking
         cookDay,
         dishes: tasks.map((t) => ({
           recipeId: t.recipeId,
-          title: RECIPE_BY_ID[t.recipeId]?.title ?? t.recipeId,
-          emoji: RECIPE_BY_ID[t.recipeId]?.emoji ?? '🍽️',
+          title: recipeById(t.recipeId)?.title ?? t.recipeId,
+          emoji: recipeById(t.recipeId)?.emoji ?? '🍽️',
           servings: t.servings,
           scale: t.scale,
         })),

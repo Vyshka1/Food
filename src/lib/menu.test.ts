@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
-import { RECIPE_BY_ID } from '../data/recipes'
-import type { Eater, Household } from '../types'
+import { RECIPES, RECIPE_BY_ID } from '../data/recipes'
+import { setCustomRecipes } from '../data/recipeRegistry'
+import type { Eater, Household, Recipe } from '../types'
 import { buildWeekMenu, cookTasks, cookingSegments, dislikeHits, isRecipeAllowed } from './menu'
 
 function eater(patch: Partial<Eater> = {}): Eater {
@@ -158,5 +159,57 @@ describe('buildWeekMenu', () => {
       expect(task.servings).toBe(entries.reduce((s, e) => s + e.servings, 0))
       expect(task.eatDays.sort()).toEqual(entries.map((e) => e.day).sort())
     }
+  })
+})
+
+describe('свои рецепты', () => {
+  afterEach(() => setCustomRecipes([]))
+
+  const own = (patch: Partial<Recipe> = {}): Recipe => ({
+    id: 'custom-test',
+    title: 'Бабушкин суп',
+    emoji: '🍲',
+    slots: ['breakfast', 'lunch', 'dinner', 'snack'],
+    items: [
+      { ingredientId: 'potato', qty: 150 },
+      { ingredientId: 'chicken_fillet', qty: 120 },
+      { ingredientId: 'carrot', qty: 50 },
+    ],
+    steps: [
+      { text: 'Нарезать', minutes: 8, station: 'prep', handsOn: true },
+      { text: 'Варить', minutes: 25, station: 'stove', handsOn: false },
+    ],
+    tags: [],
+    freezable: true,
+    fridgeDays: 4,
+    custom: true,
+    ...patch,
+  })
+
+  it('участвуют в подборе наравне со встроенными', () => {
+    const h = household({ eaters: [eater({ bannedRecipes: RECIPES.map((r) => r.id) })] })
+    setCustomRecipes([own()])
+    const { menu } = buildWeekMenu(h, 1)
+    expect(menu.entries.length).toBeGreaterThan(0)
+    expect(menu.entries.every((e) => e.recipeId === 'custom-test')).toBe(true)
+  })
+
+  it('подчиняются аллергиям так же строго', () => {
+    const withMilk = own({ items: [{ ingredientId: 'milk', qty: 200 }] })
+    const h = household({
+      eaters: [eater({ allergies: ['lactose'], bannedRecipes: RECIPES.map((r) => r.id) })],
+    })
+    setCustomRecipes([withMilk])
+    expect(isRecipeAllowed(withMilk, h)).toBe(false)
+    const { menu } = buildWeekMenu(h, 1)
+    expect(menu.entries.some((e) => e.recipeId === 'custom-test')).toBe(false)
+  })
+
+  it('уходят из подбора после удаления', () => {
+    const h = household({ eaters: [eater({ bannedRecipes: RECIPES.map((r) => r.id) })] })
+    setCustomRecipes([own()])
+    expect(buildWeekMenu(h, 1).menu.entries.length).toBeGreaterThan(0)
+    setCustomRecipes([])
+    expect(buildWeekMenu(h, 1).menu.entries.length).toBe(0)
   })
 })

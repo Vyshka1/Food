@@ -1,5 +1,5 @@
 import { INGREDIENT_BY_ID } from '../data/ingredients'
-import { RECIPE_BY_ID } from '../data/recipes'
+import { recipeById } from '../data/recipeRegistry'
 import type { MenuEntry } from '../types'
 import { recipeStats } from '../lib/nutrition'
 import { formatQty } from '../lib/shopping'
@@ -25,7 +25,7 @@ export function RecipeSheet({
   onSwap: () => void
   onBan: () => void
 }) {
-  const recipe = RECIPE_BY_ID[entry.recipeId]
+  const recipe = recipeById(entry.recipeId)
   if (!recipe) return null
   const stats = recipeStats(recipe)
   const scale = entry.scale
