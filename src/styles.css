@@ -423,6 +423,10 @@ select {
   font-weight: 600;
 }
 
+.badge--fresh {
+  display: none;
+}
+
 .badge--freezer {
   background: #e2ecf6;
   color: #3a5f86;

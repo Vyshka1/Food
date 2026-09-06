@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { Eater, Household, Recipe, WeekMenu } from './types'
-import { buildWeekMenu, replaceEntry } from './lib/menu'
+import { buildWeekMenu, replaceEntryWith } from './lib/menu'
 import { setCustomRecipes } from './data/recipeRegistry'
 import { decodeProfile } from './lib/transfer'
 
@@ -68,7 +68,7 @@ export function defaultHousehold(): Household {
 interface Store extends AppState {
   saveHousehold: (household: Household) => void
   regenerate: (seed?: number) => void
-  swapDish: (entryId: string) => void
+  swapDish: (entryId: string, recipeId: string) => void
   toggleAtHome: (ingredientId: string) => void
   toggleBought: (ingredientId: string) => void
   banRecipe: (eaterId: string, recipeId: string) => void
@@ -141,15 +141,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [generateFor],
   )
 
-  const swapDish = useCallback((entryId: string) => {
+  const swapDish = useCallback((entryId: string, recipeId: string) => {
     setState((prev) => {
       if (!prev.household || !prev.menu) return prev
-      const menu: WeekMenu = replaceEntry(
-        prev.menu,
-        prev.household,
-        entryId,
-        Math.floor(Math.random() * 1e9),
-      )
+      const menu: WeekMenu = replaceEntryWith(prev.menu, prev.household, entryId, recipeId)
       return { ...prev, menu }
     })
   }, [])

@@ -7,6 +7,7 @@ import { recipeStats } from '../lib/nutrition'
 import { useStore } from '../store'
 import { CalorieRing, Card, Warnings } from '../components/ui'
 import { RecipeSheet } from '../components/RecipeSheet'
+import { ReplacePicker } from '../components/ReplacePicker'
 
 const STORAGE_BADGE: Record<string, { label: string; cls: string } | null> = {
   fresh: null,
@@ -25,6 +26,7 @@ export function MenuScreen() {
   const [day, setDay] = useState(() => (menu ? todayIndex(menu.weekStart) : 0))
   const [openEntry, setOpenEntry] = useState<MenuEntry | null>(null)
   const [note, setNote] = useState('')
+  const [replacing, setReplacing] = useState<MenuEntry | null>(null)
 
   const norms = useMemo(() => (household ? householdNorms(household) : null), [household])
   const totals = useMemo(() => (menu ? dayTotals(menu, day) : null), [menu, day])
@@ -138,10 +140,8 @@ export function MenuScreen() {
           entry={openEntry}
           onClose={() => setOpenEntry(null)}
           onSwap={() => {
-            swapDish(openEntry.id)
+            setReplacing(openEntry)
             setOpenEntry(null)
-            setNote('Блюдо заменено.')
-            setTimeout(() => setNote(''), 3000)
           }}
           onBan={() => {
             const title = recipeById(openEntry.recipeId)?.title ?? 'Блюдо'
@@ -149,6 +149,20 @@ export function MenuScreen() {
             setOpenEntry(null)
             setNote(`«${title}» больше не появится. Вернуть можно в профиле.`)
             setTimeout(() => setNote(''), 5000)
+          }}
+        />
+      )}
+
+      {replacing && (
+        <ReplacePicker
+          entry={replacing}
+          onClose={() => setReplacing(null)}
+          onPick={(recipeId) => {
+            const title = recipeById(recipeId)?.title ?? 'Блюдо'
+            swapDish(replacing.id, recipeId)
+            setReplacing(null)
+            setNote(`Поставили «${title}».`)
+            setTimeout(() => setNote(''), 3000)
           }}
         />
       )}
