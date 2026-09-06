@@ -6,8 +6,9 @@ import { WEEKDAYS, householdNorms } from '../lib/menu'
 import { defaultHousehold, newEater } from '../store'
 import { CalorieRing, Card, Chip, Field, Section, Segmented, Stepper, Switch } from '../components/ui'
 import { Icon } from '../components/icons'
+import { MACRO_COLOR } from '../lib/palette'
 
-const STEPS = ['Кто ест дома', 'Аллергии и вкусы', 'Режим питания', 'Кухня', 'Готово']
+const STEPS = ['Состав семьи', 'Аллергии и вкусы', 'Режим питания', 'Кухня', 'Готово']
 
 interface Props {
   initial?: Household | null
@@ -225,7 +226,7 @@ export function Onboarding({ initial, onDone, onCancel }: Props) {
                       })
                     }
                   >
-                    {c} ✕
+                    {c} <Icon name="close" size={13} />
                   </Chip>
                 ))}
               </div>
@@ -280,7 +281,7 @@ export function Onboarding({ initial, onDone, onCancel }: Props) {
                         })
                       }
                     >
-                      {d} ✕
+                      {d} <Icon name="close" size={13} />
                     </Chip>
                   ))}
               </div>
@@ -414,21 +415,21 @@ export function Onboarding({ initial, onDone, onCancel }: Props) {
               <div style={{ flex: 1 }}>
                 <div className="macro">
                   <span>
-                    <i className="dot" style={{ background: '#8ec06c' }} />
+                    <i className="dot" style={{ background: MACRO_COLOR.protein }} />
                     Белки
                   </span>
                   <b>{householdNorms(household).protein} г</b>
                 </div>
                 <div className="macro">
                   <span>
-                    <i className="dot" style={{ background: '#e0b352' }} />
+                    <i className="dot" style={{ background: MACRO_COLOR.fat }} />
                     Жиры
                   </span>
                   <b>{householdNorms(household).fat} г</b>
                 </div>
                 <div className="macro">
                   <span>
-                    <i className="dot" style={{ background: '#3f7233' }} />
+                    <i className="dot" style={{ background: MACRO_COLOR.carbs }} />
                     Углеводы
                   </span>
                   <b>{householdNorms(household).carbs} г</b>

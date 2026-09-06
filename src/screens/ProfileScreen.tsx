@@ -9,6 +9,7 @@ import { CalorieRing, Card, Section } from '../components/ui'
 import { Icon, recipeIcon } from '../components/icons'
 import { RECIPES } from '../data/recipes'
 import { plural } from '../lib/format'
+import { MACRO_COLOR } from '../lib/palette'
 
 export function ProfileScreen({
   onEdit,
@@ -50,21 +51,21 @@ export function ProfileScreen({
           <div style={{ flex: 1 }}>
             <div className="macro">
               <span>
-                <i className="dot" style={{ background: '#8ec06c' }} />
+                <i className="dot" style={{ background: MACRO_COLOR.protein }} />
                 Белки
               </span>
               <b>{norms.protein} г</b>
             </div>
             <div className="macro">
               <span>
-                <i className="dot" style={{ background: '#e0b352' }} />
+                <i className="dot" style={{ background: MACRO_COLOR.fat }} />
                 Жиры
               </span>
               <b>{norms.fat} г</b>
             </div>
             <div className="macro">
               <span>
-                <i className="dot" style={{ background: '#3f7233' }} />
+                <i className="dot" style={{ background: MACRO_COLOR.carbs }} />
                 Углеводы
               </span>
               <b>{norms.carbs} г</b>

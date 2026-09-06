@@ -154,7 +154,7 @@ function Editor({
                   onClick={() => patch({ items: recipe.items.filter((_, k) => k !== i) })}
                   aria-label="удалить продукт"
                 >
-                  ✕
+                  <Icon name="close" size={14} />
                 </button>
               </div>
             )
@@ -192,7 +192,7 @@ function Editor({
                   onClick={() => patch({ steps: recipe.steps.filter((_, k) => k !== i) })}
                   aria-label="удалить шаг"
                 >
-                  ✕
+                  <Icon name="close" size={14} />
                 </button>
               </div>
               <div className="row" style={{ gap: 8 }}>
@@ -342,7 +342,7 @@ export function MyRecipesScreen({ onBack }: { onBack: () => void }) {
     return (
       <div className="app">
         <button className="btn btn--ghost btn--small" style={{ marginTop: 16 }} onClick={() => setEditing(null)}>
-          ← Назад
+          <Icon name="back" size={15} /> Назад
         </button>
         <div className="screen-title">{customRecipes.some((r) => r.id === editing.id) ? 'Правка рецепта' : 'Новый рецепт'}</div>
         <div className="screen-sub">Он попадёт в общий подбор наравне со встроенными.</div>
@@ -362,9 +362,9 @@ export function MyRecipesScreen({ onBack }: { onBack: () => void }) {
   return (
     <div className="app">
       <button className="btn btn--ghost btn--small" style={{ marginTop: 16 }} onClick={onBack}>
-        ← Профиль
+        <Icon name="back" size={15} /> Профиль
       </button>
-      <div className="screen-title">Мои рецепты</div>
+      <div className="screen-title">{customRecipes.length === 0 ? 'Рецепты' : 'Мои рецепты'}</div>
       <div className="screen-sub">
         {customRecipes.length === 0
           ? 'Добавьте то, что готовите сами — приложение начнёт ставить это в меню.'
