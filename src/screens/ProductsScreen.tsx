@@ -82,7 +82,7 @@ export function ProductsScreen({ onShoppingMode }: { onShoppingMode: () => void 
                   onClick={() => toggleBought(line.ingredientId)}
                   aria-label="куплено"
                 >
-                  ✓
+                  <Icon name="check" size={17} />
                 </button>
                 <span className="product__name">
                   <b>

@@ -7,11 +7,16 @@
   --green-soft: #e2eed8;
   --green-tint: #f0f6ea;
   --ink: #24301d;
-  --muted: #6f7566;
+  --muted: #5f6656;
   --line: #e3e0d1;
   --warn: #b4623a;
-  --shadow: 0 2px 10px rgba(40, 45, 30, 0.06);
+  --shadow: 0 1px 2px rgba(40, 45, 30, 0.04), 0 5px 16px rgba(40, 45, 30, 0.05);
+  --shadow-lift: 0 -3px 18px rgba(40, 45, 30, 0.07);
+  /* Радиусы шкалой, а не на глаз: чем меньше элемент, тем меньше скругление. */
   --radius: 22px;
+  --radius-md: 14px;
+  --radius-sm: 10px;
+  --radius-xs: 7px;
   color-scheme: light;
 }
 
@@ -88,7 +93,6 @@ select {
   font-size: 12px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--muted);
   font-weight: 700;
   margin-bottom: 12px;
 }
@@ -126,17 +130,31 @@ select {
 .warning {
   background: #fdf1e7;
   color: var(--warn);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   padding: 10px 12px;
   font-size: 13px;
   line-height: 1.4;
   margin-bottom: 10px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.warning__icon {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+/* Иконка в кнопке — с текстом на одной линии, а не «прыгает» по базовой. */
+.btn svg,
+.chip svg {
+  vertical-align: -2px;
 }
 
 /* ── Кнопки и чипы ────────────────────────────────────────────────────── */
 .btn {
   border: none;
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   padding: 14px 18px;
   background: var(--green);
   color: #fff;
@@ -166,13 +184,13 @@ select {
   width: auto;
   padding: 8px 14px;
   font-size: 14px;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
 }
 
 .chip {
   border: 1px solid var(--line);
   background: var(--card);
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   padding: 9px 14px;
   font-size: 15px;
   display: inline-flex;
@@ -202,7 +220,7 @@ select {
   flex: 1;
   border: 1px solid var(--line);
   background: var(--card);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   padding: 12px 0;
   font-size: 14px;
   font-weight: 600;
@@ -230,7 +248,7 @@ select {
 .field input,
 .field select {
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   padding: 12px 14px;
   background: #fff;
   width: 100%;
@@ -245,7 +263,7 @@ select {
 .segmented {
   display: flex;
   background: var(--card-soft);
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   padding: 3px;
   gap: 3px;
 }
@@ -254,7 +272,7 @@ select {
   flex: 1;
   border: none;
   background: transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-xs);
   padding: 9px 6px;
   font-size: 14px;
   font-weight: 600;
@@ -276,7 +294,7 @@ select {
 .stepper button {
   width: 36px;
   height: 36px;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--line);
   background: #fff;
   font-size: 18px;
@@ -335,7 +353,7 @@ select {
   flex: 1;
   border: none;
   background: transparent;
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   padding: 8px 0;
   text-align: center;
 }
@@ -371,7 +389,7 @@ select {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #b07d3f;
+  color: #8f5f28;
 }
 
 .dish {
@@ -396,7 +414,7 @@ select {
   display: grid;
   place-items: center;
   background: var(--green-tint);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   flex: 0 0 auto;
 }
 
@@ -417,7 +435,7 @@ select {
   display: inline-block;
   font-size: 11px;
   padding: 3px 8px;
-  border-radius: 8px;
+  border-radius: var(--radius-xs);
   background: var(--green-soft);
   color: var(--green-dark);
   margin-top: 6px;
@@ -436,7 +454,7 @@ select {
 
 .badge--fridge {
   background: #eeeade;
-  color: #7d7350;
+  color: #6b6244;
 }
 
 /* ── Кольцо нормы ─────────────────────────────────────────────────────── */
@@ -505,7 +523,7 @@ select {
   position: relative;
   padding: 12px 14px;
   background: var(--card);
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   margin-bottom: 8px;
   box-shadow: var(--shadow);
 }
@@ -553,7 +571,7 @@ select {
 .plan-stat {
   flex: 1;
   background: var(--card);
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   padding: 12px;
   box-shadow: var(--shadow);
 }
@@ -622,7 +640,7 @@ select {
 .home-pill {
   border: 1px solid var(--line);
   background: #fff;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   padding: 6px 10px;
   font-size: 12px;
   color: var(--muted);
@@ -658,6 +676,7 @@ select {
   max-height: 88vh;
   overflow-y: auto;
   border-radius: 24px 24px 0 0;
+  box-shadow: 0 -8px 40px rgba(30, 35, 25, 0.16);
   padding: 8px 16px calc(24px + env(safe-area-inset-bottom));
   animation: sheet-in 0.2s ease;
 }
@@ -754,6 +773,7 @@ select {
   background: rgba(251, 250, 244, 0.96);
   backdrop-filter: blur(12px);
   border-top: 1px solid var(--line);
+  box-shadow: var(--shadow-lift);
   display: flex;
   padding: 8px 8px calc(8px + env(safe-area-inset-bottom));
   z-index: 20;
@@ -771,7 +791,7 @@ select {
   border: none;
   background: transparent;
   padding: 6px 0;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   font-size: 11px;
   color: var(--muted);
   display: flex;
@@ -878,7 +898,7 @@ select {
 .shop__share {
   border: 1px solid var(--line);
   background: var(--card);
-  border-radius: 14px;
+  border-radius: var(--radius-sm);
   padding: 12px 14px;
   font-size: 16px;
   font-weight: 600;
@@ -906,7 +926,7 @@ select {
 .shop__note {
   background: var(--green-soft);
   color: var(--green-dark);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   padding: 10px 12px;
   font-size: 15px;
   margin-bottom: 10px;
@@ -941,7 +961,7 @@ select {
   width: 100%;
   border: none;
   background: var(--card);
-  border-radius: 18px;
+  border-radius: var(--radius);
   padding: 18px 16px;
   margin-bottom: 8px;
   text-align: left;
@@ -994,4 +1014,9 @@ select {
   text-align: center;
   font-size: 20px;
   padding: 40px 0;
+}
+
+.shop__done svg {
+  color: var(--green);
+  margin-bottom: 10px;
 }

@@ -4,6 +4,7 @@ import type { ShoppingLine } from '../types'
 import { buildShoppingList, formatQty, shoppingListText } from '../lib/shopping'
 import { plural } from '../lib/format'
 import { useStore } from '../store'
+import { Icon } from '../components/icons'
 
 /** В магазине экран не должен гаснуть; где API нет — просто работаем как обычно. */
 function useKeepAwake(): void {
@@ -71,7 +72,7 @@ export function ShoppingModeScreen({ onExit }: { onExit: () => void }) {
     <div className="shop">
       <div className="shop__bar">
         <button className="shop__back" onClick={onExit} aria-label="выйти из режима магазина">
-          ✕
+          <Icon name="close" size={18} />
         </button>
         <div className="shop__counter">
           <b>{left.length}</b> {plural(left.length, ['позиция', 'позиции', 'позиций'])} · ≈{' '}
@@ -95,7 +96,8 @@ export function ShoppingModeScreen({ onExit }: { onExit: () => void }) {
 
       {left.length === 0 && (
         <div className="shop__done">
-          Всё собрано 🎉
+          <Icon name="party" size={30} />
+          <div>Всё собрано</div>
           <button className="btn btn--soft" style={{ marginTop: 16 }} onClick={onExit}>
             Готово
           </button>
@@ -115,7 +117,7 @@ export function ShoppingModeScreen({ onExit }: { onExit: () => void }) {
                 onClick={() => toggleBought(line.ingredientId)}
               >
                 <span className="shop__check" aria-hidden>
-                  {done ? '✓' : ''}
+                  {done && <Icon name="check" size={20} />}
                 </span>
                 <span className="shop__name">{line.name}</span>
                 <span className="shop__qty">{formatQty(line.buy, line.unit)}</span>

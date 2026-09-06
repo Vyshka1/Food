@@ -9,6 +9,7 @@ import { CalorieRing, Card, Warnings } from '../components/ui'
 import { RecipeSheet } from '../components/RecipeSheet'
 import { Icon, recipeIcon } from '../components/icons'
 import { plural } from '../lib/format'
+import { MACRO_COLOR } from '../lib/palette'
 import { ReplacePicker } from '../components/ReplacePicker'
 
 const STORAGE_BADGE: Record<string, { label: string; cls: string } | null> = {
@@ -67,9 +68,9 @@ export function MenuScreen() {
   /** Отклонение больше 15% подсвечиваем: «99% нормы» не должно скрывать перекос по БЖУ. */
   const off = (value: number) => (Math.abs(value - 100) > 15 ? { color: 'var(--warn)' } : undefined)
   const macros = [
-    { label: 'Белки', color: '#8ec06c', fact: totals.protein, norm: norms.protein },
-    { label: 'Жиры', color: '#e0b352', fact: totals.fat, norm: norms.fat },
-    { label: 'Углеводы', color: '#3f7233', fact: totals.carbs, norm: norms.carbs },
+    { label: 'Белки', color: MACRO_COLOR.protein, fact: totals.protein, norm: norms.protein },
+    { label: 'Жиры', color: MACRO_COLOR.fat, fact: totals.fat, norm: norms.fat },
+    { label: 'Углеводы', color: MACRO_COLOR.carbs, fact: totals.carbs, norm: norms.carbs },
   ]
 
   return (

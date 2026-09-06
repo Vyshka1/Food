@@ -31,6 +31,10 @@ export type IconName =
   | 'kitchen'
   | 'people'
   | 'check'
+  | 'close'
+  | 'back'
+  | 'alert'
+  | 'party'
 
 const PATHS: Record<IconName, string> = {
   // навигация
@@ -63,6 +67,10 @@ const PATHS: Record<IconName, string> = {
   kitchen: 'M4 8h16v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V8ZM4 8V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v3M8 6h.01M12 6h.01M9 12h6',
   people: 'M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7ZM2 20c0-3 3.1-5 7-5s7 2 7 5M17 11a3 3 0 1 0 0-6M18 20c0-2 .5-3.5-1-4.5',
   check: 'M5 12.5 9.5 17 19 7',
+  close: 'M6 6l12 12M18 6 6 18',
+  back: 'M15 5l-7 7 7 7',
+  alert: 'M12 3.5 1.8 20.5h20.4L12 3.5ZM12 10v4M12 17.5h.01',
+  party: 'M4 20l5.5-13 8.5 8.5L4 20ZM14 4.5c1 .5 1.3 1.6 1 2.5M18.5 3c.6 1.2.2 2.4-.7 3M20.5 8.5c-1 .3-2 0-2.6-.8M17 12.5c.8-.9 2-1.1 3-.6',
 }
 
 export function Icon({

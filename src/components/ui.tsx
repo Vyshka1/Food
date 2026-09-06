@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { Icon, type IconName } from './icons'
+import { MACRO_COLOR, RING_TRACK } from '../lib/palette'
 
 export function Card({
   children,
@@ -182,7 +183,7 @@ export function Sheet({ children, onClose }: { children: ReactNode; onClose: () 
             aria-label="Закрыть"
           />
           <button type="button" className="sheet__close" onClick={onClose} aria-label="Закрыть">
-            ✕
+            <Icon name="close" size={16} />
           </button>
         </div>
         {children}
@@ -209,15 +210,15 @@ export function CalorieRing({
   const radius = 48
   const circumference = 2 * Math.PI * radius
   const parts = [
-    { value: (protein * 4) / total, color: '#8ec06c' },
-    { value: (fat * 9) / total, color: '#e0b352' },
-    { value: (carbs * 4) / total, color: '#3f7233' },
+    { value: (protein * 4) / total, color: MACRO_COLOR.protein },
+    { value: (fat * 9) / total, color: MACRO_COLOR.fat },
+    { value: (carbs * 4) / total, color: MACRO_COLOR.carbs },
   ]
   let offset = 0
   return (
     <div className="ring">
       <svg width="116" height="116" viewBox="0 0 116 116">
-        <circle cx="58" cy="58" r={radius} fill="none" stroke="#eae7d9" strokeWidth="12" />
+        <circle cx="58" cy="58" r={radius} fill="none" stroke={RING_TRACK} strokeWidth="12" />
         {parts.map((p, i) => {
           const dash = p.value * circumference
           const el = (
@@ -252,7 +253,8 @@ export function Warnings({ items }: { items: string[] }) {
     <>
       {items.map((w, i) => (
         <div className="warning" key={i}>
-          ⚠️ {w}
+          <Icon name="alert" size={16} className="warning__icon" />
+          <span>{w}</span>
         </div>
       ))}
     </>
