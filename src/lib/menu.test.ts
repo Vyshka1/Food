@@ -3,7 +3,15 @@ import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { RECIPES, RECIPE_BY_ID } from '../data/recipes'
 import { setCustomRecipes } from '../data/recipeRegistry'
 import type { Eater, Household, Recipe } from '../types'
-import { buildWeekMenu, cookTasks, cookingSegments, dislikeHits, isRecipeAllowed } from './menu'
+import {
+  buildWeekMenu,
+  cookTasks,
+  cookingSegments,
+  dislikeHits,
+  isRecipeAllowed,
+  replaceEntryWith,
+  replacementOptions,
+} from './menu'
 
 function eater(patch: Partial<Eater> = {}): Eater {
   return {
@@ -211,5 +219,59 @@ describe('свои рецепты', () => {
     expect(buildWeekMenu(h, 1).menu.entries.length).toBeGreaterThan(0)
     setCustomRecipes([])
     expect(buildWeekMenu(h, 1).menu.entries.length).toBe(0)
+  })
+})
+
+describe('выбор блюда на замену', () => {
+  const h = household()
+  const { menu } = buildWeekMenu(h, 42)
+  const entry = menu.entries[0]
+
+  it('предлагает варианты, подходящие приёму пищи, и не предлагает текущее блюдо', () => {
+    const options = replacementOptions(menu, h, entry.id)
+    expect(options.length).toBeGreaterThan(3)
+    for (const o of options) {
+      expect(o.recipe.slots).toContain(entry.slot)
+      expect(o.recipe.id).not.toBe(entry.recipeId)
+      expect(o.kcal).toBeGreaterThan(0)
+    }
+  })
+
+  it('не предлагает то, что уже стоит в этот день', () => {
+    const sameDay = new Set(
+      menu.entries.filter((e) => e.day === entry.day && e.id !== entry.id).map((e) => e.recipeId),
+    )
+    for (const o of replacementOptions(menu, h, entry.id)) {
+      expect(sameDay.has(o.recipe.id)).toBe(false)
+    }
+  })
+
+  it('уважает аллергии', () => {
+    const strict = household({ eaters: [eater({ allergies: ['lactose', 'gluten'] })] })
+    const built = buildWeekMenu(strict, 3).menu
+    for (const o of replacementOptions(built, strict, built.entries[0].id)) {
+      expect(isRecipeAllowed(o.recipe, strict)).toBe(true)
+    }
+  })
+
+  it('ставит выбранное блюдо и не трогает остальные дни', () => {
+    const pick = replacementOptions(menu, h, entry.id)[0]
+    const updated = replaceEntryWith(menu, h, entry.id, pick.recipe.id)
+    const replaced = updated.entries.find((e) => e.day === entry.day && e.slot === entry.slot)
+    expect(replaced?.recipeId).toBe(pick.recipe.id)
+    expect(replaced?.scale).toBe(pick.scale)
+    expect(updated.entries.length).toBe(menu.entries.length)
+    const untouched = updated.entries.filter((e) => e.id !== replaced?.id)
+    expect(untouched).toEqual(menu.entries.filter((e) => e.id !== entry.id))
+  })
+
+  it('игнорирует рецепт, который не доживёт до этого дня', () => {
+    const frozenSunday = menu.entries.find((e) => e.day - e.cookDay >= 2)
+    if (!frozenSunday) return
+    const options = replacementOptions(menu, h, frozenSunday.id)
+    for (const o of options) {
+      const age = frozenSunday.day - frozenSunday.cookDay
+      if (age > o.recipe.fridgeDays) expect(o.recipe.freezable).toBe(true)
+    }
   })
 })

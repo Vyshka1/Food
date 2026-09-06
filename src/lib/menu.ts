@@ -370,18 +370,29 @@ export function buildWeekMenu(household: Household, seed: number): MenuBuildResu
 }
 
 /** Заменяет одно блюдо в меню на следующее по рангу, сохраняя остальное. */
-export function replaceEntry(
+/** Вариант замены с посчитанной порцией — чтобы показать выбор, а не решать за человека. */
+export interface ReplacementOption {
+  recipe: Recipe
+  scale: number
+  kcal: number
+  price: number
+  minutes: number
+  storage: Storage
+}
+
+/** Ранжированные кандидаты на замену блюда: лучший по подбору — первым. */
+export function replacementOptions(
   menu: WeekMenu,
   household: Household,
   entryId: string,
-  seed: number,
-): WeekMenu {
+  limit = 20,
+): ReplacementOption[] {
   const entry = menu.entries.find((e) => e.id === entryId)
-  if (!entry) return menu
-  const targets = slotTargets(household)
-  const target = targets[entry.slot] ?? 500
-  const usedToday = new Set(menu.entries.filter((e) => e.day === entry.day).map((e) => e.recipeId))
-  const rnd = mulberry32(seed)
+  if (!entry) return []
+  const target = slotTargets(household)[entry.slot] ?? 500
+  const usedToday = new Set(
+    menu.entries.filter((e) => e.day === entry.day && e.id !== entryId).map((e) => e.recipeId),
+  )
   const state: PickState = { usedCount: new Map(), lastDay: new Map(), day: new Map() }
   for (const e of menu.entries) {
     if (e.id === entryId) continue
@@ -389,14 +400,15 @@ export function replaceEntry(
     state.lastDay.set(e.recipeId, e.day)
   }
 
-  const candidate = allRecipes().filter(
-    (r) =>
-      r.slots.includes(entry.slot) &&
-      isRecipeAllowed(r, household) &&
-      r.id !== entry.recipeId &&
-      !usedToday.has(r.id) &&
-      storageFor(r, entry.day - entry.cookDay, household.kitchen.hasFreezer) !== null,
-  )
+  return allRecipes()
+    .filter(
+      (r) =>
+        r.slots.includes(entry.slot) &&
+        isRecipeAllowed(r, household) &&
+        r.id !== entry.recipeId &&
+        !usedToday.has(r.id) &&
+        storageFor(r, entry.day - entry.cookDay, household.kitchen.hasFreezer) !== null,
+    )
     .map((recipe) => ({
       recipe,
       score: scoreRecipe(recipe, {
@@ -405,23 +417,44 @@ export function replaceEntry(
         targetMacros: macroShares(householdNorms(household)),
         day: entry.day,
         state,
-        jitter: rnd(),
+        jitter: 0,
       }),
     }))
-    .sort((a, b) => a.score - b.score)[0]
+    .sort((a, b) => a.score - b.score)
+    .slice(0, limit)
+    .map(({ recipe }) => {
+      const scale = portionScale(recipe, target)
+      const stats = recipeStats(recipe)
+      return {
+        recipe,
+        scale,
+        kcal: Math.round(stats.kcal * scale),
+        price: Math.round(stats.price * scale),
+        minutes: recipe.steps.reduce((sum, step) => sum + step.minutes, 0),
+        storage: storageFor(recipe, entry.day - entry.cookDay, household.kitchen.hasFreezer)!,
+      }
+    })
+}
 
-  if (!candidate) return menu
-
+/** Ставит на место блюда конкретный рецепт, выбранный человеком. */
+export function replaceEntryWith(
+  menu: WeekMenu,
+  household: Household,
+  entryId: string,
+  recipeId: string,
+): WeekMenu {
+  const entry = menu.entries.find((e) => e.id === entryId)
+  const recipe = allRecipes().find((r) => r.id === recipeId)
+  if (!entry || !recipe) return menu
+  const storage = storageFor(recipe, entry.day - entry.cookDay, household.kitchen.hasFreezer)
+  if (!storage) return menu
+  const target = slotTargets(household)[entry.slot] ?? 500
   const replaced: MenuEntry = {
     ...entry,
-    id: `${entry.slot}-${entry.day}-${candidate.recipe.id}`,
-    recipeId: candidate.recipe.id,
-    scale: portionScale(candidate.recipe, target),
-    storage: storageFor(
-      candidate.recipe,
-      entry.day - entry.cookDay,
-      household.kitchen.hasFreezer,
-    )!,
+    id: `${entry.slot}-${entry.day}-${recipe.id}`,
+    recipeId: recipe.id,
+    scale: portionScale(recipe, target),
+    storage,
   }
   return { ...menu, entries: menu.entries.map((e) => (e.id === entryId ? replaced : e)) }
 }
