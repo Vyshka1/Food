@@ -26,7 +26,11 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      # enablement: true включает Pages через API, если они ещё не включены
+      # в настройках репозитория — иначе шаг падает с «Get Pages site failed»
       - uses: actions/configure-pages@v5
+        with:
+          enablement: true
       - uses: actions/upload-pages-artifact@v3
         with:
           path: dist

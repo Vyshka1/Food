@@ -67,8 +67,9 @@ npm run build
 GitHub Pages. Сборка идёт с относительными путями (`base: './'`), поэтому одинаково
 работает и локально, и в подпапке репозитория на Pages.
 
-Один раз нужно включить Pages вручную: **Settings → Pages → Source: GitHub Actions**.
-После этого приложение открывается по адресу `https://vyshka1.github.io/Food/`.
+Pages включаются самим workflow (`configure-pages` с `enablement: true`), отдельная
+настройка репозитория не нужна. Приложение открывается по адресу
+`https://vyshka1.github.io/Food/`.
 
 ## Структура
 
