@@ -24,6 +24,7 @@ export function MenuScreen() {
   const { household, menu, warnings, regenerate, swapDish, banRecipe } = useStore()
   const [day, setDay] = useState(() => (menu ? todayIndex(menu.weekStart) : 0))
   const [openEntry, setOpenEntry] = useState<MenuEntry | null>(null)
+  const [note, setNote] = useState('')
 
   const norms = useMemo(() => (household ? householdNorms(household) : null), [household])
   const totals = useMemo(() => (menu ? dayTotals(menu, day) : null), [menu, day])
@@ -50,6 +51,8 @@ export function MenuScreen() {
       </div>
 
       <Warnings items={warnings} />
+
+      {note && <div className="shop__note">{note}</div>}
 
       <Card>
         <div className="ring-row">
@@ -137,10 +140,15 @@ export function MenuScreen() {
           onSwap={() => {
             swapDish(openEntry.id)
             setOpenEntry(null)
+            setNote('Блюдо заменено.')
+            setTimeout(() => setNote(''), 3000)
           }}
           onBan={() => {
+            const title = recipeById(openEntry.recipeId)?.title ?? 'Блюдо'
             household.eaters.forEach((e) => banRecipe(e.id, openEntry.recipeId))
             setOpenEntry(null)
+            setNote(`«${title}» больше не появится. Вернуть можно в профиле.`)
+            setTimeout(() => setNote(''), 5000)
           }}
         />
       )}

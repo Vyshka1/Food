@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import type { ReactNode } from 'react'
 
 export function Card({
@@ -146,10 +147,43 @@ export function Switch({ on, onChange }: { on: boolean; onChange: (on: boolean) 
 }
 
 export function Sheet({ children, onClose }: { children: ReactNode; onClose: () => void }) {
+  // Шторка занимает почти весь экран, поэтому «нажать мимо» — не способ её закрыть:
+  // нужен явный крестик, Esc и свайп вниз.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const swipeStart = useRef<number | null>(null)
+
   return (
     <div className="sheet-backdrop" onClick={onClose}>
-      <div className="sheet" onClick={(e) => e.stopPropagation()}>
-        <div className="sheet__grip" />
+      <div
+        className="sheet"
+        onClick={(e) => e.stopPropagation()}
+        onTouchStart={(e) => {
+          swipeStart.current = e.currentTarget.scrollTop === 0 ? e.touches[0].clientY : null
+        }}
+        onTouchEnd={(e) => {
+          const start = swipeStart.current
+          swipeStart.current = null
+          if (start !== null && e.changedTouches[0].clientY - start > 90) onClose()
+        }}
+      >
+        <div className="sheet__head">
+          <button
+            type="button"
+            className="sheet__grip"
+            onClick={onClose}
+            aria-label="Закрыть"
+          />
+          <button type="button" className="sheet__close" onClick={onClose} aria-label="Закрыть">
+            ✕
+          </button>
+        </div>
         {children}
       </div>
     </div>

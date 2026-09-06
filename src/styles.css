@@ -657,12 +657,49 @@ select {
   }
 }
 
+.sheet__head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 0 10px;
+  background: var(--bg);
+}
+
 .sheet__grip {
+  width: 60px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  position: relative;
+  padding: 0;
+}
+
+.sheet__grip::after {
+  content: '';
+  position: absolute;
+  left: 9px;
+  top: 8px;
   width: 42px;
   height: 4px;
   border-radius: 2px;
   background: var(--line);
-  margin: 8px auto 14px;
+}
+
+.sheet__close {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--card);
+  font-size: 16px;
+  line-height: 1;
+  color: var(--muted);
 }
 
 .ing-line {
