@@ -67,9 +67,16 @@ npm run build
 GitHub Pages. Сборка идёт с относительными путями (`base: './'`), поэтому одинаково
 работает и локально, и в подпапке репозитория на Pages.
 
-Pages включаются самим workflow (`configure-pages` с `enablement: true`), отдельная
-настройка репозитория не нужна. Приложение открывается по адресу
-`https://vyshka1.github.io/Food/`.
+Один раз нужно включить Pages: **Settings → Pages → Source: GitHub Actions**. Workflow
+пробует включить их сам (`configure-pages` с `enablement: true`), но у `GITHUB_TOKEN`
+не всегда есть право создать Pages-сайт — тогда шаг падает с `Create Pages site
+failed: Resource not accessible by integration`, и помогает только ручное включение.
+Когда Pages включены, этот параметр становится безобидным: сайт уже существует и
+создавать его не нужно.
+
+После включения приложение открывается по адресу `https://vyshka1.github.io/Food/`
+(деплой можно запустить, не дожидаясь следующего пуша: Actions → Deploy to GitHub
+Pages → Run workflow).
 
 ## Структура
 
