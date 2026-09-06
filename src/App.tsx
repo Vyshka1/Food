@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { StoreProvider, useStore } from './store'
 import { Onboarding } from './screens/Onboarding'
 import { MenuScreen } from './screens/MenuScreen'
@@ -18,7 +18,17 @@ const TABS: { id: Tab; label: string; icon: string }[] = [
 ]
 
 function Shell() {
-  const { household, menu, saveHousehold } = useStore()
+  const { household, menu, saveHousehold, importProfile } = useStore()
+  const [imported, setImported] = useState<'ok' | 'fail' | null>(null)
+
+  // Ссылка вида …#data=… переносит анкету с другого устройства
+  useEffect(() => {
+    const hash = window.location.hash
+    if (!hash.startsWith('#data=')) return
+    const ok = importProfile(hash)
+    setImported(ok ? 'ok' : 'fail')
+    window.history.replaceState(null, '', window.location.pathname + window.location.search)
+  }, [importProfile])
   const [tab, setTab] = useState<Tab>('menu')
   const [editing, setEditing] = useState(false)
   const [shopping, setShopping] = useState(false)
@@ -41,6 +51,22 @@ function Shell() {
 
   return (
     <>
+      {imported && (
+        <div className="app" style={{ minHeight: 0, paddingBottom: 0, paddingTop: 12 }}>
+          <div className={imported === 'ok' ? 'shop__note' : 'warning'}>
+            {imported === 'ok'
+              ? 'Данные из ссылки загружены — меню собрано заново.'
+              : 'Не удалось прочитать данные из ссылки.'}
+            <button
+              className="btn btn--small btn--soft"
+              style={{ marginLeft: 10 }}
+              onClick={() => setImported(null)}
+            >
+              Понятно
+            </button>
+          </div>
+        </div>
+      )}
       {tab === 'menu' && <MenuScreen />}
       {tab === 'plan' && <PlanScreen />}
       {tab === 'products' && <ProductsScreen onShoppingMode={() => setShopping(true)} />}
