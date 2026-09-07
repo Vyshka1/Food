@@ -777,6 +777,11 @@ select {
   color: var(--muted);
 }
 
+/* Остаток вскрытой упаковки — не ошибка, но человек должен его увидеть. */
+.product__left {
+  color: #8f5f28;
+}
+
 .product__price {
   font-weight: 700;
   font-variant-numeric: tabular-nums;

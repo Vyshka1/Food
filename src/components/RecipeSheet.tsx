@@ -2,11 +2,11 @@ import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { recipeById } from '../data/recipeRegistry'
 import type { MenuEntry } from '../types'
 import { recipeStats } from '../lib/nutrition'
-import { formatQty } from '../lib/shopping'
 import { formatDuration } from '../lib/cookingPlan'
 import { WEEKDAYS_FULL } from '../lib/menu'
 import { plural } from '../lib/format'
 import { cookBatch } from '../lib/servings'
+import { householdQty } from '../lib/measures'
 import { useStore } from '../store'
 import { Sheet } from './ui'
 import { Icon } from './icons'
@@ -101,11 +101,14 @@ export function RecipeSheet({
         {recipe.items.map((item) => {
           const ing = INGREDIENT_BY_ID[item.ingredientId]
           if (!ing) return null
-          const qty = item.qty * scale
+          const measure = householdQty(ing, item.qty * scale)
           return (
             <div className="ing-line" key={item.ingredientId}>
               <span>{ing.name}</span>
-              <b>{formatQty(ing.unit === 'pcs' ? Math.round(qty * 2) / 2 : qty, ing.unit)}</b>
+              <b>
+                {measure.text}
+                {measure.approx && <span className="muted small"> · {measure.approx}</span>}
+              </b>
             </div>
           )
         })}
