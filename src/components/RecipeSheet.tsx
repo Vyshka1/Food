@@ -274,10 +274,16 @@ export function RecipeSheet({
             </b>
           </div>
         )}
-        {card.unplacedGrams > 0 && (
+        {card.eatSoonGrams > 0 && (
           <div className="ing-line">
             <span className="muted">Останется</span>
-            <b>{card.unplacedGrams} г — доесть в ближайшие дни</b>
+            <b>{card.eatSoonGrams} г — доесть в ближайшие дни</b>
+          </div>
+        )}
+        {card.unplacedGrams > 0 && (
+          <div className="ing-line">
+            <span className="muted">Некуда убрать</span>
+            <b>{card.unplacedGrams} г — в морозилке нет места</b>
           </div>
         )}
 

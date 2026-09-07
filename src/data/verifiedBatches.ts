@@ -51,12 +51,18 @@ function meatBatch(
   }
 }
 
-/** Кастрюля: суп и рагу варят объёмом, а не порциями. */
+/**
+ * Кастрюля: суп и рагу варят объёмом, а не порциями.
+ *
+ * Шаг мелкий: «меньше кастрюли непрактично» — ограничение снизу, а не
+ * требование варить строго кратно кастрюле. Полную кастрюлю можно налить на
+ * три четверти, и это обычное дело.
+ */
 function potBatch(yieldGrams: number): RecipeBatch {
   return {
     source: 'verified',
     baseScale: 4,
-    scales: [1, 1.5, 2],
+    scales: [1, 1.25, 1.5, 1.75, 2],
     minScale: 1,
     yieldGrams,
     freezeCooked: true,
@@ -65,12 +71,12 @@ function potBatch(yieldGrams: number): RecipeBatch {
   }
 }
 
-/** Форма или противень: больше просто не помещается. */
+/** Форма или противень: больше просто не помещается, а меньше — можно. */
 function formBatch(baseScale: number, yieldGrams: number): RecipeBatch {
   return {
     source: 'verified',
     baseScale,
-    scales: [1, 1.5, 2],
+    scales: [1, 1.25, 1.5, 1.75, 2],
     minScale: 1,
     yieldGrams,
     freezeCooked: true,
