@@ -167,8 +167,11 @@ export function isRecipeAllowed(recipe: Recipe, household: Household): boolean {
   const custom = household.eaters.flatMap((e) => e.customAllergens)
   if (hasCustomAllergen(recipe, custom)) return false
   if (household.eaters.some((e) => e.bannedRecipes.includes(recipe.id))) return false
-  if (recipe.needs?.includes('oven') && !household.kitchen.hasOven) return false
-  if (recipe.needs?.includes('blender') && !household.kitchen.hasBlender) return false
+  // приборы: духовку может заменить аэрогриль, блендер — комбайн
+  if (recipe.needs?.includes('oven') && household.kitchen.ovens < 1 && !household.kitchen.hasAirfryer)
+    return false
+  if (recipe.needs?.includes('blender') && !household.kitchen.hasBlender && !household.kitchen.hasProcessor)
+    return false
   return true
 }
 

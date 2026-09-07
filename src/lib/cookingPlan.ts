@@ -1,5 +1,15 @@
 import { recipeById } from '../data/recipeRegistry'
-import type { CookingPlan, FreezeTask, Household, PlannedStep, RecipeStep, WeekMenu } from '../types'
+import type {
+  Appliance,
+  CookingPlan,
+  FreezeTask,
+  Household,
+  Kitchen,
+  PlannedStep,
+  RecipeStep,
+  WeekMenu,
+} from '../types'
+import { APPLIANCE_LABEL, applianceCapacity } from '../types'
 import { WEEKDAYS_FULL, cookTasks, type CookTask } from './menu'
 
 /**
@@ -14,12 +24,24 @@ export function scaledMinutes(step: RecipeStep, portions: number): number {
   return Math.max(1, Math.round(step.minutes * factor))
 }
 
+/**
+ * Активные минуты шага с той же поправкой на порции. Растёт только ручная
+ * часть: духовка печёт двойную порцию столько же, а нарезать нужно вдвое
+ * больше.
+ */
+export function scaledActiveMinutes(step: RecipeStep, portions: number): number {
+  const active = step.activeMinutes ?? (step.handsOn ? step.minutes : 0)
+  if (active === 0) return 0
+  const factor = Math.min(2, 0.7 + 0.3 * Math.max(1, portions))
+  return Math.min(scaledMinutes(step, portions), Math.max(1, Math.round(active * factor)))
+}
+
 interface SchedTask {
   index: number
   recipeId: string
   title: string
   emoji: string
-  steps: { step: RecipeStep; minutes: number }[]
+  steps: { step: RecipeStep; minutes: number; activeMinutes: number }[]
   /** Сколько минут осталось от шага i до конца. */
   remaining: number[]
 }
@@ -29,41 +51,55 @@ interface Running {
   stepIndex: number
   end: number
   usesCook: boolean
-  usesBurner: boolean
-  usesOven: boolean
+  appliance?: Appliance
 }
 
 export interface ScheduleResult {
   steps: PlannedStep[]
   makespan: number
+  /** Минуты, когда повар занят целиком и ничем другим заняться не может. */
   handsOnMinutes: number
+  /**
+   * Присмотр поверх этого: помешать, перевернуть, заглянуть в кастрюлю. Такие
+   * минуты идут параллельно другим делам, поэтому складывать их с handsOn
+   * нельзя — сумма легко превысила бы всё время готовки, чего с одним поваром
+   * не бывает.
+   */
+  attentionMinutes: number
   maxParallel: number
   warnings: string[]
 }
 
 /**
- * Списочное расписание с ограниченными ресурсами: один повар, N конфорок,
- * одна духовка. Пока что-то тушится, руки заняты следующим блюдом.
+ * Списочное расписание с ограниченными ресурсами: один повар и приборы кухни.
+ * Каждый прибор — отдельный ресурс со своей ёмкостью: четыре конфорки, две
+ * духовки, один блендер. Раньше блендер вообще не был ресурсом, и план мог
+ * поставить два блендерных шага в одну минуту — красиво и невыполнимо.
  */
-export function scheduleSteps(tasks: SchedTask[], burners: number, ovens: number): ScheduleResult {
+export function scheduleSteps(tasks: SchedTask[], kitchen: Kitchen): ScheduleResult {
   const planned: PlannedStep[] = []
   const warnings: string[] = []
   const nextStep = tasks.map(() => 0)
   const running: Running[] = []
   let time = 0
   let cookBusy = false
-  let burnersUsed = 0
-  let ovensUsed = 0
+  const used = new Map<Appliance, number>()
   let handsOnMinutes = 0
+  let attentionMinutes = 0
   let forced = false
+  const missing = new Set<Appliance>()
+
+  const capacityOf = (appliance: Appliance): number => {
+    const capacity = applianceCapacity(kitchen, appliance)
+    if (capacity > 0) return capacity
+    // прибора нет: шаг всё равно надо куда-то поставить, но честно предупредить
+    missing.add(appliance)
+    return 1
+  }
 
   const needs = (task: SchedTask, stepIndex: number) => {
     const { step } = task.steps[stepIndex]
-    return {
-      cook: step.handsOn,
-      burner: step.station === 'stove',
-      oven: step.station === 'oven',
-    }
+    return { cook: step.handsOn, appliance: step.appliance }
   }
 
   const readyTasks = () =>
@@ -73,17 +109,21 @@ export function scheduleSteps(tasks: SchedTask[], burners: number, ovens: number
 
   const start = (task: SchedTask, force = false) => {
     const stepIndex = nextStep[task.index]
-    const { step, minutes } = task.steps[stepIndex]
+    const { step, minutes, activeMinutes } = task.steps[stepIndex]
     const need = needs(task, stepIndex)
     if (!force) {
       if (need.cook && cookBusy) return false
-      if (need.burner && burnersUsed >= burners) return false
-      if (need.oven && ovensUsed >= ovens) return false
+      if (need.appliance && (used.get(need.appliance) ?? 0) >= capacityOf(need.appliance)) {
+        return false
+      }
     }
     if (need.cook) cookBusy = true
-    if (need.burner) burnersUsed++
-    if (need.oven) ovensUsed++
+    if (need.appliance) used.set(need.appliance, (used.get(need.appliance) ?? 0) + 1)
+    // повар — исключительный ресурс, поэтому занятые руки считаем только по
+    // шагам, которые его держат. «Варить, помешивая» идёт параллельно другим
+    // делам и попадает в присмотр
     if (need.cook) handsOnMinutes += minutes
+    else attentionMinutes += activeMinutes
     planned.push({
       recipeId: task.recipeId,
       title: task.title,
@@ -92,6 +132,10 @@ export function scheduleSteps(tasks: SchedTask[], burners: number, ovens: number
       text: step.text,
       station: step.station,
       handsOn: step.handsOn,
+      activeMinutes,
+      appliance: step.appliance,
+      tempC: step.tempC,
+      unattended: step.unattended,
       start: time,
       end: time + minutes,
     })
@@ -100,8 +144,7 @@ export function scheduleSteps(tasks: SchedTask[], burners: number, ovens: number
       stepIndex,
       end: time + minutes,
       usesCook: need.cook,
-      usesBurner: need.burner,
-      usesOven: need.oven,
+      appliance: need.appliance,
     })
     return true
   }
@@ -136,11 +179,16 @@ export function scheduleSteps(tasks: SchedTask[], burners: number, ovens: number
       const run = running[i]
       if (run.end > time) continue
       if (run.usesCook) cookBusy = false
-      if (run.usesBurner) burnersUsed--
-      if (run.usesOven) ovensUsed--
+      if (run.appliance) used.set(run.appliance, Math.max(0, (used.get(run.appliance) ?? 1) - 1))
       nextStep[run.task] = run.stepIndex + 1
       running.splice(i, 1)
     }
+  }
+
+  for (const appliance of missing) {
+    warnings.push(
+      `В анкете нет прибора «${APPLIANCE_LABEL[appliance]}», а он нужен по рецепту — план считает, что он один.`,
+    )
   }
 
   const makespan = planned.reduce((max, s) => Math.max(max, s.end), 0)
@@ -149,14 +197,18 @@ export function scheduleSteps(tasks: SchedTask[], burners: number, ovens: number
     const at = planned.filter((s) => s.start <= step.start && step.start < s.end).length
     return Math.max(max, at)
   }, 0)
-  return { steps: planned, makespan, handsOnMinutes, maxParallel, warnings }
+  return { steps: planned, makespan, handsOnMinutes, attentionMinutes, maxParallel, warnings }
 }
 
 function toSchedTask(task: CookTask, index: number): SchedTask | null {
   const recipe = recipeById(task.recipeId)
   if (!recipe) return null
   const portions = task.portions
-  const steps = recipe.steps.map((step) => ({ step, minutes: scaledMinutes(step, portions) }))
+  const steps = recipe.steps.map((step) => ({
+    step,
+    minutes: scaledMinutes(step, portions),
+    activeMinutes: scaledActiveMinutes(step, portions),
+  }))
   const remaining: number[] = new Array(steps.length).fill(0)
   for (let i = steps.length - 1; i >= 0; i--) {
     remaining[i] = steps[i].minutes + (remaining[i + 1] ?? 0)
@@ -179,16 +231,13 @@ export function buildCookingPlans(menu: WeekMenu, household: Household): Cooking
     byDay.set(task.cookDay, list)
   }
 
-  const burners = Math.max(1, household.kitchen.burners)
-  const ovens = household.kitchen.hasOven ? 1 : 0
-
   return [...byDay.entries()]
     .sort((a, b) => a[0] - b[0])
     .map(([cookDay, tasks]) => {
       const sched = tasks
         .map((task, i) => toSchedTask(task, i))
         .filter((t): t is SchedTask => t !== null)
-      const result = scheduleSteps(sched, burners, ovens)
+      const result = scheduleSteps(sched, household.kitchen)
 
       const freeze: FreezeTask[] = tasks
         .filter((t) => t.freezerPortions > 0)
@@ -229,6 +278,7 @@ export function buildCookingPlans(menu: WeekMenu, household: Household): Cooking
         steps: result.steps,
         makespan: result.makespan,
         handsOnMinutes: result.handsOnMinutes,
+        attentionMinutes: result.attentionMinutes,
         maxParallel: result.maxParallel,
         freeze,
         coversDays,

@@ -1,4 +1,5 @@
-import type { MealSlot, Recipe, RecipeStep, Station } from '../types'
+import type { MealSlot, Recipe, Station } from '../types'
+import { deriveRecipeSteps } from '../lib/stepDetail'
 
 type ItemTuple = [ingredientId: string, qtyPerServing: number]
 type StepTuple = [text: string, minutes: number, station: Station, handsOn?: boolean]
@@ -25,13 +26,15 @@ function r(
     emoji,
     slots,
     items: items.map(([ingredientId, qty]) => ({ ingredientId, qty })),
-    steps: steps.map(
-      ([text, minutes, station, handsOn]): RecipeStep => ({
+    // прибор, температуру, активное время и «можно ли отойти» выводим из текста
+    // шагов — см. lib/stepDetail
+    steps: deriveRecipeSteps(
+      steps.map(([text, minutes, station, handsOn]) => ({
         text,
         minutes,
         station,
         handsOn: handsOn ?? station === 'prep',
-      }),
+      })),
     ),
     tags: opts.tags ?? [],
     freezable: opts.freezable ?? false,

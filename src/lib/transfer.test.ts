@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { withDerivedDetail } from './stepDetail'
 import type { Household, Recipe } from '../types'
 import { decodeProfile, encodeProfile, profileLink } from './transfer'
 
@@ -23,7 +24,18 @@ const household: Household = {
   ],
   cookingDays: [2, 6],
   meals: ['breakfast', 'lunch', 'dinner'],
-  kitchen: { burners: 4, hasOven: true, hasBlender: true, containers: 8, hasFreezer: true },
+  kitchen: {
+      burners: 4,
+      ovens: 1,
+      hasAirfryer: false,
+      hasMulticooker: false,
+      hasBlender: true,
+      hasProcessor: false,
+      hasMicrowave: true,
+      hasDishwasher: false,
+      containers: 8,
+      hasFreezer: true,
+    },
   budgetPerWeek: 5000,
   weekStart: '2026-09-07',
 }
@@ -34,7 +46,7 @@ const own: Recipe = {
   emoji: '🍲',
   slots: ['lunch'],
   items: [{ ingredientId: 'potato', qty: 150 }],
-  steps: [{ text: 'Варить', minutes: 20, station: 'stove', handsOn: false }],
+  steps: [withDerivedDetail({ text: 'Варить', minutes: 20, station: 'stove', handsOn: false, activeMinutes: 0, unattended: false, source: 'derived' })],
   tags: [],
   freezable: true,
   fridgeDays: 4,

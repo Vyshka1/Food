@@ -80,14 +80,65 @@ export const MEAL_SLOTS: { id: MealSlot; label: string; icon: 'sun' | 'leaf' | '
     { id: 'snack', label: 'Перекус', icon: 'apple' },
   ]
 
+/**
+ * Приборы, которые занимает шаг. Это ресурс расписания: два блюда не могут
+ * одновременно занимать один блендер, а с двумя духовками — могут запекаться
+ * параллельно. Раньше блендер был только фильтром «есть или нет», и план
+ * спокойно ставил два блендерных шага в одну минуту.
+ */
+export type Appliance =
+  | 'stove'
+  | 'oven'
+  | 'airfryer'
+  | 'multicooker'
+  | 'blender'
+  | 'processor'
+  | 'microwave'
+
+export const APPLIANCE_LABEL: Record<Appliance, string> = {
+  stove: 'плита',
+  oven: 'духовка',
+  airfryer: 'аэрогриль',
+  multicooker: 'мультиварка',
+  blender: 'блендер',
+  processor: 'комбайн',
+  microwave: 'микроволновка',
+}
+
 /** Кухня пользователя — от неё зависит точность плана готовки. */
 export interface Kitchen {
   burners: number
-  hasOven: boolean
+  /** Сколько духовок: 0, 1 или 2. Две духовки реально распараллеливают запекание. */
+  ovens: number
+  hasAirfryer: boolean
+  hasMulticooker: boolean
   hasBlender: boolean
+  hasProcessor: boolean
+  hasMicrowave: boolean
+  hasDishwasher: boolean
   /** Сколько контейнеров есть под заготовки. */
   containers: number
   hasFreezer: boolean
+}
+
+/** Сколько таких приборов доступно одновременно. 0 — прибора нет. */
+export function applianceCapacity(kitchen: Kitchen, appliance: Appliance): number {
+  switch (appliance) {
+    case 'stove':
+      return Math.max(0, kitchen.burners)
+    case 'oven':
+      return Math.max(0, kitchen.ovens)
+    case 'airfryer':
+      return kitchen.hasAirfryer ? 1 : 0
+    case 'multicooker':
+      return kitchen.hasMulticooker ? 1 : 0
+    case 'blender':
+      return kitchen.hasBlender ? 1 : 0
+    case 'processor':
+      return kitchen.hasProcessor ? 1 : 0
+    case 'microwave':
+      return kitchen.hasMicrowave ? 1 : 0
+  }
 }
 
 export interface Household {
@@ -144,10 +195,34 @@ export type Station = 'prep' | 'stove' | 'oven' | 'wait'
 
 export interface RecipeStep {
   text: string
+  /** Полная длительность шага: и активная часть, и ожидание. */
   minutes: number
   station: Station
   /** true — шаг требует рук повара всё время. */
   handsOn: boolean
+  /**
+   * Сколько из этих минут повар реально занят. «Варить 20 минут, помешивая» —
+   * это не 20 минут работы и не ноль: булев handsOn такое описать не мог.
+   */
+  activeMinutes: number
+  /** Какой прибор занят. Пусто — только руки или чистое ожидание. */
+  appliance?: Appliance
+  /** Температура, если она задана рецептом. */
+  tempC?: number
+  /** Можно уйти с кухни: духовка не требует присмотра, сковорода требует. */
+  unattended: boolean
+  /**
+   * Шаги, которые должны закончиться раньше. Пусто — обычная
+   * последовательность. Встроенные рецепты пока последовательны; поле есть,
+   * чтобы своим рецептам можно было описать настоящую параллельность.
+   */
+  after?: number[]
+  /**
+   * Откуда взялась разметка: `derived` — выведена из текста шага правилами,
+   * `checked` — проверена вручную. Нужна, чтобы неточности были находимы, а
+   * не растворялись в данных.
+   */
+  source: 'derived' | 'checked'
 }
 
 export interface RecipeItem {
@@ -168,7 +243,7 @@ export interface Recipe {
   freezable: boolean
   /** Сколько дней живёт в холодильнике. */
   fridgeDays: number
-  /** Требует духовку / блендер. */
+  /** Требует духовку / блендер. Выводится из приборов в шагах. */
   needs?: ('oven' | 'blender')[]
   /** Добавлен пользователем, а не из встроенной базы. */
   custom?: boolean
@@ -264,6 +339,11 @@ export interface PlannedStep {
   text: string
   station: Station
   handsOn: boolean
+  /** Сколько минут этого шага повар занят. */
+  activeMinutes: number
+  appliance?: Appliance
+  tempC?: number
+  unattended: boolean
   /** Минуты от старта готовки. */
   start: number
   end: number
@@ -282,8 +362,10 @@ export interface CookingPlan {
   steps: PlannedStep[]
   /** Общая длительность, мин. */
   makespan: number
-  /** Сколько минут повар реально занят руками. */
+  /** Сколько минут повар занят целиком. */
   handsOnMinutes: number
+  /** Присмотр поверх этого — идёт параллельно, складывать с handsOn нельзя. */
+  attentionMinutes: number
   /** Максимум блюд, идущих одновременно. */
   maxParallel: number
   freeze: FreezeTask[]
