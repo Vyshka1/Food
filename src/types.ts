@@ -63,6 +63,11 @@ export interface Eater {
    * обедает в офисе, а закупка всё равно считает его обед.
    */
   awayMeals: string[]
+  /**
+   * Оценки блюд: 1 — нравится, −1 — не нравится. Мягкая настройка подбора, в
+   * отличие от bannedRecipes, который убирает блюдо совсем.
+   */
+  ratings: Record<string, 1 | -1>
 }
 
 export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'snack'
@@ -193,6 +198,35 @@ export interface MenuEntry {
   storage: Storage
   /** Человек оставил блюдо: пересборка меню его не трогает. */
   pinned?: boolean
+  /**
+   * Что с блюдом случилось на самом деле. План и факт — разные вещи: без
+   * этого «меню на неделю» остаётся намерением, а не тем, что вы ели.
+   */
+  status?: EntryStatus
+}
+
+export type EntryStatus = 'cooked' | 'eaten' | 'skipped'
+
+export const ENTRY_STATUS: { id: EntryStatus; label: string; icon: 'pot' | 'check' | 'ban' }[] = [
+  { id: 'cooked', label: 'Приготовлено', icon: 'pot' },
+  { id: 'eaten', label: 'Съедено', icon: 'check' },
+  { id: 'skipped', label: 'Пропущено', icon: 'ban' },
+]
+
+/**
+ * Сохранённая неделя. Держим меню целиком, чтобы удачную неделю можно было
+ * повторить, а не собирать заново на тот же seed и получить другое.
+ */
+export interface WeekRecord {
+  id: string
+  weekStart: string
+  savedAt: string
+  menu: WeekMenu
+  /** Сколько блюд отмечено приготовленными, съеденными и пропущенными. */
+  cooked: number
+  eaten: number
+  skipped: number
+  total: number
 }
 
 export interface WeekMenu {

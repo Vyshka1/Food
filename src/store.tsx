@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { Eater, Household, MealSlot, Recipe, WeekMenu } from './types'
+import type { Eater, EntryStatus, Household, MealSlot, Recipe, WeekMenu, WeekRecord } from './types'
 import { awayKey, buildWeekMenu, replaceEntryWith } from './lib/menu'
 import { setCustomRecipes } from './data/recipeRegistry'
 import { decodeProfile } from './lib/transfer'
@@ -18,6 +18,8 @@ export interface AppState {
   warnings: string[]
   /** Рецепты, добавленные вручную. */
   customRecipes: Recipe[]
+  /** Прошлые недели: удачную можно повторить, не собирая заново. */
+  history: WeekRecord[]
 }
 
 const emptyState: AppState = {
@@ -27,6 +29,7 @@ const emptyState: AppState = {
   bought: [],
   warnings: [],
   customRecipes: [],
+  history: [],
 }
 
 export function mondayOf(date = new Date()): string {
@@ -51,6 +54,7 @@ export function newEater(partial: Partial<Eater> = {}): Eater {
     dislikes: [],
     bannedRecipes: [],
     awayMeals: [],
+    ratings: {},
     ...partial,
   }
 }
@@ -72,6 +76,11 @@ interface Store extends AppState {
   swapDish: (entryId: string, recipeId: string) => void
   togglePin: (entryId: string) => void
   toggleAway: (eaterId: string, day: number, slot: MealSlot) => void
+  setEntryStatus: (entryId: string, status: EntryStatus | null) => void
+  rateRecipe: (eaterId: string, recipeId: string, value: 1 | -1 | 0) => void
+  archiveWeek: () => void
+  repeatWeek: (recordId: string) => void
+  removeWeek: (recordId: string) => void
   toggleAtHome: (ingredientId: string) => void
   toggleBought: (ingredientId: string) => void
   banRecipe: (eaterId: string, recipeId: string) => void
@@ -84,6 +93,23 @@ interface Store extends AppState {
 
 const StoreContext = createContext<Store | null>(null)
 
+/** Сколько недель храним: localStorage не резиновый, а меню весит немало. */
+const MAX_HISTORY = 12
+
+function makeRecord(menu: WeekMenu): WeekRecord {
+  const count = (status: string) => menu.entries.filter((e) => e.status === status).length
+  return {
+    id: `${menu.weekStart}-${menu.seed}`,
+    weekStart: menu.weekStart,
+    savedAt: new Date().toISOString(),
+    menu,
+    cooked: count('cooked'),
+    eaten: count('eaten'),
+    skipped: count('skipped'),
+    total: menu.entries.length,
+  }
+}
+
 function load(): AppState {
   if (typeof localStorage === 'undefined') return emptyState
   try {
@@ -95,7 +121,11 @@ function load(): AppState {
     if (state.household) {
       state.household = {
         ...state.household,
-        eaters: state.household.eaters.map((e) => ({ ...e, awayMeals: e.awayMeals ?? [] })),
+        eaters: state.household.eaters.map((e) => ({
+          ...e,
+          awayMeals: e.awayMeals ?? [],
+          ratings: e.ratings ?? {},
+        })),
       }
     }
     // реестр должен знать о своих рецептах до первой сборки меню
@@ -105,6 +135,17 @@ function load(): AppState {
     if (state.household && state.menu && outdated) {
       const { menu, warnings } = buildWeekMenu(state.household, state.menu.seed)
       return { ...state, menu, warnings }
+    }
+    // наступила новая неделя: прошлую убираем в историю вместе с отметками
+    // «приготовлено / съедено», а не затираем молча
+    const monday = mondayOf()
+    if (state.household && state.menu && state.menu.weekStart !== monday) {
+      const household = { ...state.household, weekStart: monday }
+      const { menu, warnings } = buildWeekMenu(household, Math.floor(Math.random() * 1e9))
+      const history = [makeRecord(state.menu), ...state.history]
+        .filter((r, i, all) => all.findIndex((x) => x.id === r.id) === i)
+        .slice(0, MAX_HISTORY)
+      return { ...state, household, menu, warnings, history, bought: [] }
     }
     return state
   } catch {
@@ -200,6 +241,46 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  /** План и факт: «приготовлено», «съедено», «пропущено» или снять отметку. */
+  const setEntryStatus = useCallback((entryId: string, status: EntryStatus | null) => {
+    setState((prev) => {
+      if (!prev.menu) return prev
+      return {
+        ...prev,
+        menu: {
+          ...prev.menu,
+          entries: prev.menu.entries.map((e) =>
+            e.id === entryId ? { ...e, status: status ?? undefined } : e,
+          ),
+        },
+      }
+    })
+  }, [])
+
+  /**
+   * Оценка блюда конкретным едоком. 0 снимает оценку. Меню не пересобираем:
+   * оценка должна влиять на следующий подбор, а не переставлять тарелки
+   * прямо сейчас.
+   */
+  const rateRecipe = useCallback((eaterId: string, recipeId: string, value: 1 | -1 | 0) => {
+    setState((prev) => {
+      if (!prev.household) return prev
+      return {
+        ...prev,
+        household: {
+          ...prev.household,
+          eaters: prev.household.eaters.map((e) => {
+            if (e.id !== eaterId) return e
+            const ratings = { ...e.ratings }
+            if (value === 0) delete ratings[recipeId]
+            else ratings[recipeId] = value
+            return { ...e, ratings }
+          }),
+        },
+      }
+    })
+  }, [])
+
   const toggle = (list: string[], id: string) =>
     list.includes(id) ? list.filter((x) => x !== id) : [...list, id]
 
@@ -283,6 +364,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  /** Сохранить текущую неделю в историю — до того, как её пересоберут. */
+  const archiveWeek = useCallback(() => {
+    setState((prev) => {
+      if (!prev.menu || prev.menu.entries.length === 0) return prev
+      return { ...prev, history: [makeRecord(prev.menu), ...prev.history].slice(0, MAX_HISTORY) }
+    })
+  }, [])
+
+  /**
+   * Повторить неделю: переносим блюда на текущую неделю, но пересчитываем
+   * порции и хранение — состав семьи и дни готовки могли измениться.
+   */
+  const repeatWeek = useCallback((recordId: string) => {
+    setState((prev) => {
+      const record = prev.history.find((r) => r.id === recordId)
+      if (!record || !prev.household) return prev
+      const kept = record.menu.entries.map((e) => ({ ...e, pinned: true, status: undefined }))
+      const { menu, warnings } = buildWeekMenu(prev.household, record.menu.seed, kept)
+      return {
+        ...prev,
+        menu: { ...menu, weekStart: prev.household.weekStart },
+        warnings,
+        bought: [],
+      }
+    })
+  }, [])
+
+  const removeWeek = useCallback((recordId: string) => {
+    setState((prev) => ({ ...prev, history: prev.history.filter((r) => r.id !== recordId) }))
+  }, [])
+
   const reset = useCallback(() => {
     setState(emptyState)
     setCustomRecipes([])
@@ -301,6 +413,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       swapDish,
       togglePin,
       toggleAway,
+      setEntryStatus,
+      rateRecipe,
+      archiveWeek,
+      repeatWeek,
+      removeWeek,
       toggleAtHome,
       toggleBought,
       banRecipe,
@@ -317,6 +434,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       swapDish,
       togglePin,
       toggleAway,
+      setEntryStatus,
+      rateRecipe,
+      archiveWeek,
+      repeatWeek,
+      removeWeek,
       toggleAtHome,
       toggleBought,
       banRecipe,

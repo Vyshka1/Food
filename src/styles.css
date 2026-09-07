@@ -444,6 +444,7 @@ select {
   align-items: stretch;
   gap: 0;
   overflow: hidden;
+  flex-wrap: wrap;
 }
 
 .dish__open {
@@ -470,6 +471,43 @@ select {
 
 .dish__pin[data-on='true'] {
   color: var(--green-dark);
+}
+
+/* План и факт: отметка живёт на карточке, а не прячется в шторке. */
+.dish__status {
+  flex-basis: 100%;
+  display: flex;
+  gap: 4px;
+  padding: 0 12px 10px;
+  border-top: 1px solid var(--line);
+  margin-top: 2px;
+  padding-top: 8px;
+}
+
+.dish__status button {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  padding: 6px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.dish__status button[data-on='true'] {
+  background: var(--green-soft);
+  border-color: var(--green-soft);
+  color: var(--green-dark);
+}
+
+.dish--row[data-status='skipped'] .dish__title {
+  text-decoration: line-through;
+  color: var(--muted);
 }
 
 .dish--row[data-pinned='true'] {
@@ -811,6 +849,45 @@ select {
   font-size: 16px;
   line-height: 1;
   color: var(--muted);
+}
+
+/* Оценка — на каждого: Юлии блюдо может нравиться, а Кириллу нет. */
+.rate-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 0;
+}
+
+.rate {
+  display: flex;
+  gap: 6px;
+}
+
+.rate button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.rate button[data-on='true'] {
+  background: var(--green-soft);
+  border-color: var(--green-soft);
+  color: var(--green-dark);
+}
+
+.rate button:last-child[data-on='true'] {
+  background: #f6ece4;
+  border-color: #f0ded0;
+  color: #8f5f28;
 }
 
 .ing-line {

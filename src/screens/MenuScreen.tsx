@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { recipeById } from '../data/recipeRegistry'
-import { MEAL_SLOTS } from '../types'
+import { ENTRY_STATUS, MEAL_SLOTS } from '../types'
 import type { MenuEntry } from '../types'
 import { WEEKDAYS, dayNorms, dayTotals, eatersAtHome, portionOf, totalPortions } from '../lib/menu'
 import { portionWeight, recipeStats } from '../lib/nutrition'
@@ -25,7 +25,8 @@ function todayIndex(weekStart: string): number {
 }
 
 export function MenuScreen() {
-  const { household, menu, warnings, regenerate, swapDish, banRecipe, togglePin } = useStore()
+  const { household, menu, warnings, regenerate, swapDish, banRecipe, togglePin, setEntryStatus } =
+    useStore()
   const [day, setDay] = useState(() => (menu ? todayIndex(menu.weekStart) : 0))
   const [openEntry, setOpenEntry] = useState<MenuEntry | null>(null)
   const [note, setNote] = useState('')
@@ -64,6 +65,11 @@ export function MenuScreen() {
       ? `${weekStart.getDate()}–${weekEnd.getDate()} ${monthNames[weekEnd.getMonth()]}`
       : `${weekStart.getDate()} ${monthNames[weekStart.getMonth()]} — ${weekEnd.getDate()} ${monthNames[weekEnd.getMonth()]}`
 
+  // план и факт: пока отметок нет, показываем состав недели, потом — что съели
+  const eatenCount = menu.entries.filter((e) => e.status === 'eaten').length
+  const skippedCount = menu.entries.filter((e) => e.status === 'skipped').length
+  const marked = menu.entries.filter((e) => e.status).length
+
   const pct = (fact: number, norm: number) => Math.round((fact / Math.max(1, norm)) * 100)
   const percent = pct(totals.kcal, norms.kcal)
   /** Отклонение больше 15% подсвечиваем: «99% нормы» не должно скрывать перекос по БЖУ. */
@@ -80,10 +86,10 @@ export function MenuScreen() {
         <div>
           <b>{weekLabel}</b>
           <div className="muted small">
-            меню на {household.eaters.length}{' '}
-            {plural(household.eaters.length, ['человек', 'человека', 'человек'])} ·{' '}
-            {household.cookingDays.length}{' '}
-            {plural(household.cookingDays.length, ['день', 'дня', 'дней'])} готовки
+            {marked > 0
+              ? `съедено ${eatenCount} из ${menu.entries.length}` +
+                (skippedCount > 0 ? ` · пропущено ${skippedCount}` : '')
+              : `меню на ${household.eaters.length} ${plural(household.eaters.length, ['человек', 'человека', 'человек'])} · ${household.cookingDays.length} ${plural(household.cookingDays.length, ['день', 'дня', 'дней'])} готовки`}
           </div>
         </div>
         <button className="btn btn--soft btn--small" onClick={() => regenerate()}>
@@ -171,7 +177,12 @@ export function MenuScreen() {
               const factor = eater ? portionOf(entry, eater.id) : totalPortions(entry)
               const badge = STORAGE_BADGE[entry.storage]
               return (
-                <div className="dish dish--row" key={entry.id} data-pinned={!!entry.pinned}>
+                <div
+                  className="dish dish--row"
+                  key={entry.id}
+                  data-pinned={!!entry.pinned}
+                  data-status={entry.status ?? ""}
+                >
                   <button className="dish__open" onClick={() => setOpenEntry(entry)}>
                     <span className="dish__emoji">
                       <Icon name={recipeIcon(recipe)} size={24} />
@@ -208,6 +219,23 @@ export function MenuScreen() {
                   >
                     <Icon name="pin" size={18} />
                   </button>
+                  <div className="dish__status">
+                    {ENTRY_STATUS.map((st) => (
+                      <button
+                        key={st.id}
+                        data-on={entry.status === st.id}
+                        onClick={() =>
+                          setEntryStatus(entry.id, entry.status === st.id ? null : st.id)
+                        }
+                        title={st.label}
+                        aria-label={`${recipe.title}: ${st.label.toLowerCase()}`}
+                        aria-pressed={entry.status === st.id}
+                      >
+                        <Icon name={st.icon} size={15} />
+                        <span>{st.label}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )
             })}
