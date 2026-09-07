@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react'
 import { recipeById } from '../data/recipeRegistry'
 import { MEAL_SLOTS } from '../types'
 import type { MenuEntry } from '../types'
-import { WEEKDAYS, dayTotals, householdNorms, portionOf, totalPortions } from '../lib/menu'
-import { dailyNorm, portionWeight, recipeStats } from '../lib/nutrition'
+import { WEEKDAYS, dayNorms, dayTotals, eatersAtHome, portionOf, totalPortions } from '../lib/menu'
+import { portionWeight, recipeStats } from '../lib/nutrition'
 import { useStore } from '../store'
 import { CalorieRing, Card, Warnings } from '../components/ui'
 import { RecipeSheet } from '../components/RecipeSheet'
@@ -25,7 +25,7 @@ function todayIndex(weekStart: string): number {
 }
 
 export function MenuScreen() {
-  const { household, menu, warnings, regenerate, swapDish, banRecipe } = useStore()
+  const { household, menu, warnings, regenerate, swapDish, banRecipe, togglePin } = useStore()
   const [day, setDay] = useState(() => (menu ? todayIndex(menu.weekStart) : 0))
   const [openEntry, setOpenEntry] = useState<MenuEntry | null>(null)
   const [note, setNote] = useState('')
@@ -34,9 +34,10 @@ export function MenuScreen() {
   const [who, setWho] = useState<string | null>(null)
 
   const eater = household?.eaters.find((e) => e.id === who) ?? null
+  /** Норма считается по тому, что человек ест дома: обед в офисе — не наш недобор. */
   const norms = useMemo(
-    () => (eater ? dailyNorm(eater) : household ? householdNorms(household) : null),
-    [eater, household],
+    () => (household ? dayNorms(household, day, eater?.id) : null),
+    [household, day, eater],
   )
   const totals = useMemo(
     () => (menu ? dayTotals(menu, day, eater?.id) : null),
@@ -144,13 +145,25 @@ export function MenuScreen() {
 
       {MEAL_SLOTS.filter((m) => household.meals.includes(m.id)).map((meal) => {
         const entries = menu.entries.filter((e) => e.day === day && e.slot === meal.id)
+        const home = eatersAtHome(household, day, meal.id)
+        const away = household.eaters.filter((e) => !home.some((h) => h.id === e.id))
         return (
           <div key={meal.id}>
             <div className="meal-head">
               <Icon name={meal.icon} size={18} />
               {meal.label}
+              {away.length > 0 && (
+                <span className="meal-head__away">
+                  {away.map((e) => e.name).join(', ')} не дома
+                </span>
+              )}
             </div>
-            {entries.length === 0 && <p className="hint">Ничего не запланировано.</p>}
+            {home.length === 0 && (
+              <p className="hint">Все едят не дома — на этот приём ничего не готовим.</p>
+            )}
+            {home.length > 0 && entries.length === 0 && (
+              <p className="hint">Ничего не запланировано.</p>
+            )}
             {entries.map((entry) => {
               const recipe = recipeById(entry.recipeId)
               if (!recipe) return null
@@ -158,24 +171,44 @@ export function MenuScreen() {
               const factor = eater ? portionOf(entry, eater.id) : totalPortions(entry)
               const badge = STORAGE_BADGE[entry.storage]
               return (
-                <button className="dish" key={entry.id} onClick={() => setOpenEntry(entry)}>
-                  <span className="dish__emoji">
-                    <Icon name={recipeIcon(recipe)} size={24} />
-                  </span>
-                  <span style={{ flex: 1 }}>
-                    <span className="dish__title">{recipe.title}</span>
-                    <span className="dish__meta">
-                      {eater
-                        ? `${portionWeight(recipe, factor)} г · ${Math.round(stats.kcal * factor)} ккал`
-                        : `на всех: ${Math.round(stats.kcal * factor)} ккал · ≈ ${Math.round(stats.price * factor)} ₽`}
+                <div className="dish dish--row" key={entry.id} data-pinned={!!entry.pinned}>
+                  <button className="dish__open" onClick={() => setOpenEntry(entry)}>
+                    <span className="dish__emoji">
+                      <Icon name={recipeIcon(recipe)} size={24} />
                     </span>
-                    <br />
-                    {badge && <span className={badge.cls}>{badge.label}</span>}
-                    {entry.cookDay !== entry.day && (
-                      <span className="badge">готовим {WEEKDAYS[entry.cookDay]}</span>
-                    )}
-                  </span>
-                </button>
+                    <span style={{ flex: 1 }}>
+                      <span className="dish__title">{recipe.title}</span>
+                      <span className="dish__meta">
+                        {eater && factor === 0
+                          ? 'ест не дома'
+                          : eater
+                            ? `${portionWeight(recipe, factor)} г · ${Math.round(stats.kcal * factor)} ккал`
+                            : `на всех: ${Math.round(stats.kcal * factor)} ккал · ≈ ${Math.round(stats.price * factor)} ₽`}
+                      </span>
+                      <br />
+                      {badge && <span className={badge.cls}>{badge.label}</span>}
+                      {entry.cookDay !== entry.day && (
+                        <span className="badge">готовим {WEEKDAYS[entry.cookDay]}</span>
+                      )}
+                      {entry.pinned && <span className="badge">оставлено</span>}
+                    </span>
+                  </button>
+                  <button
+                    className="dish__pin"
+                    data-on={!!entry.pinned}
+                    onClick={() => togglePin(entry.id)}
+                    aria-label={
+                      entry.pinned ? 'снять закрепление блюда' : 'оставить это блюдо при пересборке'
+                    }
+                    title={
+                      entry.pinned
+                        ? 'Пересборка меню его не тронет'
+                        : 'Оставить это блюдо при пересборке'
+                    }
+                  >
+                    <Icon name="pin" size={18} />
+                  </button>
+                </div>
               )
             })}
           </div>

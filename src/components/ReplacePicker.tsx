@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import type { MenuEntry } from '../types'
-import { WEEKDAYS_FULL, replacementOptions } from '../lib/menu'
+import { REPLACE_REASONS, WEEKDAYS_FULL, replacementOptions } from '../lib/menu'
+import type { ReplaceReason, ReplacementOption } from '../lib/menu'
+import { recipeById } from '../data/recipeRegistry'
 import { plural } from '../lib/format'
 import { useStore } from '../store'
 import { Sheet } from './ui'
@@ -12,7 +14,46 @@ const STORAGE_HINT: Record<string, string> = {
   freezer: 'из морозилки',
 }
 
-/** Выбор блюда на замену: показываем варианты, а не решаем за человека. */
+/** «−120 ₽», «+15 мин» — знак важнее числа, поэтому пишем его явно. */
+function delta(value: number, unit: string): { text: string; good: boolean } | null {
+  if (value === 0) return null
+  const sign = value > 0 ? '+' : '−'
+  return { text: `${sign}${Math.abs(value)} ${unit}`, good: value < 0 }
+}
+
+function OptionRow({
+  option,
+  onPick,
+}: {
+  option: ReplacementOption
+  onPick: () => void
+}) {
+  const price = delta(option.deltaPrice, '₽')
+  const minutes = delta(option.deltaMinutes, 'мин')
+  const hint = STORAGE_HINT[option.storage]
+  return (
+    <button className="dish" onClick={onPick}>
+      <span className="dish__emoji">
+        <Icon name={recipeIcon(option.recipe)} size={24} />
+      </span>
+      <span style={{ flex: 1 }}>
+        <span className="dish__title">{option.recipe.title}</span>
+        <span className="dish__meta">
+          {option.kcal} ккал · ≈ {option.price} ₽ порция · {option.minutes} мин
+        </span>
+        <span className="dish__deltas">
+          {price && <span data-good={price.good}>{price.text}</span>}
+          {minutes && <span data-good={minutes.good}>{minutes.text}</span>}
+          {option.reuseShare >= 0.8 && <span data-good="true">без новых продуктов</span>}
+          {option.recipe.custom && <span className="badge">свой рецепт</span>}
+          {hint && <span className={`badge badge--${option.storage}`}>{hint}</span>}
+        </span>
+      </span>
+    </button>
+  )
+}
+
+/** Выбор блюда на замену: сначала причина, потом варианты — она меняет подбор. */
 export function ReplacePicker({
   entry,
   onClose,
@@ -24,28 +65,52 @@ export function ReplacePicker({
 }) {
   const { menu, household } = useStore()
   const [query, setQuery] = useState('')
+  const [reason, setReason] = useState<ReplaceReason | undefined>()
 
   const options = useMemo(
-    () => (menu && household ? replacementOptions(menu, household, entry.id, 40) : []),
-    [menu, household, entry.id],
+    () => (menu && household ? replacementOptions(menu, household, entry.id, reason, 40) : []),
+    [menu, household, entry.id, reason],
   )
 
   if (!menu || !household) return null
+  const current = recipeById(entry.recipeId)
 
   const needle = query.trim().toLowerCase()
   const shown = needle
     ? options.filter((o) => o.recipe.title.toLowerCase().includes(needle))
     : options
+  const activeReason = REPLACE_REASONS.find((r) => r.id === reason)
 
   return (
     <Sheet onClose={onClose}>
       <div style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 20, fontWeight: 700 }}>Чем заменить</div>
         <div className="muted small">
-          {WEEKDAYS_FULL[entry.day]} · подходит по норме и ограничениям. Сверху — то, что ложится
-          в день лучше всего.
+          {WEEKDAYS_FULL[entry.day]}
+          {current ? ` · вместо «${current.title}»` : ''}
         </div>
       </div>
+
+      <div className="section-title" style={{ marginBottom: 8 }}>
+        Что не так с блюдом
+      </div>
+      <div className="chips" style={{ marginBottom: 10 }}>
+        {REPLACE_REASONS.map((r) => (
+          <button
+            key={r.id}
+            className="chip"
+            data-active={reason === r.id}
+            onClick={() => setReason(reason === r.id ? undefined : r.id)}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+      <p className="hint" style={{ marginTop: 0 }}>
+        {activeReason
+          ? `${activeReason.hint}. Калорийность, БЖУ и бюджет держим прежними.`
+          : 'Необязательно — но с причиной подбор точнее. Норму дня и бюджет держим в любом случае.'}
+      </p>
 
       <div className="field" style={{ marginBottom: 12 }}>
         <input
@@ -65,27 +130,11 @@ export function ReplacePicker({
       )}
 
       {shown.map((option) => (
-        <button className="dish" key={option.recipe.id} onClick={() => onPick(option.recipe.id)}>
-          <span className="dish__emoji">
-            <Icon name={recipeIcon(option.recipe)} size={24} />
-          </span>
-          <span style={{ flex: 1 }}>
-            <span className="dish__title">{option.recipe.title}</span>
-            <span className="dish__meta">
-              {option.kcal} ккал · {option.price} ₽ порция · {option.minutes} мин
-            </span>
-            {(option.recipe.custom || STORAGE_HINT[option.storage]) && (
-              <span>
-                {option.recipe.custom && <span className="badge">свой рецепт</span>}
-                {STORAGE_HINT[option.storage] && (
-                  <span className={`badge badge--${option.storage}`}>
-                    {STORAGE_HINT[option.storage]}
-                  </span>
-                )}
-              </span>
-            )}
-          </span>
-        </button>
+        <OptionRow
+          key={option.recipe.id}
+          option={option}
+          onPick={() => onPick(option.recipe.id)}
+        />
       ))}
 
       {options.length > 0 && (

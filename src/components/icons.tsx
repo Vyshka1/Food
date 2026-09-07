@@ -35,6 +35,7 @@ export type IconName =
   | 'back'
   | 'alert'
   | 'party'
+  | 'pin'
 
 const PATHS: Record<IconName, string> = {
   // навигация
@@ -71,6 +72,7 @@ const PATHS: Record<IconName, string> = {
   back: 'M15 5l-7 7 7 7',
   alert: 'M12 3.5 1.8 20.5h20.4L12 3.5ZM12 10v4M12 17.5h.01',
   party: 'M4 20l5.5-13 8.5 8.5L4 20ZM14 4.5c1 .5 1.3 1.6 1 2.5M18.5 3c.6 1.2.2 2.4-.7 3M20.5 8.5c-1 .3-2 0-2.6-.8M17 12.5c.8-.9 2-1.1 3-.6',
+  pin: 'M9.5 3h5l-.7 5.2 3.2 3.3H14v5.5L12 21l-2-4V11.5H6l3.2-3.3L8.5 3Z',
 }
 
 export function Icon({

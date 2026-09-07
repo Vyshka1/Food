@@ -9,6 +9,7 @@ import { CalorieRing, Card, Section } from '../components/ui'
 import { Icon, recipeIcon } from '../components/icons'
 import { RECIPES } from '../data/recipes'
 import { plural } from '../lib/format'
+import { AttendanceGrid } from '../components/AttendanceGrid'
 import { MACRO_COLOR } from '../lib/palette'
 
 export function ProfileScreen({
@@ -89,6 +90,10 @@ export function ProfileScreen({
         <p className="hint" style={{ marginBottom: 0 }}>
           Меняешь дни — меню и план готовки пересобираются сразу.
         </p>
+      </Section>
+
+      <Section title="Кто где ест" icon="clock">
+        <AttendanceGrid />
       </Section>
 
       <Section title="Состав семьи" icon="people">

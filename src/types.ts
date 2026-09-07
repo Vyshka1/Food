@@ -57,6 +57,12 @@ export interface Eater {
   dislikes: string[]
   /** Блюда, которые не показываем в меню (recipe id). */
   bannedRecipes: string[]
+  /**
+   * Приёмы пищи вне дома: ключи вида `2:lunch` — среда, обед. Пусто, значит
+   * человек ест дома всё. Без этого семейный расчёт покупает лишнее: Кирилл
+   * обедает в офисе, а закупка всё равно считает его обед.
+   */
+  awayMeals: string[]
 }
 
 export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'snack'
@@ -185,6 +191,8 @@ export interface MenuEntry {
    */
   portions: EaterPortion[]
   storage: Storage
+  /** Человек оставил блюдо: пересборка меню его не трогает. */
+  pinned?: boolean
 }
 
 export interface WeekMenu {

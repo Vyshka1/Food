@@ -4,13 +4,18 @@ import { RECIPES, RECIPE_BY_ID } from '../data/recipes'
 import { setCustomRecipes } from '../data/recipeRegistry'
 import type { Eater, Household, Recipe } from '../types'
 import {
+  awayKey,
   buildWeekMenu,
   cookTasks,
   cookingSegments,
+  dayNorms,
   dislikeHits,
+  eatersAtHome,
   isRecipeAllowed,
+  portionOf,
   replaceEntryWith,
   replacementOptions,
+  slotTargetOn,
   totalPortions,
 } from './menu'
 
@@ -28,6 +33,7 @@ function eater(patch: Partial<Eater> = {}): Eater {
     customAllergens: [],
     dislikes: [],
     bannedRecipes: [],
+    awayMeals: [],
     ...patch,
   }
 }
@@ -273,6 +279,192 @@ describe('выбор блюда на замену', () => {
     for (const o of options) {
       const age = frozenSunday.day - frozenSunday.cookDay
       if (age > o.recipe.fridgeDays) expect(o.recipe.freezable).toBe(true)
+    }
+  })
+})
+
+describe('еда вне дома', () => {
+  const kirill = eater({ id: 'k', name: 'Кирилл', sex: 'male', weightKg: 84, heightCm: 182 })
+  const julia = eater({ id: 'j', name: 'Юлия' })
+
+  it('не даёт порцию тому, кто ест не дома', () => {
+    const h = household({
+      eaters: [julia, { ...kirill, awayMeals: [awayKey(0, 'lunch'), awayKey(1, 'lunch')] }],
+    })
+    const { menu } = buildWeekMenu(h, 7)
+    const lunches = menu.entries.filter((e) => e.slot === 'lunch')
+    expect(lunches.length).toBeGreaterThan(2)
+    for (const entry of lunches) {
+      const away = entry.day === 0 || entry.day === 1
+      expect(portionOf(entry, 'k')).toBe(away ? 0 : portionOf(entry, 'k'))
+      if (away) expect(portionOf(entry, 'k')).toBe(0)
+      else expect(portionOf(entry, 'k')).toBeGreaterThan(0)
+      // Юлия ест дома всегда — её порция на месте в любом случае
+      expect(portionOf(entry, 'j')).toBeGreaterThan(0)
+    }
+  })
+
+  it('уменьшает закупку, когда человек обедает не дома', () => {
+    const home = household({ eaters: [julia, kirill] })
+    const away = household({
+      eaters: [
+        julia,
+        { ...kirill, awayMeals: [0, 1, 2, 3, 4].map((d) => awayKey(d, 'lunch')) },
+      ],
+    })
+    const total = (h: Household) =>
+      buildWeekMenu(h, 21).menu.entries.reduce((sum, e) => sum + totalPortions(e), 0)
+    expect(total(away)).toBeLessThan(total(home))
+  })
+
+  it('не планирует приём пищи, если дома никого', () => {
+    const h = household({
+      eaters: [
+        { ...julia, awayMeals: [awayKey(3, 'dinner')] },
+        { ...kirill, awayMeals: [awayKey(3, 'dinner')] },
+      ],
+    })
+    const { menu } = buildWeekMenu(h, 5)
+    expect(menu.entries.filter((e) => e.day === 3 && e.slot === 'dinner')).toHaveLength(0)
+    expect(eatersAtHome(h, 3, 'dinner')).toHaveLength(0)
+  })
+
+  it('снижает норму дня ровно на долю пропущенного приёма', () => {
+    const h = household({ eaters: [{ ...kirill, awayMeals: [awayKey(2, 'lunch')] }] })
+    const full = dayNorms(h, 1, 'k')
+    const partial = dayNorms(h, 2, 'k')
+    expect(partial.kcal).toBeLessThan(full.kcal)
+    // обед — примерно треть дня, так что дома остаётся около двух третей нормы
+    expect(partial.kcal / full.kcal).toBeGreaterThan(0.55)
+    expect(partial.kcal / full.kcal).toBeLessThan(0.75)
+  })
+})
+
+describe('закрепление блюда', () => {
+  it('оставляет закреплённое блюдо на месте при пересборке', () => {
+    const h = household()
+    const first = buildWeekMenu(h, 1).menu
+    const pinned = { ...first.entries[3], pinned: true }
+    const second = buildWeekMenu(h, 999, [pinned]).menu
+    const same = second.entries.find((e) => e.day === pinned.day && e.slot === pinned.slot)
+    expect(same?.recipeId).toBe(pinned.recipeId)
+    expect(same?.pinned).toBe(true)
+  })
+
+  it('пересобирает всё остальное', () => {
+    const h = household()
+    const first = buildWeekMenu(h, 1).menu
+    const pinned = { ...first.entries[0], pinned: true }
+    const second = buildWeekMenu(h, 424242, [pinned]).menu
+    const changed = second.entries.filter((e) => {
+      const before = first.entries.find((x) => x.day === e.day && x.slot === e.slot)
+      return before && before.recipeId !== e.recipeId
+    })
+    expect(changed.length).toBeGreaterThan(0)
+  })
+
+  it('не ставит закреплённое блюдо дважды', () => {
+    const h = household()
+    const first = buildWeekMenu(h, 3).menu
+    const pinned = { ...first.entries[2], pinned: true }
+    const second = buildWeekMenu(h, 88, [pinned]).menu
+    const cell = second.entries.filter((e) => e.day === pinned.day && e.slot === pinned.slot)
+    expect(cell).toHaveLength(1)
+  })
+
+  it('пересчитывает день готовки, если дни готовки изменились', () => {
+    const first = buildWeekMenu(household({ cookingDays: [0] }), 11).menu
+    const pinned = { ...first.entries.find((e) => e.day === 5)!, pinned: true }
+    const second = buildWeekMenu(household({ cookingDays: [0, 4] }), 11, [pinned]).menu
+    const same = second.entries.find((e) => e.day === 5 && e.slot === pinned.slot)
+    expect(same?.cookDay).toBe(4)
+  })
+})
+
+describe('умная замена', () => {
+  const h = household()
+  const menu = buildWeekMenu(h, 4).menu
+  const entry = menu.entries.find((e) => e.slot === 'dinner')!
+
+  it('«дорого» поднимает варианты дешевле текущего', () => {
+    const plain = replacementOptions(menu, h, entry.id, undefined, 5)
+    const cheap = replacementOptions(menu, h, entry.id, 'expensive', 5)
+    const avg = (list: typeof plain) => list.reduce((s, o) => s + o.price, 0) / list.length
+    expect(avg(cheap)).toBeLessThan(avg(plain))
+  })
+
+  it('«слишком долго» поднимает варианты быстрее текущего', () => {
+    const plain = replacementOptions(menu, h, entry.id, undefined, 5)
+    const quick = replacementOptions(menu, h, entry.id, 'too_long', 5)
+    const avg = (list: typeof plain) => list.reduce((s, o) => s + o.minutes, 0) / list.length
+    expect(avg(quick)).toBeLessThan(avg(plain))
+  })
+
+  it('«нет ингредиентов» поднимает блюда из уже закупаемых продуктов', () => {
+    const plain = replacementOptions(menu, h, entry.id, undefined, 5)
+    const reuse = replacementOptions(menu, h, entry.id, 'no_ingredients', 5)
+    const avg = (list: typeof plain) => list.reduce((s, o) => s + o.reuseShare, 0) / list.length
+    expect(avg(reuse)).toBeGreaterThanOrEqual(avg(plain))
+  })
+
+  it('«хочется проще» поднимает блюда с меньшим числом шагов', () => {
+    const plain = replacementOptions(menu, h, entry.id, undefined, 5)
+    const simple = replacementOptions(menu, h, entry.id, 'simpler', 5)
+    const avg = (list: typeof plain, f: (o: (typeof plain)[0]) => number) =>
+      list.reduce((s, o) => s + f(o), 0) / list.length
+    expect(avg(simple, (o) => o.recipe.steps.length)).toBeLessThan(
+      avg(plain, (o) => o.recipe.steps.length),
+    )
+    expect(avg(simple, (o) => o.recipe.items.length)).toBeLessThanOrEqual(
+      avg(plain, (o) => o.recipe.items.length),
+    )
+  })
+
+  it('«не нравится» уводит от похожего по составу', () => {
+    const plain = replacementOptions(menu, h, entry.id, undefined, 5)
+    const other = replacementOptions(menu, h, entry.id, 'dislike', 5)
+    const current = RECIPE_BY_ID[entry.recipeId]
+    const shared = (list: typeof plain) => {
+      const items = new Set(current.items.map((i) => i.ingredientId))
+      return (
+        list.reduce(
+          (s, o) => s + o.recipe.items.filter((i) => items.has(i.ingredientId)).length,
+          0,
+        ) / list.length
+      )
+    }
+    expect(shared(other)).toBeLessThan(shared(plain))
+  })
+
+  it('«уже недавно ели» уводит от продуктов, которых в неделе и так много', () => {
+    const plain = replacementOptions(menu, h, entry.id, undefined, 5)
+    const fresh = replacementOptions(menu, h, entry.id, 'recent', 5)
+    const avg = (list: typeof plain) => list.reduce((s, o) => s + o.reuseShare, 0) / list.length
+    // здесь переиспользование, наоборот, должно упасть: человеку приелось
+    expect(avg(fresh)).toBeLessThan(avg(plain))
+  })
+
+  it('считает разницу с текущим блюдом', () => {
+    const options = replacementOptions(menu, h, entry.id, undefined, 3)
+    for (const o of options) {
+      expect(o.deltaMinutes).toBe(o.minutes - RECIPE_BY_ID[entry.recipeId].steps.reduce((s, x) => s + x.minutes, 0))
+      expect(Number.isFinite(o.deltaPrice)).toBe(true)
+      expect(o.reuseShare).toBeGreaterThanOrEqual(0)
+      expect(o.reuseShare).toBeLessThanOrEqual(1)
+    }
+  })
+
+  it('любая причина сохраняет калорийность приёма пищи', () => {
+    const reasons = ['dislike', 'too_long', 'expensive', 'no_ingredients', 'simpler', 'recent'] as const
+    const target = slotTargetOn(h, entry.slot, entry.day)
+    expect(target).toBeGreaterThan(0)
+    for (const reason of reasons) {
+      const top = replacementOptions(menu, h, entry.id, reason, 5)
+      expect(top.length).toBe(5)
+      const avg = top.reduce((s, o) => s + o.kcal, 0) / top.length
+      // причина меняет, ЧТО предлагается, но не размер порции: держимся ±25% нормы
+      expect(avg).toBeGreaterThan(target * 0.75)
+      expect(avg).toBeLessThan(target * 1.25)
     }
   })
 })

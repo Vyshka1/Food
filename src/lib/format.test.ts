@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { plural } from './format'
+import { decimal, plural, portionsLabel } from './format'
 import { formatQty, shoppingListText } from './shopping'
 import { formatDuration } from './cookingPlan'
 
@@ -77,5 +77,29 @@ describe('shoppingListText', () => {
     expect(text).not.toContain('Молоко')
     expect(text).not.toContain('Соль')
     expect(text).toContain('Итого примерно 60 ₽')
+  })
+})
+
+describe('portionsLabel', () => {
+  it('склоняет целые порции по правилам русского', () => {
+    expect(portionsLabel(1)).toBe('1 порция')
+    expect(portionsLabel(2)).toBe('2 порции')
+    expect(portionsLabel(5)).toBe('5 порций')
+    expect(portionsLabel(11)).toBe('11 порций')
+    expect(portionsLabel(21)).toBe('21 порция')
+  })
+
+  it('дробные ставит в родительный падеж, а не по целой части', () => {
+    // «2,5 порций» — типичная ошибка: склонять по округлённой тройке нельзя
+    expect(portionsLabel(2.5)).toBe('2,5 порции')
+    expect(portionsLabel(1.5)).toBe('1,5 порции')
+    expect(portionsLabel(0.5)).toBe('0,5 порции')
+    expect(portionsLabel(4.5)).toBe('4,5 порции')
+  })
+
+  it('пишет десятичную запятую и не тянет лишний ноль', () => {
+    expect(decimal(1)).toBe('1')
+    expect(decimal(1.25)).toBe('1,3')
+    expect(portionsLabel(3.0)).toBe('3 порции')
   })
 })
