@@ -44,6 +44,7 @@ function household(patch: Partial<Household> = {}): Household {
     meals: ['breakfast', 'lunch', 'dinner'],
     kitchen: kitchen(),
     budgetPerWeek: 0,
+    drinks: [],
     weekStart: '2026-09-07',
     ...patch,
   }

@@ -8,12 +8,12 @@ import { Icon } from '../components/icons'
 import { useKeepAwake } from '../hooks/useKeepAwake'
 
 export function ShoppingModeScreen({ onExit }: { onExit: () => void }) {
-  const { menu, atHome, bought, toggleBought } = useStore()
+  const { menu, household, atHome, bought, toggleBought } = useStore()
   const [hideBought, setHideBought] = useState(false)
   const [shareNote, setShareNote] = useState('')
   useKeepAwake()
 
-  const list = useMemo(() => (menu ? buildShoppingList(menu) : null), [menu])
+  const list = useMemo(() => (menu ? buildShoppingList(menu, household ?? undefined) : null), [menu, household])
   if (!menu || !list) return null
 
   const skip = new Set(atHome)

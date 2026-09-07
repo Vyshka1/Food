@@ -22,7 +22,7 @@ function leftover(line: ShoppingLine): string | null {
 
 export function ProductsScreen({ onShoppingMode }: { onShoppingMode: () => void }) {
   const { menu, household, atHome, bought, toggleAtHome, toggleBought } = useStore()
-  const list = useMemo(() => (menu ? buildShoppingList(menu) : null), [menu])
+  const list = useMemo(() => (menu ? buildShoppingList(menu, household ?? undefined) : null), [menu, household])
 
   if (!menu || !list || !household) return null
 

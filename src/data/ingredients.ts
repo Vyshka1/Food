@@ -213,6 +213,18 @@ export const INGREDIENTS: Ingredient[] = [
   ing('cornmeal', 'Кукурузная крупа', 'g', 'grain', [328, 8.3, 1.2, 71], 120, { pack: 600 }),
   ing('chia', 'Семена чиа', 'g', 'nuts', [486, 16.5, 30.7, 42.1], 1400, { pack: 200, tbspGrams: 12 }),
   ing('cinnamon', 'Корица', 'g', 'pantry', [247, 4, 1.2, 27.5], 2000, { staple: true, pack: 30 }),
+
+  // Напитки. Считаются не как блюда, а как ежедневный расход калорий: два
+  // капучино в день — это 280 ккал, которые иначе молча уходят сверх нормы.
+  ing('coffee', 'Кофе молотый', 'g', 'pantry', [2, 0.1, 0, 0.2], 1800, { tags: ['caffeine'], pack: 250 }),
+  ing('tea', 'Чай', 'g', 'pantry', [1, 0, 0, 0.2], 3000, { tags: ['caffeine'], pack: 100 }),
+  ing('matcha', 'Матча', 'g', 'pantry', [280, 29, 5, 39], 12000, { tags: ['caffeine'], pack: 50 }),
+  ing('protein_powder', 'Протеин', 'g', 'pantry', [380, 75, 5, 8], 2500, { pack: 900 }),
+  ing('orange_juice', 'Апельсиновый сок', 'ml', 'pantry', [45, 0.7, 0.2, 10.4], 150, { pack: 1000 }),
+  ing('cola', 'Газировка', 'ml', 'pantry', [42, 0, 0, 10.6], 90, { tags: ['sugar'], pack: 1000 }),
+  ing('wine_dry', 'Вино сухое', 'ml', 'pantry', [68, 0.1, 0, 0.6], 800, { pack: 750 }),
+  ing('beer_light', 'Пиво светлое', 'ml', 'pantry', [43, 0.5, 0, 3.6], 150, { allergens: ['gluten'], pack: 500 }),
+  ing('syrup', 'Сироп', 'ml', 'pantry', [270, 0, 0, 67], 900, { tags: ['sugar'], pack: 250, tbspGrams: 20 }),
 ]
 
 export const INGREDIENT_BY_ID: Record<string, Ingredient> = Object.fromEntries(

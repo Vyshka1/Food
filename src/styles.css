@@ -1043,6 +1043,66 @@ select {
   );
 }
 
+/* ── Привычные напитки ────────────────────────────────────────────────── */
+.drinks__person {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.drinks__person:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.drink {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+.drink__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--card);
+  border: none;
+  text-align: left;
+}
+
+.drink__head span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.drink__kcal {
+  font-weight: 700;
+  color: var(--green-dark);
+  white-space: nowrap;
+}
+
+.drink__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.drink__body .days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.drink__body .chip {
+  padding: 7px 11px;
+  font-size: 13px;
+}
+
 /* Готовые расклады недели: заполнять 28 клеток руками человек не станет. */
 .templates {
   display: flex;

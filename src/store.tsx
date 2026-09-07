@@ -4,6 +4,7 @@ import type {
   Eater,
   EntryStatus,
   Household,
+  DrinkHabit,
   Kitchen,
   MealPlace,
   MealSlot,
@@ -94,6 +95,7 @@ export function defaultHousehold(): Household {
       hasFreezer: true,
     },
     budgetPerWeek: 0,
+    drinks: [],
     weekStart: mondayOf(),
   }
 }
@@ -104,6 +106,7 @@ interface Store extends AppState {
   swapDish: (entryId: string, recipeId: string) => void
   togglePin: (entryId: string) => void
   cycleMealPlace: (eaterId: string, day: number, slot: MealSlot) => void
+  setDrinks: (drinks: DrinkHabit[]) => void
   applyAttendanceTemplate: (eaterId: string, templateId: string) => void
   copyAttendanceDay: (eaterId: string, day: number) => void
   setEntryStatus: (entryId: string, status: EntryStatus | null) => void
@@ -186,6 +189,8 @@ function load(): AppState {
       state.household = {
         ...state.household,
         kitchen: migrateKitchen(state.household.kitchen),
+        // напитков в старых анкетах не было — это пустой список, а не «не знаем»
+        drinks: state.household.drinks ?? [],
         eaters: state.household.eaters.map(migrateEater),
       }
     }
@@ -235,6 +240,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
     [],
   )
+
+  /** Привычные напитки: их калории резервируются, поэтому меню пересобирается. */
+  const setDrinks = useCallback((drinks: DrinkHabit[]) => {
+    setState((prev) => {
+      if (!prev.household) return prev
+      const household: Household = { ...prev.household, drinks }
+      const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
+      const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
+      const { menu, warnings } = buildWeekMenu(household, seed, keep)
+      return { ...prev, household, menu, warnings }
+    })
+  }, [])
 
   /** Пересборка недели: закреплённые блюда переживают её без изменений. */
   const regenerate = useCallback((seed?: number) => {
@@ -503,6 +520,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       swapDish,
       togglePin,
       cycleMealPlace,
+      setDrinks,
       applyAttendanceTemplate,
       copyAttendanceDay,
       setEntryStatus,
@@ -526,6 +544,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       swapDish,
       togglePin,
       cycleMealPlace,
+      setDrinks,
       applyAttendanceTemplate,
       copyAttendanceDay,
       setEntryStatus,

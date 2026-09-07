@@ -114,7 +114,8 @@ describe('когда доставать из морозилки', () => {
     eaters: [eater], cookingDays: [0], meals: ['breakfast', 'lunch', 'dinner'],
     kitchen: { burners: 4, ovens: 1, hasAirfryer: false, hasMulticooker: false, hasBlender: true,
       hasProcessor: false, hasMicrowave: true, hasDishwasher: false, containers: 10, hasFreezer: true },
-    budgetPerWeek: 0, weekStart: '2026-09-07',
+    budgetPerWeek: 0,
+    drinks: [], weekStart: '2026-09-07',
   }
 
   it('накануне, если размораживать в холодильнике', () => {

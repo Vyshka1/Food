@@ -15,6 +15,7 @@ import type {
 import { dailyNorm, recipeStats, slotShares, sumNorms } from './nutrition'
 import { mulberry32 } from './random'
 import { plural } from './format'
+import { drinkNorms, drinksOvershoot, foodNorm } from './drinks'
 import { containersOn, fedEaters, isFed, slotLabel, takeawayEaters } from './attendance'
 
 export const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
@@ -98,7 +99,8 @@ export function dayNorms(household: Household, day: number, eaterId?: string): N
   const shares = slotShares(household.meals)
   const eaters = eaterId ? household.eaters.filter((e) => e.id === eaterId) : household.eaters
   const parts = eaters.map((eater) => {
-    const full = dailyNorm(eater)
+    // норма еды — это норма минус привычные напитки: капучино уже выпит
+    const full = foodNorm(eater, household, day)
     const share = household.meals
       .filter((slot) => isFed(eater, day, slot))
       .reduce((sum, slot) => sum + (shares[slot] ?? 0), 0)
@@ -129,7 +131,7 @@ export function slotTargetOn(household: Household, slot: MealSlot, day: number):
   const present = fedEaters(household, day, slot)
   if (present.length === 0) return 0
   const share = slotShares(household.meals)[slot] ?? 0.3
-  const sum = present.reduce((acc, e) => acc + dailyNorm(e).kcal * share, 0)
+  const sum = present.reduce((acc, e) => acc + foodNorm(e, household, day).kcal * share, 0)
   return Math.round(sum / present.length)
 }
 
@@ -209,7 +211,7 @@ export function portionsFor(
   return household.eaters.map((eater) => {
     // ест не дома — порции нет, значит и в закупку она не попадёт
     if (!isFed(eater, day, slot)) return { eaterId: eater.id, factor: 0 }
-    const target = dailyNorm(eater).kcal * (shares[slot] ?? 0.3)
+    const target = foodNorm(eater, household, day).kcal * (shares[slot] ?? 0.3)
     const raw = target / perServing
     return {
       eaterId: eater.id,
@@ -670,6 +672,18 @@ export function buildWeekMenu(
     (a, b) =>
       a.day - b.day || household.meals.indexOf(a.slot) - household.meals.indexOf(b.slot),
   )
+
+  // Напитки съедают часть нормы — и если почти всю, ужимать обед бессмысленно:
+  // норма еды упирается в нижнюю границу, и об этом нужно сказать вслух.
+  for (const eater of household.eaters) {
+    for (let day = 0; day < 7; day++) {
+      if (!drinksOvershoot(eater, household, day)) continue
+      warnings.push(
+        `${WEEKDAYS_FULL[day]}: напитки ${eater.name} — это ${drinkNorms(household, eater.id, day).kcal} ккал, больше трети дневной нормы. Меню собрано на остаток.`,
+      )
+      break
+    }
+  }
 
   // Контейнеры: их число ограничено, и «собрать три обеда с собой» при двух
   // контейнерах — не план, а сюрприз утром вторника.

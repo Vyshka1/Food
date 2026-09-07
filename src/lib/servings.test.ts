@@ -25,6 +25,7 @@ const household: Household = {
     hasFreezer: true,
   },
   budgetPerWeek: 0,
+  drinks: [],
   weekStart: '2026-09-07',
 }
 

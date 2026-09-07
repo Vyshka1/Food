@@ -86,6 +86,45 @@ export const MEAL_PLACE_LABEL: Record<MealPlace, string> = {
   away: 'не дома',
 }
 
+/**
+ * Привычные напитки.
+ *
+ * Кофе и сок — не блюда, но калории у них настоящие. Два капучино в день —
+ * это около 280 ккал, и если приложение отдаёт всю норму еде, фактический
+ * рацион уходит выше нормы ровно на эту величину, причём молча.
+ */
+export type DrinkKind =
+  | 'americano'
+  | 'latte'
+  | 'cappuccino'
+  | 'matcha'
+  | 'cocoa'
+  | 'tea'
+  | 'juice'
+  | 'soda'
+  | 'protein'
+  | 'wine'
+  | 'beer'
+
+export interface DrinkHabit {
+  id: string
+  /** Чей это напиток: калории резервируются у него, а не «у семьи». */
+  eaterId: string
+  kind: DrinkKind
+  /** Объём чашки или стакана, мл. */
+  volumeMl: number
+  /** Чем разбавляют: id молочного продукта либо ничего. */
+  milkId?: string
+  /** Ложек сахара. */
+  sugarTsp: number
+  /** Порций сиропа, мл. */
+  syrupMl: number
+  /** Сколько раз в день. */
+  perDay: number
+  /** В какие дни недели: 0 — понедельник. */
+  days: number[]
+}
+
 export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'snack'
 
 export const MEAL_SLOTS: { id: MealSlot; label: string; icon: 'sun' | 'leaf' | 'moon' | 'apple' }[] =
@@ -165,6 +204,8 @@ export interface Household {
   kitchen: Kitchen
   /** Бюджет на неделю, ₽. 0 — не ограничиваем. */
   budgetPerWeek: number
+  /** Привычные напитки: их калории резервируются до раскладки меню. */
+  drinks: DrinkHabit[]
   /** Дата понедельника недели, ISO yyyy-mm-dd. */
   weekStart: string
 }

@@ -68,6 +68,7 @@ describe('меню и норма', () => {
       hasFreezer: true,
     },
     budgetPerWeek: 0,
+    drinks: [],
     weekStart: '2026-09-07',
   }
 
@@ -126,6 +127,7 @@ describe('buildShoppingList', () => {
       hasFreezer: true,
     },
     budgetPerWeek: 0,
+    drinks: [],
     weekStart: '2026-09-07',
   }
 
@@ -178,6 +180,7 @@ describe('баланс БЖУ по дню', () => {
       hasFreezer: true,
     },
     budgetPerWeek: 0,
+    drinks: [],
     weekStart: '2026-09-07',
   }
 

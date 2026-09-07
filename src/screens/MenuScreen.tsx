@@ -3,6 +3,7 @@ import { recipeById } from '../data/recipeRegistry'
 import { ENTRY_STATUS, MEAL_SLOTS } from '../types'
 import type { MenuEntry } from '../types'
 import { WEEKDAYS, dayNorms, dayTotals, fedEaters, portionOf, takeawayEaters, totalPortions } from '../lib/menu'
+import { drinkNorms } from '../lib/drinks'
 import { portionWeight, recipeStats } from '../lib/nutrition'
 import { useStore } from '../store'
 import { CalorieRing, Card, Warnings } from '../components/ui'
@@ -45,6 +46,27 @@ export function MenuScreen() {
     () => (menu ? dayTotals(menu, day, eater?.id) : null),
     [menu, day, eater],
   )
+  /**
+   * Напитки показываем отдельной строкой, а не подмешиваем в еду: человек
+   * должен видеть, что 140 ккал ушли в капучино, а не гадать, почему обед
+   * стал меньше.
+   */
+  const drinks = useMemo(() => {
+    if (!household) return { kcal: 0, protein: 0, fat: 0, carbs: 0 }
+    const who = eater ? [eater] : household.eaters
+    return who.reduce(
+      (acc, e) => {
+        const d = drinkNorms(household, e.id, day)
+        return {
+          kcal: acc.kcal + d.kcal,
+          protein: acc.protein + d.protein,
+          fat: acc.fat + d.fat,
+          carbs: acc.carbs + d.carbs,
+        }
+      },
+      { kcal: 0, protein: 0, fat: 0, carbs: 0 },
+    )
+  }, [household, day, eater])
 
   if (!household || !menu || !norms || !totals) return null
 
@@ -146,6 +168,12 @@ export function MenuScreen() {
               <span style={off(percent)}>калории {percent}%</span>
               <span>≈ {totals.price} ₽</span>
             </div>
+            {drinks.kcal > 0 && (
+              <div className="macro muted small">
+                <span>напитки {drinks.kcal} ккал</span>
+                <span>всего {totals.kcal + drinks.kcal}</span>
+              </div>
+            )}
           </div>
         </div>
       </Card>

@@ -117,19 +117,30 @@ export function Stepper({
   onChange,
   min = 0,
   max = 20,
+  step = 1,
 }: {
   value: number
   onChange: (value: number) => void
   min?: number
   max?: number
+  /** Шаг: объём чашки удобнее менять по 50 мл, а не по одному. */
+  step?: number
 }) {
   return (
     <div className="stepper">
-      <button type="button" onClick={() => onChange(Math.max(min, value - 1))} aria-label="минус">
+      <button
+        type="button"
+        onClick={() => onChange(Math.max(min, value - step))}
+        aria-label="минус"
+      >
         −
       </button>
       <span>{value}</span>
-      <button type="button" onClick={() => onChange(Math.min(max, value + 1))} aria-label="плюс">
+      <button
+        type="button"
+        onClick={() => onChange(Math.min(max, value + step))}
+        aria-label="плюс"
+      >
         +
       </button>
     </div>

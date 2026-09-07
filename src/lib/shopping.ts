@@ -1,7 +1,8 @@
 import { CATEGORY_LABEL, CATEGORY_ORDER, INGREDIENT_BY_ID } from '../data/ingredients'
 import { recipeById } from '../data/recipeRegistry'
-import type { ShoppingLine, WeekMenu } from '../types'
+import type { Household, ShoppingLine, WeekMenu } from '../types'
 import { cookTasks } from './menu'
+import { drinkShopping } from './drinks'
 
 function roundUpTo(value: number, step: number): number {
   return Math.ceil(value / step) * step
@@ -13,8 +14,17 @@ export interface ShoppingList {
   total: number
 }
 
-export function buildShoppingList(menu: WeekMenu): ShoppingList {
+export function buildShoppingList(menu: WeekMenu, household?: Household): ShoppingList {
   const needed = new Map<string, number>()
+
+  // Напитки — не блюда, но молоко для капучино покупать всё равно нужно, и
+  // покупает его тот же список. Без этого две пачки молока в неделю уходили
+  // мимо закупки.
+  if (household) {
+    for (const [ingredientId, qty] of drinkShopping(household)) {
+      needed.set(ingredientId, (needed.get(ingredientId) ?? 0) + qty)
+    }
+  }
 
   for (const task of cookTasks(menu)) {
     const recipe = recipeById(task.recipeId)
