@@ -1233,3 +1233,194 @@ select {
   color: var(--green);
   margin-bottom: 10px;
 }
+
+/* ── Режим «Готовлю сейчас» ───────────────────────────────────────────── */
+.cook {
+  max-width: 520px;
+  margin: 0 auto;
+  min-height: 100vh;
+  padding: env(safe-area-inset-top) 16px calc(24px + env(safe-area-inset-bottom));
+}
+
+.cook__bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 0;
+  position: sticky;
+  top: env(safe-area-inset-top);
+  background: var(--bg);
+  z-index: 5;
+}
+
+.cook__exit,
+.cook__pause {
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  font-size: 15px;
+  font-weight: 600;
+  min-height: 48px;
+}
+
+.cook__pause {
+  background: var(--green-soft);
+  border-color: var(--green-soft);
+  color: var(--green-dark);
+}
+
+.cook__elapsed {
+  flex: 1;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.cook__elapsed b {
+  display: block;
+  font-size: 22px;
+}
+
+.cook__paused,
+.cook__drift {
+  background: var(--card-soft);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+/* Предупреждение о духовке должно быть заметнее всего остального на экране. */
+.cook__alert {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fdf1e7;
+  color: var(--warn);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.cook__label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.cook__who {
+  margin-left: auto;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--green-dark);
+  background: var(--green-soft);
+  border-radius: var(--radius-xs);
+  padding: 3px 8px;
+}
+
+/* Текущая операция — крупно: на неё смотрят от плиты, не из кресла. */
+.cook__now {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 18px;
+  margin-bottom: 12px;
+}
+
+.cook__dish {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.cook__text {
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.25;
+  margin-bottom: 8px;
+}
+
+.cook__meta {
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+
+.cook__timer {
+  font-size: 46px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  margin-bottom: 14px;
+}
+
+/* Просроченный шаг: число должно читаться как «ушли за срок», а не как ноль. */
+.cook__timer[data-over='true'] {
+  color: var(--warn);
+}
+
+.cook__parallel,
+.cook__next {
+  background: var(--card-soft);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+
+.cook__parallel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.cook__parallel-row:last-child {
+  border-bottom: none;
+}
+
+.cook__parallel-text {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.cook__parallel-timer {
+  font-size: 18px;
+  font-variant-numeric: tabular-nums;
+}
+
+.cook__next-text {
+  font-size: 17px;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.cook__done {
+  text-align: center;
+  font-size: 22px;
+  padding: 40px 0;
+}
+
+.cook__done svg {
+  color: var(--green);
+  margin-bottom: 10px;
+}
+
+.cook__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 20px;
+  padding-bottom: 20px;
+}

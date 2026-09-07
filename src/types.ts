@@ -344,6 +344,8 @@ export interface PlannedStep {
   appliance?: Appliance
   tempC?: number
   unattended: boolean
+  /** Какой повар занят шагом; null — шаг идёт сам. */
+  cook: number | null
   /** Минуты от старта готовки. */
   start: number
   end: number
@@ -366,6 +368,8 @@ export interface CookingPlan {
   handsOnMinutes: number
   /** Присмотр поверх этого — идёт параллельно, складывать с handsOn нельзя. */
   attentionMinutes: number
+  /** Занятые минуты каждого повара отдельно; handsOnMinutes — их сумма. */
+  perCookMinutes: number[]
   /** Максимум блюд, идущих одновременно. */
   maxParallel: number
   freeze: FreezeTask[]

@@ -7,7 +7,7 @@ import { Card, Warnings } from '../components/ui'
 import { Icon, recipeIcon } from '../components/icons'
 import { recipeById } from '../data/recipeRegistry'
 import { APPLIANCE_LABEL } from '../types'
-import type { Kitchen } from '../types'
+import type { CookingPlan, Kitchen } from '../types'
 
 /** «4 конфорки, духовка и блендер» — перечисляем то, что реально есть. */
 function kitchenSummary(kitchen: Kitchen): string {
@@ -37,18 +37,30 @@ function clockFrom(startHour: number, offsetMinutes: number): string {
   return `${h}:${String(m).padStart(2, '0')}`
 }
 
-export function PlanScreen() {
+export function PlanScreen({
+  onCookNow,
+}: {
+  onCookNow: (plan: CookingPlan, cookNames: string[]) => void
+}) {
   const { household, menu } = useStore()
   const [startHour, setStartHour] = useState(11)
-  const plans = useMemo(
-    () => (menu && household ? buildCookingPlans(menu, household) : []),
-    [menu, household],
-  )
   const [activeDay, setActiveDay] = useState<number | null>(null)
+  /** Готовим одна или вдвоём — это второй повар в расписании, а не оформление. */
+  const [cooks, setCooks] = useState(1)
+  const plans = useMemo(
+    () => (menu && household ? buildCookingPlans(menu, household, cooks) : []),
+    [menu, household, cooks],
+  )
 
   if (!household || !menu) return null
   const current = plans.find((p) => p.cookDay === activeDay) ?? plans[0]
   if (!current) return <div className="app">Меню пока пустое.</div>
+
+  const cookNames =
+    cooks === 1
+      ? [household.eaters[0]?.name ?? 'Повар']
+      : household.eaters.slice(0, 2).map((e) => e.name)
+
 
   return (
     <div className="app">
@@ -69,6 +81,17 @@ export function PlanScreen() {
           </button>
         ))}
       </div>
+
+      {household.eaters.length > 1 && (
+        <div className="segmented" style={{ marginBottom: 12 }}>
+          <button data-active={cooks === 1} onClick={() => setCooks(1)}>
+            Готовлю одна
+          </button>
+          <button data-active={cooks === 2} onClick={() => setCooks(2)}>
+            Готовим вдвоём
+          </button>
+        </div>
+      )}
 
       <Warnings items={current.warnings} />
 
@@ -107,6 +130,15 @@ export function PlanScreen() {
           <span>присмотр</span>
         </div>
       </div>
+      {cooks > 1 && (
+        <p className="hint" style={{ marginTop: -4 }}>
+          Вдвоём:{' '}
+          {current.perCookMinutes
+            .map((minutes, i) => `${cookNames[i] ?? `повар ${i + 1}`} — ${formatDuration(minutes)}`)
+            .join(', ')}
+          . Работы меньше не становится, она делится: духовку вторая пара рук не ускоряет.
+        </p>
+      )}
       <p className="hint" style={{ marginTop: -4 }}>
         Одновременно в работе до {current.maxParallel}{' '}
         {plural(current.maxParallel, ['блюда', 'блюд', 'блюд'])}. «Присмотр» идёт поверх занятых
@@ -140,7 +172,19 @@ export function PlanScreen() {
         </div>
       </Card>
 
-      <div className="meal-head">Пошагово</div>
+      <button
+        className="btn"
+        style={{ marginBottom: 6 }}
+        onClick={() => onCookNow(current, cookNames)}
+      >
+        Готовлю сейчас
+      </button>
+      <p className="hint">
+        Пошаговый режим с таймерами: экран не гаснет, предупредит за три минуты до духовки,
+        паузу можно поставить — всё, что дальше, сдвинется ровно на это время.
+      </p>
+
+      <div className="meal-head">Обзор</div>
       <div className="timeline">
         {current.steps.map((step, i) => (
           <div

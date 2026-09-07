@@ -242,3 +242,66 @@ describe('занятые руки и присмотр', () => {
     }
   })
 })
+
+describe('готовим вдвоём', () => {
+  /** Три независимых блюда, каждое — только ручная работа по 20 минут. */
+  const manualTasks = () =>
+    [0, 1, 2].map((i) =>
+      schedTask(i, `dish_${i}`, `Блюдо ${i}`, [
+        { text: 'Нарезать и собрать', minutes: 20, station: 'prep' as const, handsOn: true },
+      ]),
+    )
+
+  it('вдвоём ручная работа идёт параллельно', () => {
+    const alone = scheduleSteps(manualTasks(), kitchen(), 1)
+    const pair = scheduleSteps(manualTasks(), kitchen(), 2)
+    expect(alone.makespan).toBe(60)
+    expect(pair.makespan).toBe(40)
+  })
+
+  it('работы меньше не становится — она только делится', () => {
+    const alone = scheduleSteps(manualTasks(), kitchen(), 1)
+    const pair = scheduleSteps(manualTasks(), kitchen(), 2)
+    // человеко-минуты те же самые: вдвоём быстрее, но не дешевле
+    expect(pair.handsOnMinutes).toBe(alone.handsOnMinutes)
+    expect(pair.perCookMinutes.reduce((s, m) => s + m, 0)).toBe(pair.handsOnMinutes)
+  })
+
+  it('каждый повар занят не дольше самой готовки', () => {
+    // инвариант держится на каждом поваре, а не на сумме: вдвоём сумма
+    // законно превышает длительность, и проверять её было бы ошибкой
+    const pair = scheduleSteps(manualTasks(), kitchen(), 2)
+    expect(pair.handsOnMinutes).toBeGreaterThan(pair.makespan)
+    for (const minutes of pair.perCookMinutes) {
+      expect(minutes).toBeLessThanOrEqual(pair.makespan)
+    }
+  })
+
+  it('у каждого ручного шага есть исполнитель, у пассивного — нет', () => {
+    const pair = scheduleSteps(manualTasks(), kitchen(), 2)
+    for (const step of pair.steps) {
+      expect(step.cook).not.toBeNull()
+      expect(step.cook).toBeLessThan(2)
+    }
+    const oven = scheduleSteps(
+      [
+        schedTask(0, 'bake', 'Запеканка', [
+          { text: 'Запекать', minutes: 30, station: 'oven' as const, handsOn: false },
+        ]),
+      ],
+      kitchen(),
+      2,
+    )
+    expect(oven.steps[0].cook).toBeNull()
+  })
+
+  it('вторая пара рук не ускоряет духовку', () => {
+    const bake = () => [
+      schedTask(0, 'bake_a', 'Запеканка А', [
+        { text: 'Запекать', minutes: 30, station: 'oven' as const, handsOn: false },
+      ]),
+    ]
+    expect(scheduleSteps(bake(), kitchen({ ovens: 1 }), 1).makespan).toBe(30)
+    expect(scheduleSteps(bake(), kitchen({ ovens: 1 }), 2).makespan).toBe(30)
+  })
+})
