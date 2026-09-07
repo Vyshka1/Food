@@ -16,6 +16,20 @@ import { dailyNorm, recipeStats, slotShares, sumNorms } from './nutrition'
 import { mulberry32 } from './random'
 
 export const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+/**
+ * Винительный падеж: «на среду», «на пятницу». Именительный в таких фразах
+ * даёт «на пятница» — ошибку, которую видно сразу, но только на экране.
+ */
+export const WEEKDAYS_ACC = [
+  'понедельник',
+  'вторник',
+  'среду',
+  'четверг',
+  'пятницу',
+  'субботу',
+  'воскресенье',
+]
+
 export const WEEKDAYS_FULL = [
   'Понедельник',
   'Вторник',

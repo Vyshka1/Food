@@ -11,6 +11,7 @@ import type {
 } from '../types'
 import { APPLIANCE_LABEL, applianceCapacity } from '../types'
 import { WEEKDAYS_FULL, cookTasks, type CookTask } from './menu'
+import { containerLabel, thawReminders, useByDate } from './freezing'
 
 /**
  * Длительность шага с поправкой на количество порций: ручная работа растёт
@@ -275,14 +276,36 @@ export function buildCookingPlans(
         .filter((t): t is SchedTask => t !== null)
       const result = scheduleSteps(sched, household.kitchen, cooks)
 
+      // дата готовки нужна, чтобы посчитать срок годности для этикетки
+      const cookedOn = new Date(menu.weekStart)
+      cookedOn.setDate(cookedOn.getDate() + cookDay)
+
       const freeze: FreezeTask[] = tasks
         .filter((t) => t.freezerPortions > 0)
-        .map((t) => ({
-          recipeId: t.recipeId,
-          title: recipeById(t.recipeId)?.title ?? t.recipeId,
-          portions: t.freezerPortions,
-          eatOnDays: [...t.eatDays].sort((a, b) => a - b),
-        }))
+        .map((t) => {
+          const recipe = recipeById(t.recipeId)
+          const title = recipe?.title ?? t.recipeId
+          const info = recipe?.freezing
+          const containers = Math.max(1, Math.round(t.freezerPortions))
+          const useBy = useByDate(cookedOn, info?.days ?? 30)
+          return {
+            recipeId: t.recipeId,
+            title,
+            portions: t.freezerPortions,
+            eatOnDays: [...t.eatDays].sort((a, b) => a - b),
+            containers,
+            stage: info?.stage ?? 'cooked',
+            afterStep: info?.afterStep,
+            thaw: info?.thaw ?? 'fridge',
+            thawHours: info?.thawHours ?? 12,
+            useBy: useBy.toISOString().slice(0, 10),
+            label: containerLabel(title, containers, useBy),
+          }
+        })
+
+      const thaw = thawReminders(menu).filter((r) =>
+        tasks.some((t) => t.recipeId === r.recipeId),
+      )
 
       const warnings = [...result.warnings]
       const containersNeeded = tasks.reduce((s, t) => s + Math.max(0, t.eatDays.length - 1), 0)
@@ -318,6 +341,7 @@ export function buildCookingPlans(
         perCookMinutes: result.perCookMinutes,
         maxParallel: result.maxParallel,
         freeze,
+        thaw,
         coversDays,
         warnings,
       }
