@@ -40,7 +40,7 @@ describe('plural для людей', () => {
 describe('formatQty', () => {
   it('переводит в кило- и литры от 1000', () => {
     expect(formatQty(950, 'g')).toBe('950 г')
-    expect(formatQty(1400, 'g')).toBe('1.4 кг')
+    expect(formatQty(1400, 'g')).toBe('1,4 кг')
     expect(formatQty(2000, 'ml')).toBe('2 л')
     expect(formatQty(3, 'pcs')).toBe('3 шт')
   })
@@ -68,7 +68,7 @@ describe('shoppingListText', () => {
     const text = shoppingListText(list, { atHome: [], weekStart: '2026-09-07' })
     expect(text).toContain('Продукты на неделю 7.09–13.09')
     expect(text).toContain('Овощи и зелень')
-    expect(text).toContain('— Картофель, 1.2 кг')
+    expect(text).toContain('— Картофель, 1,2 кг')
     expect(text).toContain('— Молоко, 1 л')
     expect(text).toContain('Итого примерно 150 ₽')
   })

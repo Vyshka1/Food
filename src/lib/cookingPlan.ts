@@ -5,6 +5,7 @@ import type {
   FreezeTask,
   Household,
   Kitchen,
+  PackTask,
   PlannedStep,
   RecipeStep,
   WeekMenu,
@@ -307,6 +308,20 @@ export function buildCookingPlans(
         tasks.some((t) => t.recipeId === r.recipeId),
       )
 
+      // Раскладывание — отдельный шаг после готовки. Контейнер нужен на каждый
+      // день, кроме сегодняшнего: сегодня едят с тарелки.
+      const pack: PackTask[] = tasks
+        .map((t) => {
+          const later = t.eatDays.filter((d) => d !== cookDay).sort((a, b) => a - b)
+          return {
+            recipeId: t.recipeId,
+            title: recipeById(t.recipeId)?.title ?? t.recipeId,
+            containers: later.length,
+            forDays: later,
+          }
+        })
+        .filter((t) => t.containers > 0)
+
       const warnings = [...result.warnings]
       const containersNeeded = tasks.reduce((s, t) => s + Math.max(0, t.eatDays.length - 1), 0)
       if (household.kitchen.containers > 0 && containersNeeded > household.kitchen.containers) {
@@ -341,6 +356,7 @@ export function buildCookingPlans(
         perCookMinutes: result.perCookMinutes,
         maxParallel: result.maxParallel,
         freeze,
+        pack,
         thaw,
         coversDays,
         warnings,

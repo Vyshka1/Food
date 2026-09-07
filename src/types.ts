@@ -701,6 +701,15 @@ export interface ThawReminder {
   hours: number
 }
 
+export interface PackTask {
+  recipeId: string
+  title: string
+  /** Сколько контейнеров разложить. */
+  containers: number
+  /** На какие дни они уедут. */
+  forDays: number[]
+}
+
 export interface CookingPlan {
   cookDay: number
   dishes: { recipeId: string; title: string; emoji: string; portions: number }[]
@@ -716,6 +725,13 @@ export interface CookingPlan {
   /** Максимум блюд, идущих одновременно. */
   maxParallel: number
   freeze: FreezeTask[]
+  /**
+   * Раскладывание после готовки: сколько контейнеров под какое блюдо и на
+   * какие дни. Контейнер — это шаг готовки, а не единица измерения еды:
+   * «готовим 2 контейнера» человек читает как «еды на два контейнера», хотя
+   * речь про один раз приготовить и дважды поесть.
+   */
+  pack: PackTask[]
   /** Что и когда доставать из морозилки на этой неделе. */
   thaw: ThawReminder[]
   /** Дни, которые закрывает эта готовка. */
