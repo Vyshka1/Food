@@ -36,6 +36,10 @@ export type IconName =
   | 'alert'
   | 'party'
   | 'pin'
+  | 'thumbUp'
+  | 'thumbDown'
+  | 'history'
+  | 'repeat'
 
 const PATHS: Record<IconName, string> = {
   // навигация
@@ -72,7 +76,11 @@ const PATHS: Record<IconName, string> = {
   back: 'M15 5l-7 7 7 7',
   alert: 'M12 3.5 1.8 20.5h20.4L12 3.5ZM12 10v4M12 17.5h.01',
   party: 'M4 20l5.5-13 8.5 8.5L4 20ZM14 4.5c1 .5 1.3 1.6 1 2.5M18.5 3c.6 1.2.2 2.4-.7 3M20.5 8.5c-1 .3-2 0-2.6-.8M17 12.5c.8-.9 2-1.1 3-.6',
-  pin: 'M9.5 3h5l-.7 5.2 3.2 3.3H14v5.5L12 21l-2-4V11.5H6l3.2-3.3L8.5 3Z',
+  pin: 'M12 17.5V22M8.5 2.5h7v1.2l1.6 5.6A3.5 3.5 0 0 1 17.6 12H6.4a3.5 3.5 0 0 1 .5-2.7l1.6-5.6V2.5Z',
+  thumbUp: 'M7 21V10l4.5-7c1.2.2 1.8 1 1.8 2.2L12.6 9H19a2 2 0 0 1 2 2.3l-1.1 7A2 2 0 0 1 18 20H7ZM7 10H3v11h4',
+  thumbDown: 'M7 3v11l4.5 7c1.2-.2 1.8-1 1.8-2.2L12.6 15H19a2 2 0 0 0 2-2.3l-1.1-7A2 2 0 0 0 18 4H7ZM7 14H3V3h4',
+  history: 'M3.5 12a8.5 8.5 0 1 0 2.6-6.1M3.5 5v4h4M12 7.5V12l3 2',
+  repeat: 'M4 9a5 5 0 0 1 5-5h9M18 4l-3-3M18 4l-3 3M20 15a5 5 0 0 1-5 5H6M6 20l3-3M6 20l3 3',
 }
 
 export function Icon({

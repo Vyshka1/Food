@@ -314,6 +314,15 @@ function scoreRecipe(
   // «не люблю» — мягкий, но очень заметный штраф
   for (const eater of household.eaters) score += dislikeHits(recipe, eater).length * 60
 
+  // оценки блюд. Веса намеренно несимметричны и подобраны замером: «нравится»
+  // поднимает блюдо с 7 появлений на 40 недель до 60, «не нравится» опускает
+  // до 2 — то есть делает редким, но не вычёркивает. Вычёркивает «больше не
+  // показывать», и три варианта оценки должны давать три разных результата,
+  // а не два
+  const rating = ratingScore(recipe, household)
+  score -= Math.max(0, rating) * 90
+  score += Math.max(0, -rating) * 8
+
   // разнообразие
   score += (state.usedCount.get(recipe.id) ?? 0) * 45
   const last = state.lastDay.get(recipe.id)
@@ -327,6 +336,15 @@ function scoreRecipe(
   }
 
   return score + jitter * 30
+}
+
+/**
+ * Суммарная оценка блюда семьёй: +1 за каждое «нравится», −1 за «не
+ * нравится». Если Юлии блюдо нравится, а Кириллу нет, оно возвращается к
+ * нейтральному — и это честно: спор о блюде приложение не решает.
+ */
+export function ratingScore(recipe: Recipe, household: Household): number {
+  return household.eaters.reduce((sum, e) => sum + (e.ratings?.[recipe.id] ?? 0), 0)
 }
 
 function storageFor(recipe: Recipe, ageDays: number, hasFreezer: boolean): Storage | null {
@@ -743,12 +761,16 @@ export interface DayTotals extends Norms {
 
 /**
  * Итоги дня. Без eaterId — по всей семье, с eaterId — личная тарелка одного
- * человека: те же блюда, но его доля.
+ * человека: те же блюда, но его доля. Блюда, отмеченные пропущенными, не
+ * считаются: иначе шапка говорила бы «пропущено 1», а кольцо показывало бы
+ * полную норму.
  */
 export function dayTotals(menu: WeekMenu, day: number, eaterId?: string): DayTotals {
   const acc: DayTotals = { kcal: 0, protein: 0, fat: 0, carbs: 0, price: 0 }
   for (const entry of menu.entries) {
     if (entry.day !== day) continue
+    // пропущенное блюдо в тарелку не попало — считать его в норму дня нечестно
+    if (entry.status === 'skipped') continue
     const recipe = recipeById(entry.recipeId)
     if (!recipe) continue
     const s = recipeStats(recipe)

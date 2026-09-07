@@ -27,7 +27,7 @@ export function RecipeSheet({
   onSwap: () => void
   onBan: () => void
 }) {
-  const { household, menu } = useStore()
+  const { household, menu, rateRecipe } = useStore()
   const recipe = recipeById(entry.recipeId)
   if (!recipe || !household || !menu) return null
   const stats = recipeStats(recipe)
@@ -140,6 +140,40 @@ export function RecipeSheet({
             </div>
           </div>
         ))}
+      </div>
+
+      <div className="card">
+        <div className="section-title">Как вам блюдо</div>
+        {household.eaters.map((eater) => {
+          const value = eater.ratings?.[recipe.id] ?? 0
+          return (
+            <div className="rate-line" key={eater.id}>
+              <span>{eater.name}</span>
+              <div className="rate">
+                <button
+                  data-on={value === 1}
+                  onClick={() => rateRecipe(eater.id, recipe.id, value === 1 ? 0 : 1)}
+                  aria-label={`${eater.name}: нравится`}
+                  aria-pressed={value === 1}
+                >
+                  <Icon name="thumbUp" size={16} /> нравится
+                </button>
+                <button
+                  data-on={value === -1}
+                  onClick={() => rateRecipe(eater.id, recipe.id, value === -1 ? 0 : -1)}
+                  aria-label={`${eater.name}: не нравится`}
+                  aria-pressed={value === -1}
+                >
+                  <Icon name="thumbDown" size={16} /> не нравится
+                </button>
+              </div>
+            </div>
+          )
+        })}
+        <p className="hint" style={{ marginBottom: 0 }}>
+          Оценка меняет подбор на следующих неделях. Чтобы блюдо исчезло совсем —
+          «Больше не показывать».
+        </p>
       </div>
 
       <div className="row" style={{ gap: 10 }}>

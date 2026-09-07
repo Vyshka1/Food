@@ -9,11 +9,13 @@ import {
   cookTasks,
   cookingSegments,
   dayNorms,
+  dayTotals,
   dislikeHits,
   eatersAtHome,
   isRecipeAllowed,
   portionOf,
   replaceEntryWith,
+  ratingScore,
   replacementOptions,
   slotTargetOn,
   totalPortions,
@@ -34,6 +36,7 @@ function eater(patch: Partial<Eater> = {}): Eater {
     dislikes: [],
     bannedRecipes: [],
     awayMeals: [],
+    ratings: {},
     ...patch,
   }
 }
@@ -465,6 +468,98 @@ describe('умная замена', () => {
       // причина меняет, ЧТО предлагается, но не размер порции: держимся ±25% нормы
       expect(avg).toBeGreaterThan(target * 0.75)
       expect(avg).toBeLessThan(target * 1.25)
+    }
+  })
+})
+
+describe('оценки блюд', () => {
+  it('складывает оценки всех едоков', () => {
+    const recipe = RECIPES[0]
+    const both = household({
+      eaters: [
+        eater({ id: 'a', ratings: { [recipe.id]: 1 } }),
+        eater({ id: 'b', ratings: { [recipe.id]: 1 } }),
+      ],
+    })
+    expect(ratingScore(recipe, both)).toBe(2)
+  })
+
+  it('спор в семье возвращает блюдо к нейтральному', () => {
+    const recipe = RECIPES[0]
+    const split = household({
+      eaters: [
+        eater({ id: 'a', ratings: { [recipe.id]: 1 } }),
+        eater({ id: 'b', ratings: { [recipe.id]: -1 } }),
+      ],
+    })
+    expect(ratingScore(recipe, split)).toBe(0)
+  })
+
+  const seeds = Array.from({ length: 40 }, (_, i) => i + 1)
+  const appearances = (ratings: Record<string, 1 | -1>, recipeId: string) =>
+    seeds.reduce(
+      (n, seed) =>
+        n +
+        buildWeekMenu(household({ eaters: [eater({ ratings })] }), seed).menu.entries.filter(
+          (e) => e.recipeId === recipeId,
+        ).length,
+      0,
+    )
+  // блюдо, которое подбор и так выбирает регулярно — на нём видно обе стороны
+  const popular = 'draniki'
+
+  it('«нравится» заметно поднимает блюдо в подборе', () => {
+    const plain = appearances({}, popular)
+    const liked = appearances({ [popular]: 1 }, popular)
+    expect(plain).toBeGreaterThan(0)
+    expect(liked).toBeGreaterThan(plain * 3)
+  })
+
+  it('«не нравится» делает блюдо редким, но не вычёркивает его', () => {
+    const plain = appearances({}, popular)
+    const disliked = appearances({ [popular]: -1 }, popular)
+    expect(disliked).toBeLessThan(plain)
+    // и всё же иногда выпадает: иначе оценка ничем не отличалась бы от скрытия
+    expect(disliked).toBeGreaterThan(0)
+  })
+
+  it('скрытие, в отличие от оценки, убирает блюдо из подбора совсем', () => {
+    const recipe = RECIPE_BY_ID[popular]
+    const disliked = household({ eaters: [eater({ ratings: { [popular]: -1 } })] })
+    const banned = household({ eaters: [eater({ bannedRecipes: [popular] })] })
+    expect(isRecipeAllowed(recipe, disliked)).toBe(true)
+    expect(isRecipeAllowed(recipe, banned)).toBe(false)
+  })
+})
+
+describe('план и факт', () => {
+  it('пропущенное блюдо не считается в норму дня', () => {
+    const h = household()
+    const { menu } = buildWeekMenu(h, 12)
+    const day = 2
+    const before = dayTotals(menu, day)
+    const lunch = menu.entries.find((e) => e.day === day && e.slot === 'lunch')!
+    const marked = {
+      ...menu,
+      entries: menu.entries.map((e) =>
+        e.id === lunch.id ? { ...e, status: 'skipped' as const } : e,
+      ),
+    }
+    const after = dayTotals(marked, day)
+    expect(after.kcal).toBeLessThan(before.kcal)
+    expect(after.price).toBeLessThan(before.price)
+  })
+
+  it('«приготовлено» и «съедено» норму не меняют — это факт, а не отмена', () => {
+    const h = household()
+    const { menu } = buildWeekMenu(h, 12)
+    const before = dayTotals(menu, 2)
+    for (const status of ['cooked', 'eaten'] as const) {
+      const marked = {
+        ...menu,
+        entries: menu.entries.map((e) => (e.day === 2 ? { ...e, status } : e)),
+      }
+      expect(dayTotals(marked, 2)).toEqual(before)
     }
   })
 })

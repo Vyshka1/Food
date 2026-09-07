@@ -19,6 +19,7 @@ const base: Eater = {
   dislikes: [],
   bannedRecipes: [],
   awayMeals: [],
+  ratings: {},
 }
 
 describe('dailyNorm', () => {
