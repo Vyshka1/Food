@@ -5,6 +5,7 @@ import type { MealSlot, Recipe, RecipeItem, RecipeStep, Station } from '../types
 import { recipeStats } from '../lib/nutrition'
 import { slotTargets } from '../lib/menu'
 import { formatQty } from '../lib/shopping'
+import { newStep, withDerivedDetail } from '../lib/stepDetail'
 import { plural } from '../lib/format'
 import { useStore } from '../store'
 import { Card, Chip, Field, Section, Stepper, Switch } from '../components/ui'
@@ -24,7 +25,7 @@ function emptyRecipe(): Recipe {
     emoji: '🍲',
     slots: ['dinner'],
     items: [],
-    steps: [{ text: '', minutes: 10, station: 'prep', handsOn: true }],
+    steps: [newStep()],
     tags: [],
     freezable: false,
     fridgeDays: 3,
@@ -73,8 +74,9 @@ function Editor({
 
   const setItem = (index: number, item: RecipeItem) =>
     patch({ items: recipe.items.map((it, i) => (i === index ? item : it)) })
+  /** Прибор, температура и «можно ли отойти» пересчитываются от текста шага. */
   const setStep = (index: number, step: RecipeStep) =>
-    patch({ steps: recipe.steps.map((s, i) => (i === index ? step : s)) })
+    patch({ steps: recipe.steps.map((s, i) => (i === index ? withDerivedDetail(step) : s)) })
 
   return (
     <>
@@ -235,7 +237,7 @@ function Editor({
           style={{ marginTop: 10 }}
           onClick={() =>
             patch({
-              steps: [...recipe.steps, { text: '', minutes: 10, station: 'prep', handsOn: true }],
+              steps: [...recipe.steps, newStep()],
             })
           }
         >

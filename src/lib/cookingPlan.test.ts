@@ -1,8 +1,25 @@
 import { describe, expect, it } from 'vitest'
 import { RECIPE_BY_ID } from '../data/recipes'
-import type { Eater, Household } from '../types'
+import type { Eater, Household, Kitchen, RecipeStep, Station } from '../types'
 import { buildWeekMenu } from './menu'
-import { buildCookingPlans, scaledMinutes } from './cookingPlan'
+import { buildCookingPlans, scaledMinutes, scheduleSteps } from './cookingPlan'
+import { deriveRecipeSteps } from './stepDetail'
+
+function kitchen(patch: Partial<Kitchen> = {}): Kitchen {
+  return {
+    burners: 4,
+    ovens: 1,
+    hasAirfryer: false,
+    hasMulticooker: false,
+    hasBlender: true,
+    hasProcessor: false,
+    hasMicrowave: true,
+    hasDishwasher: false,
+    containers: 12,
+    hasFreezer: true,
+    ...patch,
+  }
+}
 
 function household(patch: Partial<Household> = {}): Household {
   const eater: Eater = {
@@ -25,11 +42,41 @@ function household(patch: Partial<Household> = {}): Household {
     eaters: [eater],
     cookingDays: [2, 6],
     meals: ['breakfast', 'lunch', 'dinner'],
-    kitchen: { burners: 4, hasOven: true, hasBlender: true, containers: 12, hasFreezer: true },
+    kitchen: kitchen(),
     budgetPerWeek: 0,
     weekStart: '2026-09-07',
     ...patch,
   }
+}
+
+function step0(patch: Partial<RecipeStep> = {}): RecipeStep {
+  return {
+    text: '',
+    minutes: 10,
+    station: 'prep',
+    handsOn: true,
+    activeMinutes: patch.minutes ?? 10,
+    unattended: false,
+    source: 'derived',
+    ...patch,
+  }
+}
+
+/** Задача расписания из «сырых» шагов: разметку выводим теми же правилами. */
+function schedTask(
+  index: number,
+  recipeId: string,
+  title: string,
+  raw: { text: string; minutes: number; station: Station; handsOn: boolean }[],
+) {
+  const steps = deriveRecipeSteps(raw).map((step) => ({
+    step,
+    minutes: step.minutes,
+    activeMinutes: step.activeMinutes,
+  }))
+  const remaining: number[] = new Array(steps.length).fill(0)
+  for (let i = steps.length - 1; i >= 0; i--) remaining[i] = steps[i].minutes + (remaining[i + 1] ?? 0)
+  return { index, recipeId, title, emoji: '', steps, remaining }
 }
 
 function overlaps(a: { start: number; end: number }, b: { start: number; end: number }): boolean {
@@ -38,18 +85,18 @@ function overlaps(a: { start: number; end: number }, b: { start: number; end: nu
 
 describe('scaledMinutes', () => {
   it('растягивает ручные шаги на количество порций', () => {
-    const step = { text: '', minutes: 10, station: 'prep' as const, handsOn: true }
+    const step = step0({ minutes: 10, station: 'prep', handsOn: true })
     expect(scaledMinutes(step, 1)).toBe(10)
     expect(scaledMinutes(step, 4)).toBe(19)
   })
 
   it('не растягивает ручную работу больше чем вдвое', () => {
-    const step = { text: '', minutes: 10, station: 'prep' as const, handsOn: true }
+    const step = step0({ minutes: 10, station: 'prep', handsOn: true })
     expect(scaledMinutes(step, 12)).toBe(20)
   })
 
   it('не трогает пассивное время', () => {
-    const step = { text: '', minutes: 25, station: 'stove' as const, handsOn: false }
+    const step = step0({ minutes: 25, station: 'stove', handsOn: false })
     expect(scaledMinutes(step, 4)).toBe(25)
   })
 })
@@ -95,7 +142,7 @@ describe('buildCookingPlans', () => {
 
   it('не превышает число конфорок и одну духовку', () => {
     const small = household({
-      kitchen: { burners: 2, hasOven: true, hasBlender: true, containers: 12, hasFreezer: true },
+      kitchen: kitchen({ burners: 2 }),
     })
     const smallPlans = buildCookingPlans(buildWeekMenu(small, 42).menu, small)
     for (const plan of smallPlans) {
@@ -121,6 +168,77 @@ describe('buildCookingPlans', () => {
     const planned = plans.flatMap((p) => p.freeze)
     for (const entry of frozenEntries) {
       expect(planned.some((f) => f.recipeId === entry.recipeId)).toBe(true)
+    }
+  })
+})
+
+describe('приборы как ресурс расписания', () => {
+  /** Два блюда, каждое требует блендер на всё время. */
+  const blenderTasks = () => [
+    schedTask(0, 'soup_a', 'Суп А', [
+      { text: 'Пробить блендером', minutes: 10, station: 'prep' as const, handsOn: false },
+    ]),
+    schedTask(1, 'soup_b', 'Суп Б', [
+      { text: 'Пробить блендером', minutes: 10, station: 'prep' as const, handsOn: false },
+    ]),
+  ]
+
+  it('не ставит два блюда в один блендер одновременно', () => {
+    const result = scheduleSteps(blenderTasks(), kitchen({ hasBlender: true }))
+    const [a, b] = result.steps
+    // раньше блендер вообще не был ресурсом, и оба шага вставали в одну минуту
+    expect(overlaps(a, b)).toBe(false)
+    expect(result.makespan).toBe(20)
+  })
+
+  it('предупреждает, если нужного прибора нет в анкете', () => {
+    const result = scheduleSteps(blenderTasks(), kitchen({ hasBlender: false }))
+    expect(result.warnings.some((w) => w.includes('блендер'))).toBe(true)
+  })
+
+  it('две духовки запекают параллельно, одна — по очереди', () => {
+    const ovenTasks = () => [
+      schedTask(0, 'bake_a', 'Запеканка А', [
+        { text: 'Запекать', minutes: 30, station: 'oven' as const, handsOn: false },
+      ]),
+      schedTask(1, 'bake_b', 'Запеканка Б', [
+        { text: 'Запекать', minutes: 30, station: 'oven' as const, handsOn: false },
+      ]),
+    ]
+    expect(scheduleSteps(ovenTasks(), kitchen({ ovens: 1 })).makespan).toBe(60)
+    expect(scheduleSteps(ovenTasks(), kitchen({ ovens: 2 })).makespan).toBe(30)
+  })
+
+  it('конфорок хватает ровно на столько блюд, сколько их есть', () => {
+    const stoveTasks = () =>
+      [0, 1, 2].map((i) =>
+        schedTask(i, `pot_${i}`, `Кастрюля ${i}`, [
+          { text: 'Варить под крышкой', minutes: 20, station: 'stove' as const, handsOn: false },
+        ]),
+      )
+    expect(scheduleSteps(stoveTasks(), kitchen({ burners: 3 })).makespan).toBe(20)
+    expect(scheduleSteps(stoveTasks(), kitchen({ burners: 1 })).makespan).toBe(60)
+  })
+})
+
+describe('занятые руки и присмотр', () => {
+  const h = household()
+  const { menu } = buildWeekMenu(h, 42)
+  const plans = buildCookingPlans(menu, h)
+
+  it('повар не может быть занят дольше, чем идёт готовка', () => {
+    // ловушка: активные минуты параллельных шагов складывались, и «руки заняты»
+    // выходило больше, чем вся готовка, — с одним поваром так не бывает
+    for (const plan of plans) {
+      expect(plan.handsOnMinutes).toBeLessThanOrEqual(plan.makespan)
+    }
+  })
+
+  it('присмотр считается отдельно и не смешивается с занятыми руками', () => {
+    for (const plan of plans) {
+      expect(plan.attentionMinutes).toBeGreaterThanOrEqual(0)
+      const stirring = plan.steps.filter((s) => !s.handsOn && s.activeMinutes > 0)
+      if (stirring.length > 0) expect(plan.attentionMinutes).toBeGreaterThan(0)
     }
   })
 })

@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { RECIPES, RECIPE_BY_ID } from '../data/recipes'
 import { setCustomRecipes } from '../data/recipeRegistry'
-import type { Eater, Household, Recipe } from '../types'
+import { withDerivedDetail } from './stepDetail'
+import type { Eater, Household, Kitchen, Recipe } from '../types'
 import {
   awayKey,
   buildWeekMenu,
@@ -41,12 +42,28 @@ function eater(patch: Partial<Eater> = {}): Eater {
   }
 }
 
+function kitchen(patch: Partial<Kitchen> = {}): Kitchen {
+  return {
+    burners: 4,
+    ovens: 1,
+    hasAirfryer: false,
+    hasMulticooker: false,
+    hasBlender: true,
+    hasProcessor: false,
+    hasMicrowave: true,
+    hasDishwasher: false,
+    containers: 10,
+    hasFreezer: true,
+    ...patch,
+  }
+}
+
 function household(patch: Partial<Household> = {}): Household {
   return {
     eaters: [eater()],
     cookingDays: [2, 6],
     meals: ['breakfast', 'lunch', 'dinner'],
-    kitchen: { burners: 4, hasOven: true, hasBlender: true, containers: 10, hasFreezer: true },
+    kitchen: kitchen(),
     budgetPerWeek: 0,
     weekStart: '2026-09-07',
     ...patch,
@@ -141,7 +158,7 @@ describe('buildWeekMenu', () => {
   it('без морозилки не выдаёт замороженных порций', () => {
     const h = household({
       cookingDays: [0, 4],
-      kitchen: { burners: 2, hasOven: true, hasBlender: false, containers: 6, hasFreezer: false },
+      kitchen: kitchen({ burners: 2, hasBlender: false, containers: 6, hasFreezer: false }),
     })
     const { menu } = buildWeekMenu(h, 9)
     expect(menu.entries.some((e) => e.storage === 'freezer')).toBe(false)
@@ -158,7 +175,7 @@ describe('buildWeekMenu', () => {
 
   it('не предлагает духовые блюда, если духовки нет', () => {
     const h = household({
-      kitchen: { burners: 2, hasOven: false, hasBlender: false, containers: 4, hasFreezer: true },
+      kitchen: kitchen({ burners: 2, ovens: 0, hasBlender: false, containers: 4 }),
     })
     const { menu } = buildWeekMenu(h, 4)
     for (const entry of menu.entries) {
@@ -194,8 +211,24 @@ describe('свои рецепты', () => {
       { ingredientId: 'carrot', qty: 50 },
     ],
     steps: [
-      { text: 'Нарезать', minutes: 8, station: 'prep', handsOn: true },
-      { text: 'Варить', minutes: 25, station: 'stove', handsOn: false },
+      withDerivedDetail({
+        text: 'Нарезать',
+        minutes: 8,
+        station: 'prep',
+        handsOn: true,
+        activeMinutes: 8,
+        unattended: false,
+        source: 'derived',
+      }),
+      withDerivedDetail({
+        text: 'Варить',
+        minutes: 25,
+        station: 'stove',
+        handsOn: false,
+        activeMinutes: 0,
+        unattended: false,
+        source: 'derived',
+      }),
     ],
     tags: [],
     freezable: true,

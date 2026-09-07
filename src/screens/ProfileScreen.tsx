@@ -11,6 +11,7 @@ import { RECIPES } from '../data/recipes'
 import { plural } from '../lib/format'
 import { AttendanceGrid } from '../components/AttendanceGrid'
 import { WeekHistory } from '../components/WeekHistory'
+import { KitchenEditor } from '../components/KitchenEditor'
 import { MACRO_COLOR } from '../lib/palette'
 
 export function ProfileScreen({
@@ -227,24 +228,12 @@ export function ProfileScreen({
       </Section>
 
       <Section title="Кухня" icon="kitchen">
-        <div className="stack small">
-          <div className="row row--between">
-            <span className="muted">Конфорки</span>
-            <b>{household.kitchen.burners}</b>
-          </div>
-          <div className="row row--between">
-            <span className="muted">Духовка</span>
-            <b>{household.kitchen.hasOven ? 'есть' : 'нет'}</b>
-          </div>
-          <div className="row row--between">
-            <span className="muted">Морозилка</span>
-            <b>{household.kitchen.hasFreezer ? 'есть' : 'нет'}</b>
-          </div>
-          <div className="row row--between">
-            <span className="muted">Контейнеры</span>
-            <b>{household.kitchen.containers}</b>
-          </div>
-        </div>
+        <KitchenEditor
+          kitchen={household.kitchen}
+          onChange={(patch) =>
+            saveHousehold({ ...household, kitchen: { ...household.kitchen, ...patch } })
+          }
+        />
       </Section>
 
       <button className="btn btn--ghost" onClick={reset}>

@@ -1,6 +1,15 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { Eater, EntryStatus, Household, MealSlot, Recipe, WeekMenu, WeekRecord } from './types'
+import type {
+  Eater,
+  EntryStatus,
+  Household,
+  Kitchen,
+  MealSlot,
+  Recipe,
+  WeekMenu,
+  WeekRecord,
+} from './types'
 import { awayKey, buildWeekMenu, replaceEntryWith } from './lib/menu'
 import { setCustomRecipes } from './data/recipeRegistry'
 import { decodeProfile } from './lib/transfer'
@@ -64,7 +73,18 @@ export function defaultHousehold(): Household {
     eaters: [newEater({ name: 'Я' })],
     cookingDays: [2, 6],
     meals: ['breakfast', 'lunch', 'dinner'],
-    kitchen: { burners: 4, hasOven: true, hasBlender: true, containers: 8, hasFreezer: true },
+    kitchen: {
+      burners: 4,
+      ovens: 1,
+      hasAirfryer: false,
+      hasMulticooker: false,
+      hasBlender: true,
+      hasProcessor: false,
+      hasMicrowave: true,
+      hasDishwasher: false,
+      containers: 8,
+      hasFreezer: true,
+    },
     budgetPerWeek: 0,
     weekStart: mondayOf(),
   }
@@ -92,6 +112,25 @@ interface Store extends AppState {
 }
 
 const StoreContext = createContext<Store | null>(null)
+
+/**
+ * Кухни, сохранённые до появления списка приборов: hasOven превращаем в одну
+ * духовку, остального просто не было — считаем, что прибора нет.
+ */
+function migrateKitchen(kitchen: Kitchen & { hasOven?: boolean }): Kitchen {
+  return {
+    burners: kitchen.burners ?? 4,
+    ovens: kitchen.ovens ?? (kitchen.hasOven === false ? 0 : 1),
+    hasAirfryer: kitchen.hasAirfryer ?? false,
+    hasMulticooker: kitchen.hasMulticooker ?? false,
+    hasBlender: kitchen.hasBlender ?? true,
+    hasProcessor: kitchen.hasProcessor ?? false,
+    hasMicrowave: kitchen.hasMicrowave ?? true,
+    hasDishwasher: kitchen.hasDishwasher ?? false,
+    containers: kitchen.containers ?? 8,
+    hasFreezer: kitchen.hasFreezer ?? true,
+  }
+}
 
 /** Сколько недель храним: localStorage не резиновый, а меню весит немало. */
 const MAX_HISTORY = 12
@@ -121,6 +160,7 @@ function load(): AppState {
     if (state.household) {
       state.household = {
         ...state.household,
+        kitchen: migrateKitchen(state.household.kitchen),
         eaters: state.household.eaters.map((e) => ({
           ...e,
           awayMeals: e.awayMeals ?? [],

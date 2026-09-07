@@ -4,8 +4,9 @@ import type { Activity, Allergen, Eater, Goal, Household, MealSlot, Sex } from '
 import { ACTIVITY_LABEL, GOAL_LABEL, dailyNorm } from '../lib/nutrition'
 import { WEEKDAYS, householdNorms } from '../lib/menu'
 import { defaultHousehold, newEater } from '../store'
-import { CalorieRing, Card, Chip, Field, Section, Segmented, Stepper, Switch } from '../components/ui'
+import { CalorieRing, Card, Chip, Field, Section, Segmented } from '../components/ui'
 import { Icon } from '../components/icons'
+import { KitchenEditor } from '../components/KitchenEditor'
 import { MACRO_COLOR } from '../lib/palette'
 
 const STEPS = ['Состав семьи', 'Аллергии и вкусы', 'Режим питания', 'Кухня', 'Готово']
@@ -347,60 +348,15 @@ export function Onboarding({ initial, onDone, onCancel }: Props) {
       {step === 3 && (
         <Section title="Что на кухне" icon="kitchen">
           <p className="hint" style={{ marginTop: 0 }}>
-            От этого зависит план готовки: на скольких конфорках можно вести блюда параллельно и
-            сколько заготовок разложить по контейнерам.
+            От этого зависит план готовки: приборы — это ресурс расписания, и от них зависит,
+            что можно вести параллельно, а что придётся ставить подряд.
           </p>
-          <div className="stack">
-            <div className="row row--between">
-              <span>Конфорки</span>
-              <Stepper
-                value={household.kitchen.burners}
-                min={1}
-                max={6}
-                onChange={(burners) =>
-                  setHousehold((h) => ({ ...h, kitchen: { ...h.kitchen, burners } }))
-                }
-              />
-            </div>
-            <div className="row row--between">
-              <span>Духовка</span>
-              <Switch
-                on={household.kitchen.hasOven}
-                onChange={(hasOven) =>
-                  setHousehold((h) => ({ ...h, kitchen: { ...h.kitchen, hasOven } }))
-                }
-              />
-            </div>
-            <div className="row row--between">
-              <span>Блендер</span>
-              <Switch
-                on={household.kitchen.hasBlender}
-                onChange={(hasBlender) =>
-                  setHousehold((h) => ({ ...h, kitchen: { ...h.kitchen, hasBlender } }))
-                }
-              />
-            </div>
-            <div className="row row--between">
-              <span>Морозилка</span>
-              <Switch
-                on={household.kitchen.hasFreezer}
-                onChange={(hasFreezer) =>
-                  setHousehold((h) => ({ ...h, kitchen: { ...h.kitchen, hasFreezer } }))
-                }
-              />
-            </div>
-            <div className="row row--between">
-              <span>Контейнеры</span>
-              <Stepper
-                value={household.kitchen.containers}
-                min={0}
-                max={30}
-                onChange={(containers) =>
-                  setHousehold((h) => ({ ...h, kitchen: { ...h.kitchen, containers } }))
-                }
-              />
-            </div>
-          </div>
+          <KitchenEditor
+            kitchen={household.kitchen}
+            onChange={(patch) =>
+              setHousehold((h) => ({ ...h, kitchen: { ...h.kitchen, ...patch } }))
+            }
+          />
         </Section>
       )}
 

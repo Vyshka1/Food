@@ -6,6 +6,22 @@ import { useStore } from '../store'
 import { Card, Warnings } from '../components/ui'
 import { Icon, recipeIcon } from '../components/icons'
 import { recipeById } from '../data/recipeRegistry'
+import { APPLIANCE_LABEL } from '../types'
+import type { Kitchen } from '../types'
+
+/** «4 конфорки, духовка и блендер» — перечисляем то, что реально есть. */
+function kitchenSummary(kitchen: Kitchen): string {
+  const parts = [`${kitchen.burners} ${plural(kitchen.burners, ['конфорка', 'конфорки', 'конфорок'])}`]
+  if (kitchen.ovens === 1) parts.push('духовка')
+  if (kitchen.ovens >= 2) parts.push(`${kitchen.ovens} духовки`)
+  if (kitchen.hasAirfryer) parts.push('аэрогриль')
+  if (kitchen.hasMulticooker) parts.push('мультиварка')
+  if (kitchen.hasBlender) parts.push('блендер')
+  if (kitchen.hasProcessor) parts.push('комбайн')
+  if (kitchen.hasMicrowave) parts.push('микроволновка')
+  if (parts.length === 1) return `${parts[0]} и больше ничего`
+  return `${parts.slice(0, -1).join(', ')} и ${parts[parts.length - 1]}`
+}
 
 const STATION_LABEL: Record<string, string> = {
   prep: 'руками',
@@ -38,8 +54,8 @@ export function PlanScreen() {
     <div className="app">
       <div className="screen-title">План готовки</div>
       <div className="screen-sub">
-        Что делать одновременно и в каком порядке — с учётом {household.kitchen.burners} конфорок
-        {household.kitchen.hasOven ? ' и духовки' : ' без духовки'}.
+        Что делать одновременно и в каком порядке — с учётом того, что стоит у вас на кухне:{' '}
+        {kitchenSummary(household.kitchen)}.
       </div>
 
       <div className="day-toggle" style={{ marginBottom: 14 }}>
@@ -84,17 +100,20 @@ export function PlanScreen() {
         </div>
         <div className="plan-stat">
           <b>{formatDuration(current.handsOnMinutes)}</b>
-          <span>активная работа</span>
+          <span>руки заняты</span>
         </div>
         <div className="plan-stat">
-          <b>{formatDuration(Math.max(0, current.makespan - current.handsOnMinutes))}</b>
-          <span>ожидание</span>
+          <b>{formatDuration(current.attentionMinutes)}</b>
+          <span>присмотр</span>
         </div>
       </div>
       <p className="hint" style={{ marginTop: -4 }}>
         Одновременно в работе до {current.maxParallel}{' '}
-        {plural(current.maxParallel, ['блюда', 'блюд', 'блюд'])}: пока одно доходит само,
-        руки заняты следующим.
+        {plural(current.maxParallel, ['блюда', 'блюд', 'блюд'])}. «Присмотр» идёт поверх занятых
+        рук — помешать, перевернуть, заглянуть в кастрюлю.{' '}
+        {current.makespan - current.handsOnMinutes > 0
+          ? `Свободного времени остаётся ${formatDuration(current.makespan - current.handsOnMinutes)}.`
+          : 'Свободных минут в этот день не остаётся — стоит добавить второй день готовки.'}
       </p>
 
       <Card>
@@ -135,8 +154,13 @@ export function PlanScreen() {
             </div>
             <div className="tl-step__text">{step.text}</div>
             <div className="tl-step__tag">
-              {step.end - step.start} мин · {STATION_LABEL[step.station]}
-              {step.handsOn ? '' : ' · можно заняться другим'}
+              {step.end - step.start} мин
+              {step.activeMinutes > 0 && step.activeMinutes < step.end - step.start
+                ? ` (руки заняты ${step.activeMinutes})`
+                : ''}{' '}
+              · {step.appliance ? APPLIANCE_LABEL[step.appliance] : STATION_LABEL[step.station]}
+              {step.tempC ? `, ${step.tempC}°` : ''}
+              {step.unattended ? ' · можно отойти' : ''}
             </div>
           </div>
         ))}
