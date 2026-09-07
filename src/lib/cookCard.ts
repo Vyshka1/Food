@@ -297,8 +297,10 @@ export function cookCard(
     const totalNeed = exactHere + exactOther
     const stock = pantry?.stock.find((s) => s.ingredientId === item.ingredientId)?.qty ?? 0
     const toBuy = Math.max(0, totalNeed - stock)
-    const plan = ing.staple ? null : packPlan(ing, toBuy)
-    const bought = plan?.buy ?? 0
+    // имя нарочно не plan: выше в функции уже есть план партии, и путать их
+    // на ровном месте не стоит
+    const pack = ing.staple ? null : packPlan(ing, toBuy)
+    const bought = pack?.buy ?? 0
     const available = bought + stock
     const rawLeft = Math.max(0, available - totalNeed)
 
@@ -314,7 +316,7 @@ export function cookCard(
     const absorbed =
       ing.unit === 'pcs'
         ? Math.ceil(exactHere - 1e-9) - exactHere
-        : absorbable(ing, rawLeft, plan?.packSize || bought)
+        : absorbable(ing, rawLeft, pack?.packSize || bought)
           ? rawLeft
           : 0
     const qty = exactHere + absorbed
