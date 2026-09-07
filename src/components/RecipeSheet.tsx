@@ -86,7 +86,8 @@ export function RecipeSheet({
   if (!recipe || !household || !menu) return null
   const card = cookCard(menu, household, entry, pantry)
   if (!card) return null
-  const totalMinutes = recipe.steps.reduce((s, st) => s + st.minutes, 0)
+  // время этой готовки, а не время рецепта на одну долю
+  const totalMinutes = card.cookMinutes
   const pieceName = recipe.batch?.pieceName
   const amount = cookAmountLabel(card, pieceName)
   /** Насколько раздача разошлась с нормой — это стоит сказать вслух. */
@@ -134,9 +135,27 @@ export function RecipeSheet({
           </div>
         )}
 
+        {card.loads && (
+          <div className="ing-line">
+            <span className="muted">Жарить</span>
+            <b>
+              {card.loads.count}{' '}
+              {plural(card.loads.count, ['заход', 'захода', 'заходов'])}
+              {card.loads.twoPans ? ' на двух сковородах' : ''} по {card.loads.perLoad} шт ·{' '}
+              {card.loads.minutes} мин
+            </b>
+          </div>
+        )}
+
         {card.plan && card.reason !== 'fresh' && (
           <p className="hint" style={{ marginTop: 4, marginBottom: 8 }}>
             Потому что {batchReasonText(card.plan.batch)}.
+          </p>
+        )}
+
+        {card.limitedByPractical && (
+          <p className="hint" style={{ marginTop: 0, marginBottom: 8, color: 'var(--warn)' }}>
+            Больше за раз не делают — на всю неделю понадобится вторая готовка.
           </p>
         )}
 
@@ -250,7 +269,7 @@ export function RecipeSheet({
             <div>
               <div>{step.text}</div>
               <div className="muted small">
-                {step.minutes} мин ·{' '}
+                {card.stepMinutes[i]} мин ·{' '}
                 {step.station === 'oven'
                   ? 'духовка'
                   : step.station === 'stove'

@@ -3,10 +3,10 @@ import type { Eater, Household, Kitchen } from '../types'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { RECIPES } from '../data/recipes'
 import { buildWeekMenu, defaultRepeats } from './menu'
-import { buildShoppingList } from './shopping'
+import { buildShoppingList, weekSpending } from './shopping'
 import { recipeById } from '../data/recipeRegistry'
 import { defaultOils } from './oil'
-import { emptyPantry } from './pantry'
+import { addStock, emptyPantry } from './pantry'
 import { householdGrams } from './measures'
 import { cookCard, splitPieces } from './cookCard'
 
@@ -263,6 +263,37 @@ describe('сколько раз это едят', () => {
   })
 })
 
+describe('время готовки — этой, а не рецептной', () => {
+  it('у штучного блюда жарка считается заходами', () => {
+    for (const card of allCards()) {
+      if (!card.loads) continue
+      const fryIndex = card.recipe.steps.findIndex((s) => /жарить|обжарить|выпека/i.test(s.text))
+      if (fryIndex < 0) continue
+      expect(card.stepMinutes[fryIndex], card.recipe.title).toBe(card.loads.minutes)
+    }
+  })
+
+  it('и общее время не меньше рецептного', () => {
+    for (const card of allCards()) {
+      const recipeMinutes = card.recipe.steps.reduce((s, st) => s + st.minutes, 0)
+      // готовим мы всегда не меньше одной доли, значит и времени не меньше
+      expect(card.cookMinutes, card.recipe.title).toBeGreaterThanOrEqual(
+        Math.floor(recipeMinutes * 0.9),
+      )
+    }
+  })
+
+  it('партия, упёршаяся в разумный максимум, честно об этом сообщает', () => {
+    // блюда, где одной готовкой неделю не закрыть, существуют — и молчать об
+    // этом нельзя: человек останется без ужина
+    const limited = allCards().filter((c) => c.limitedByPractical)
+    for (const card of limited) {
+      expect(card.cookPieces).toBe(card.recipe.batch!.piece!.max)
+      expect(card.cookGrams).toBeLessThan(card.neededGrams)
+    }
+  })
+})
+
 describe('шаги', () => {
   it('формовка и жарка — разные шаги', () => {
     // слитый шаг держал плиту занятой всё время лепки, а разметке заморозки
@@ -280,8 +311,10 @@ describe('шаги', () => {
 describe('сколько готовим', () => {
   it('приготовим не меньше, чем нужно по меню', () => {
     for (const card of allCards()) {
-      // партия может быть больше потребности — это и есть заготовка впрок;
-      // меньше быть не должна, иначе кто-то остаётся без ужина
+      // Партия может быть больше потребности — это и есть заготовка впрок.
+      // Меньше она бывает только в одном случае: упёрлись в разумный максимум
+      // за одну готовку, и тогда карточка обязана об этом сказать.
+      if (card.limitedByPractical) continue
       expect(card.cookGrams, card.recipe.title).toBeGreaterThanOrEqual(
         Math.floor(card.neededGrams * 0.9),
       )
@@ -291,5 +324,28 @@ describe('сколько готовим', () => {
   it('у всех блюд с проверенной партией есть число изделий или честный вес', () => {
     const verified = RECIPES.filter((r) => r.batch?.source === 'verified' && r.batch.yieldPieces)
     expect(verified.length).toBeGreaterThan(5)
+  })
+})
+
+describe('три числа про деньги', () => {
+  it('к оплате = продукты этой недели + то, что останется дома', () => {
+    for (let seed = 0; seed < 4; seed++) {
+      const { menu } = buildWeekMenu(household, seed)
+      const s = weekSpending(menu, household, emptyPantry())
+      expect(s.used + s.leftAtHome).toBe(s.checkout)
+      expect(s.used).toBeGreaterThan(0)
+      // покупка целыми упаковками всегда оставляет что-то дома
+      expect(s.leftAtHome).toBeGreaterThan(0)
+    }
+  })
+
+  it('запас дома уменьшает чек, но не «продукты недели»', () => {
+    const { menu } = buildWeekMenu(household, 2)
+    const empty = weekSpending(menu, household, emptyPantry())
+    const list = buildShoppingList(menu, household)
+    const big = list.lines.find((l) => !l.staple && l.buy > 100)!
+    const pantry = addStock(emptyPantry(), big.ingredientId, big.buy, '2026-01-05')
+    const stocked = weekSpending(menu, household, pantry)
+    expect(stocked.checkout).toBeLessThan(empty.checkout)
   })
 })

@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { CATEGORY_LABEL, CATEGORY_ORDER } from '../data/ingredients'
 import type { IngredientCategory, ShoppingLine } from '../types'
-import { buildShoppingList, formatQty } from '../lib/shopping'
+import { buildShoppingList, formatQty, weekSpending } from '../lib/shopping'
 import { useStore } from '../store'
 import { Card } from '../components/ui'
 import { Icon } from '../components/icons'
@@ -27,8 +27,12 @@ export function ProductsScreen({ onShoppingMode }: { onShoppingMode: () => void 
     () => (menu ? buildShoppingList(menu, household ?? undefined, pantry) : null),
     [menu, household, pantry],
   )
+  const spending = useMemo(
+    () => (menu && household ? weekSpending(menu, household, pantry, atHome) : null),
+    [menu, household, pantry, atHome],
+  )
 
-  if (!menu || !list || !household) return null
+  if (!menu || !list || !household || !spending) return null
 
   const active = list.lines.filter((l) => !atHome.includes(l.ingredientId) && !l.staple)
   const total = active.reduce((s, l) => s + l.price, 0)
@@ -64,11 +68,17 @@ export function ProductsScreen({ onShoppingMode }: { onShoppingMode: () => void 
           <div>
             <div style={{ fontSize: 26, fontWeight: 700 }}>≈ {total} ₽</div>
             <div className="muted small">
-              оценка по средним ценам · осталось купить {left.length} из {active.length}
+              к оплате в магазине · осталось купить {left.length} из {active.length}
+            </div>
+            {/* Три разных числа вместо одного: рост чека часто означает не
+                перерасход, а переезд денег в кладовую. */}
+            <div className="muted small">
+              продукты на эту неделю ≈ {spending.used} ₽, останется в запасах ≈{' '}
+              {spending.leftAtHome} ₽
             </div>
             {atHomeSum > 0 && (
               <div className="muted small">
-                {total + atHomeSum} ₽ по меню, {atHomeSum} ₽ уже есть дома
+                {atHomeSum} ₽ закрыто тем, что уже есть дома
               </div>
             )}
           </div>
@@ -144,8 +154,10 @@ export function ProductsScreen({ onShoppingMode }: { onShoppingMode: () => void 
       <PantryCard />
 
       <p className="hint">
-        Специи, соль и масло всегда считаются домашними и в сумму не входят. Цены —
-        ориентировочные, по средним значениям, а не по конкретному магазину.
+        Упаковки покупаются целиком, поэтому «к оплате» больше, чем «продукты на эту
+        неделю»: разница остаётся дома и вычитается из следующей закупки. Специи, соль и
+        масло считаются домашними и в сумму не входят. Цены ориентировочные, по средним
+        значениям, а не по конкретному магазину.
       </p>
     </div>
   )
