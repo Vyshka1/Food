@@ -7,6 +7,8 @@ import { WEEKDAYS_FULL } from '../lib/menu'
 import { plural } from '../lib/format'
 import { cookBatch } from '../lib/servings'
 import { householdQty } from '../lib/measures'
+import { batchReasonText, planBatch, yieldLabel } from '../lib/batch'
+import { leftoverAdvice, purchaseInfo } from '../lib/purchase'
 import { useStore } from '../store'
 import { Sheet } from './ui'
 import { Icon } from './icons'
@@ -16,6 +18,26 @@ const STORAGE_LABEL: Record<string, string> = {
   fresh: 'Готовим в этот день',
   fridge: 'Из холодильника',
   freezer: 'Из морозилки — достать заранее',
+}
+
+/**
+ * Остаток, с которым надо что-то решать. Мешок риса и банка мёда лежат
+ * месяцами и решения не требуют — писать про них «останется в запасе» значит
+ * топить важное в шуме.
+ */
+function needsDecision(ingredientId: string): boolean {
+  const ing = INGREDIENT_BY_ID[ingredientId]
+  if (!ing) return false
+  return purchaseInfo(ing).openedFridgeDays <= 7
+}
+
+/** «1 закладку», «полторы закладки» — как это назвать человеку. */
+function scaleLabel(scale: number): string {
+  if (scale === 0.5) return 'ползакладки'
+  if (scale === 1) return '1 закладку'
+  if (scale === 1.5) return 'полторы закладки'
+  if (scale === 2) return '2 закладки'
+  return `${String(scale).replace('.', ',')} закладки`
 }
 
 export function RecipeSheet({
@@ -41,6 +63,12 @@ export function RecipeSheet({
    */
   const batch = cookBatch(menu, recipe, entry, household.eaters)
   const scale = batch.totalFactor
+  /** Сколько удобно приготовить за раз — это не то же самое, сколько съедят. */
+  const plan = planBatch(recipe, {
+    neededGrams: batch.totalGrams,
+    hasFreezer: household.kitchen.hasFreezer,
+    freezerRoomGrams: household.kitchen.containers * 400,
+  })
 
   return (
     <Sheet onClose={onClose}>
@@ -81,6 +109,66 @@ export function RecipeSheet({
           норме.
         </p>
       </div>
+
+      {plan && plan.batch.reason !== 'fresh' && (
+        <div className="card">
+          <div className="section-title">Сколько готовить</div>
+          <div className="ing-line">
+            <span className="muted">Нужно по меню</span>
+            <b>{batch.totalGrams} г</b>
+          </div>
+          <div className="ing-line">
+            <span className="muted">Рекомендуем приготовить</span>
+            <b>
+              {scaleLabel(plan.chosen.scale)} · {yieldLabel(plan.batch, plan.chosen)}
+            </b>
+          </div>
+          <p className="hint" style={{ marginTop: 4, marginBottom: 8 }}>
+            Потому что {batchReasonText(plan.batch)}.
+          </p>
+          {plan.chosen.freezeGrams > 0 && (
+            <div className="ing-line">
+              <span className="muted">В морозилку</span>
+              <b>примерно {plan.chosen.freezeGrams} г</b>
+            </div>
+          )}
+          {plan.chosen.packs
+            .filter((line) => line.leftover > 0 && needsDecision(line.ingredientId))
+            .map((line) => {
+              const advice = leftoverAdvice(INGREDIENT_BY_ID[line.ingredientId], line.leftover)
+              return advice ? (
+                <div className="ing-line" key={line.ingredientId}>
+                  <span className="muted">Остаток: {line.name.toLowerCase()}</span>
+                  <b className="small">{advice}</b>
+                </div>
+              ) : null
+            })}
+          {plan.alternatives.length > 0 && (
+            <>
+              <div className="section-title" style={{ marginTop: 12, marginBottom: 6 }}>
+                Можно иначе
+              </div>
+              {plan.alternatives.map((option) => (
+                <div className="ing-line" key={option.scale}>
+                  <span>{scaleLabel(option.scale)}</span>
+                  <b className="small">
+                    {yieldLabel(plan.batch, option)}
+                    {option.unplacedGrams > 0 && ` · ${option.unplacedGrams} г некуда`}
+                    {option.anchorLeftover > 40 &&
+                      ` · ${option.anchorLeftover} г сырого остатка`}
+                  </b>
+                </div>
+              ))}
+            </>
+          )}
+          {plan.batch.source === 'derived' && (
+            <p className="hint" style={{ marginBottom: 0 }}>
+              Выход прикинут по составу и не проверен на кухне — поэтому только вес, без числа
+              изделий.
+            </p>
+          )}
+        </div>
+      )}
 
       <div className="card card--soft">
         <div className="row row--between small">
