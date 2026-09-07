@@ -3,6 +3,7 @@ import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { recipeStats } from './nutrition'
 import { packPlan, purchaseInfo } from './purchase'
 import { rawGramsPerServing } from './batchInfo'
+import { fryMinutes, pieceCookingOf, sizeOptions } from './pieces'
 
 /**
  * Выбор производственной партии.
@@ -61,16 +62,30 @@ export interface BatchPlan {
   neededGrams: number
 }
 
-/** Сколько минут занимает готовка партии: ручное растёт, пассивное — нет. */
-function batchMinutes(recipe: Recipe, servings: number): number {
+/**
+ * Сколько минут занимает готовка партии.
+ *
+ * Ручное растёт, пассивное — нет. А у штучного жарка растёт не коэффициентом,
+ * а заходами: на сковороде помещается пять оладий, и тридцать штук — это шесть
+ * заходов, сколько ни умножай время рецепта.
+ */
+function batchMinutes(recipe: Recipe, servings: number, pieces?: number): number {
+  const cooking = pieceCookingOf(recipe)
   let minutes = 0
   for (const step of recipe.steps) {
+    if (cooking && pieces && FRY_STEP.test(step.text)) {
+      minutes += fryMinutes(pieces, cooking)
+      continue
+    }
     const manual = step.handsOn || step.station === 'prep'
     const factor = manual ? Math.min(2, 0.7 + 0.3 * Math.max(1, servings)) : 1
     minutes += step.minutes * factor
   }
   return Math.round(minutes)
 }
+
+/** Шаг, который делается заходами: жарка, выпекание партии, катание шариков. */
+export const FRY_STEP = /жарить|обжарить|пожарить|выпека|запека|скатать|слепить/i
 
 function packLines(recipe: Recipe, servings: number): PackLine[] {
   const lines: PackLine[] = []
@@ -119,6 +134,12 @@ export interface BatchContext {
   freezerRoomGrams: number
 }
 
+/** Сколько изделий даст этот вариант. */
+export function optionPieces(batch: RecipeBatch, scale: number): number | undefined {
+  if (batch.source !== 'verified' || !batch.yieldPieces) return undefined
+  return Math.max(1, Math.round(batch.yieldPieces * scale))
+}
+
 export function buildOption(
   recipe: Recipe,
   batch: RecipeBatch,
@@ -156,7 +177,7 @@ export function buildOption(
     anchorLeftover: anchorLine?.leftover ?? 0,
     packs,
     price: Math.round(recipeStats(recipe).price * servings),
-    minutes: batchMinutes(recipe, servings),
+    minutes: batchMinutes(recipe, servings, optionPieces(batch, scale)),
   }
 }
 
@@ -198,6 +219,28 @@ export function planBatch(recipe: Recipe, context: BatchContext): BatchPlan | nu
       chosen: buildOption(recipe, batch, scale, context),
       alternatives: [],
       neededGrams: Math.round(context.neededGrams),
+    }
+  }
+
+  /*
+   * У штучного блюда размер партии задаётся не множителем, а числом изделий:
+   * человек делает дюжину сырников или двадцать оладий, а не «полторы
+   * закладки». Поэтому варианты берём из удобной сетки, а множитель считаем
+   * обратным счётом — наружу он всё равно не показывается.
+   */
+  const cooking = pieceCookingOf(recipe)
+  if (cooking && batch.yieldPieces) {
+    const options = sizeOptions(cooking)
+      .map((pieces) => buildOption(recipe, batch, pieces / batch.yieldPieces!, context))
+      .sort((a, b) => optionCost(a, batch) - optionCost(b, batch))
+    if (options.length > 0) {
+      return {
+        recipeId: recipe.id,
+        batch,
+        chosen: options[0],
+        alternatives: options.slice(1),
+        neededGrams: Math.round(context.neededGrams),
+      }
     }
   }
 

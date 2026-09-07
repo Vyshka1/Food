@@ -17,6 +17,9 @@ import { planBatch } from './batch'
 import type { BatchPlan } from './batch'
 import { packPlan, purchaseInfo } from './purchase'
 import { householdGrams } from './measures'
+import { fryMinutes, loads as loadCount, pieceCookingOf, useTwoPans } from './pieces'
+import { FRY_STEP } from './batch'
+import { scaledMinutes } from './cookingPlan'
 
 /**
  * Всё, что показывает карточка блюда, — одним расчётом.
@@ -128,6 +131,22 @@ export interface CookCard {
   reason: string
   alternatives: CardAlternative[]
   plan: BatchPlan | null
+  /** Как это жарится: сколько заходов и сколько это минут. */
+  loads?: { count: number; perLoad: number; minutes: number; twoPans: boolean }
+  /**
+   * Время каждого шага для этой готовки и общее время.
+   *
+   * Из рецепта его брать нельзя: рецепт написан на одну долю, а жарим мы
+   * тридцать оладий заходами по десять. Карточка, которая обещает 28 минут на
+   * часовую готовку, врёт ровно там, где человек это заметит.
+   */
+  stepMinutes: number[]
+  cookMinutes: number
+  /**
+   * Партия упёрлась в разумный максимум: больше за раз не делают, и на всю
+   * потребность одной готовки не хватит.
+   */
+  limitedByPractical: boolean
 }
 
 /** Сколько изделий выходит из выбранной партии. Только у проверенных блюд. */
@@ -399,6 +418,17 @@ export function cookCard(
     }
   })
 
+  const cooking = pieceCookingOf(recipe)
+  const twoPans = cookPieces && cooking ? useTwoPans(cookPieces, cooking, household.kitchen) : false
+  const pans = twoPans ? 2 : 1
+
+  const stepMinutes = recipe.steps.map((step) => {
+    if (cooking && cookPieces && FRY_STEP.test(step.text)) {
+      return fryMinutes(cookPieces, cooking, pans)
+    }
+    return scaledMinutes(step, servings)
+  })
+
   return {
     recipe,
     entries,
@@ -421,6 +451,22 @@ export function cookCard(
     reason: plan ? plan.batch.reason : 'fresh',
     alternatives,
     plan,
+    stepMinutes,
+    cookMinutes: stepMinutes.reduce((sum, m) => sum + m, 0),
+    loads:
+      cookPieces && cooking
+        ? {
+            count: loadCount(cookPieces, cooking, pans),
+            perLoad: cooking.perLoad * pans,
+            minutes: fryMinutes(cookPieces, cooking, pans),
+            twoPans,
+          }
+        : undefined,
+    // упёрлись в разумный максимум — значит одной готовкой неделю не закрыть,
+    // и сказать об этом надо прямо, а не оставить человека без ужина
+    limitedByPractical: Boolean(
+      cooking && cookPieces && cookPieces >= cooking.max && cookGrams < neededGrams * 0.95,
+    ),
   }
 }
 

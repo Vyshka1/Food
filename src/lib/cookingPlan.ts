@@ -6,6 +6,7 @@ import type {
   Household,
   Kitchen,
   PackTask,
+  Recipe,
   PlannedStep,
   RecipeStep,
   WeekMenu,
@@ -13,6 +14,9 @@ import type {
 import { APPLIANCE_LABEL, applianceCapacity } from '../types'
 import { WEEKDAYS_FULL, cookTasks, type CookTask } from './menu'
 import { containerLabel, thawReminders, useByDate } from './freezing'
+import { FRY_STEP, optionPieces, planBatch } from './batch'
+import { fryMinutes, pieceCookingOf, useTwoPans } from './pieces'
+import { portionWeight } from './nutrition'
 
 /**
  * Длительность шага с поправкой на количество порций: ручная работа растёт
@@ -234,15 +238,41 @@ export function scheduleSteps(
   }
 }
 
-function toSchedTask(task: CookTask, index: number): SchedTask | null {
+/** Сколько изделий выйдет у этой готовки — по той же партии, что и в карточке. */
+function piecesForTask(recipe: Recipe, task: CookTask, household: Household): number | undefined {
+  const plan = planBatch(recipe, {
+    neededGrams: portionWeight(recipe, task.portions),
+    hasFreezer: household.kitchen.hasFreezer,
+    freezerRoomGrams: household.kitchen.containers * 400,
+  })
+  return plan ? optionPieces(plan.batch, plan.chosen.scale) : undefined
+}
+
+function toSchedTask(task: CookTask, index: number, household?: Household): SchedTask | null {
   const recipe = recipeById(task.recipeId)
   if (!recipe) return null
   const portions = task.portions
-  const steps = recipe.steps.map((step) => ({
-    step,
-    minutes: scaledMinutes(step, portions),
-    activeMinutes: scaledActiveMinutes(step, portions),
-  }))
+  /*
+   * У штучного блюда жарка занимает не «время рецепта × коэффициент», а число
+   * заходов на время захода: на сковороде помещается пять оладий, и тридцать
+   * штук — это шесть заходов. Прежняя поправка упиралась в двойное время и
+   * обещала полчаса работы там, где её на час.
+   */
+  const cooking = pieceCookingOf(recipe)
+  const pieces = household ? piecesForTask(recipe, task, household) : undefined
+  const pans =
+    cooking && pieces && household && useTwoPans(pieces, cooking, household.kitchen) ? 2 : 1
+  const steps = recipe.steps.map((step) => {
+    if (cooking && pieces && FRY_STEP.test(step.text)) {
+      const minutes = fryMinutes(pieces, cooking, pans)
+      return { step, minutes, activeMinutes: minutes }
+    }
+    return {
+      step,
+      minutes: scaledMinutes(step, portions),
+      activeMinutes: scaledActiveMinutes(step, portions),
+    }
+  })
   const remaining: number[] = new Array(steps.length).fill(0)
   for (let i = steps.length - 1; i >= 0; i--) {
     remaining[i] = steps[i].minutes + (remaining[i + 1] ?? 0)
@@ -273,7 +303,7 @@ export function buildCookingPlans(
     .sort((a, b) => a[0] - b[0])
     .map(([cookDay, tasks]) => {
       const sched = tasks
-        .map((task, i) => toSchedTask(task, i))
+        .map((task, i) => toSchedTask(task, i, household))
         .filter((t): t is SchedTask => t !== null)
       const result = scheduleSteps(sched, household.kitchen, cooks)
 

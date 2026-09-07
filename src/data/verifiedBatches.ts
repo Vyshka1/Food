@@ -122,6 +122,9 @@ export const VERIFIED_BATCHES: Record<string, RecipeBatch> = {
     yieldGrams: 908,
     yieldPieces: Math.round((344 * 3) / PIECE.dranik),
     pieceName: ['драник', 'драника', 'драников'],
+    // на сковороде помещается пять драников, заход — шесть минут: они толще
+    // оладий и жарятся дольше
+    piece: { perLoad: 5, loadMinutes: 6, sizes: [10, 12, 16, 20, 24], max: 24 },
     freezeCooked: true,
     freezeRawAnchor: false,
     reason: 'pan',
@@ -136,6 +139,8 @@ export const VERIFIED_BATCHES: Record<string, RecipeBatch> = {
     yieldGrams: 650,
     yieldPieces: Math.round((246 * 3) / PIECE.pancake),
     pieceName: ['оладья', 'оладьи', 'оладий'],
+    // пять оладий за раз, по две минуты на сторону
+    piece: { perLoad: 5, loadMinutes: 4, sizes: [12, 16, 20, 24, 30], max: 30 },
     freezeCooked: true,
     freezeRawAnchor: false,
     reason: 'pan',
@@ -152,6 +157,9 @@ export const VERIFIED_BATCHES: Record<string, RecipeBatch> = {
     yieldGrams: 845,
     yieldPieces: Math.round((240 * 4) / PIECE.muffin),
     pieceName: ['маффин', 'маффина', 'маффинов'],
+    // форма на двенадцать ячеек, выпекание двадцать минут: вторая форма есть
+    // не у всех, поэтому больше двенадцати за раз не делаем
+    piece: { perLoad: 12, loadMinutes: 20, sizes: [12], max: 12 },
     freezeCooked: true,
     freezeRawAnchor: false,
     reason: 'form',
@@ -168,6 +176,8 @@ export const VERIFIED_BATCHES: Record<string, RecipeBatch> = {
     yieldGrams: 317,
     yieldPieces: Math.round((90 * 4) / PIECE.ball),
     pieceName: ['шарик', 'шарика', 'шариков'],
+    // шарики не жарят, их катают: «заход» здесь — вся партия сразу
+    piece: { perLoad: 24, loadMinutes: 10, sizes: [8, 12, 16, 20, 24], max: 24 },
     freezeCooked: true,
     freezeRawAnchor: false,
     reason: 'keeps',
@@ -184,6 +194,8 @@ export const VERIFIED_BATCHES: Record<string, RecipeBatch> = {
     yieldGrams: 330,
     yieldPieces: Math.round((150 * 1.5 + 27 * 1.5 + 25 * 1.5) / PIECE.syrnik),
     pieceName: ['сырник', 'сырника', 'сырников'],
+    // шесть сырников на сковороде, по три минуты на сторону
+    piece: { perLoad: 6, loadMinutes: 6, sizes: [6, 8, 10, 12], max: 12 },
     freezeCooked: true,
     freezeRawAnchor: false,
     reason: 'anchor-pack',
@@ -200,6 +212,8 @@ export const VERIFIED_BATCHES: Record<string, RecipeBatch> = {
     yieldGrams: 830,
     yieldPieces: Math.round((130 * 3 + 30 * 3 + 16 * 3) / PIECE.meatball),
     pieceName: ['тефтеля', 'тефтели', 'тефтелей'],
+    // тефтели мелкие: дюжина за раз, обжарка пять минут, дальше они тушатся
+    piece: { perLoad: 12, loadMinutes: 5, sizes: [12, 16, 20, 24, 30], max: 30 },
     freezeCooked: true,
     freezeRawAnchor: true,
     reason: 'anchor-pack',
@@ -216,6 +230,8 @@ export const VERIFIED_BATCHES: Record<string, RecipeBatch> = {
     yieldGrams: 1090,
     yieldPieces: Math.round((140 * 2.75 + 30 * 2.75 + 16 * 2.75 + 15 * 2.75) / PIECE.cutlet),
     pieceName: ['котлета', 'котлеты', 'котлет'],
+    // шесть котлет на сковороде, по пять минут на сторону
+    piece: { perLoad: 6, loadMinutes: 10, sizes: [6, 8, 10, 12, 16], max: 16 },
     freezeCooked: true,
     freezeRawAnchor: true,
     reason: 'anchor-pack',
@@ -249,6 +265,8 @@ export const VERIFIED_BATCHES: Record<string, RecipeBatch> = {
     yieldGrams: 1300,
     yieldPieces: Math.round((130 * 3 + 180 * 3 + 45 * 3 + 40 * 3) / PIECE.cabbageRoll),
     pieceName: ['голубец', 'голубца', 'голубцов'],
+    // биточки крупные: шесть за заход, восемь минут
+    piece: { perLoad: 6, loadMinutes: 8, sizes: [6, 8, 10, 12, 16], max: 16 },
     freezeCooked: true,
     freezeRawAnchor: true,
     reason: 'anchor-pack',
@@ -265,6 +283,7 @@ export const VERIFIED_BATCHES: Record<string, RecipeBatch> = {
     yieldGrams: 1170,
     yieldPieces: Math.round((160 * 3 + 30 * 3 + 27 * 3) / PIECE.fishCake),
     pieceName: ['котлета', 'котлеты', 'котлет'],
+    piece: { perLoad: 6, loadMinutes: 8, sizes: [6, 8, 10, 12, 16], max: 16 },
     freezeCooked: true,
     freezeRawAnchor: true,
     reason: 'anchor-pack',
@@ -281,6 +300,7 @@ export const VERIFIED_BATCHES: Record<string, RecipeBatch> = {
     yieldGrams: 1090,
     yieldPieces: Math.round((140 * 2.75 + 35 * 2.75 + 16 * 2.75) / PIECE.meatball),
     pieceName: ['тефтеля', 'тефтели', 'тефтелей'],
+    piece: { perLoad: 12, loadMinutes: 5, sizes: [12, 16, 20, 24, 30], max: 30 },
     freezeCooked: true,
     freezeRawAnchor: true,
     reason: 'anchor-pack',

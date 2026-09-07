@@ -104,6 +104,65 @@ export function buildShoppingList(
   return { lines, total }
 }
 
+/**
+ * Три разных числа, которые раньше были одним.
+ *
+ * «К оплате» — сумма на кассе: упаковки покупаются целиком. «Продукты на эту
+ * неделю» — сколько из них уйдёт в еду. Разница не потрачена впустую: она
+ * останется дома и вычтется из следующей закупки. Пока это было одним числом,
+ * рост чека читался как перерасход, хотя часть его — просто переезд денег в
+ * кладовую.
+ */
+export interface WeekSpending {
+  /** Сумма на кассе. */
+  checkout: number
+  /** Стоимость продуктов, которые уйдут в еду этой недели. */
+  used: number
+  /** Что останется дома из купленного. */
+  leftAtHome: number
+}
+
+export function weekSpending(
+  menu: WeekMenu,
+  household: Household,
+  pantry?: Pantry,
+  skip: string[] = [],
+): WeekSpending {
+  const list = buildShoppingList(menu, household, pantry)
+  const skipped = new Set(skip)
+  const lines = list.lines.filter((l) => !l.staple && !skipped.has(l.ingredientId))
+  const checkout = lines.reduce((sum, l) => sum + l.price, 0)
+
+  // сколько каждого продукта реально уйдёт в готовку этой недели
+  const need = new Map<string, number>()
+  const add = (id: string, qty: number) => need.set(id, (need.get(id) ?? 0) + qty)
+  for (const task of cookTasks(menu)) {
+    const recipe = recipeById(task.recipeId)
+    if (!recipe) continue
+    const portions = cookServings(recipe, task.portions, household)
+    for (const item of recipe.items) add(item.ingredientId, item.qty * portions)
+  }
+  for (const source of [drinkShopping(household), extraShopping(household)]) {
+    for (const [id, qty] of source) add(id, qty)
+  }
+
+  let used = 0
+  for (const line of lines) {
+    const ing = INGREDIENT_BY_ID[line.ingredientId]
+    if (!ing) continue
+    // считаем только то, что куплено сейчас: то, что взято из запаса, в чек
+    // этой недели не входило и в «останется» его записывать не за что
+    const inUse = Math.min(line.buy, Math.max(0, (need.get(line.ingredientId) ?? 0) - (line.fromStock ?? 0)))
+    used += ing.unit === 'pcs' ? ing.price * inUse : (ing.price * inUse) / 1000
+  }
+
+  return {
+    checkout: Math.round(checkout),
+    used: Math.round(used),
+    leftAtHome: Math.max(0, Math.round(checkout - used)),
+  }
+}
+
 /** Текст списка для мессенджера: категории, позиции, итог. */
 export function shoppingListText(
   list: ShoppingList,
