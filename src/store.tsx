@@ -48,6 +48,8 @@ export interface AppState {
   atHome: string[]
   /** Что есть дома: постоянные продукты, запасы и морозилка. */
   pantry: Pantry
+  /** Дублировать ли напоминания системными уведомлениями. */
+  notifications: boolean
   bought: string[]
   warnings: string[]
   /** Рецепты, добавленные вручную. */
@@ -61,6 +63,7 @@ const emptyState: AppState = {
   menu: null,
   atHome: [],
   pantry: emptyPantry(),
+  notifications: false,
   bought: [],
   warnings: [],
   customRecipes: [],
@@ -144,6 +147,7 @@ interface Store extends AppState {
   setExtras: (extras: DailyExtra[]) => void
   setPantry: (change: (pantry: Pantry) => Pantry) => void
   storeBought: () => void
+  setNotifications: (on: boolean) => void
   applyAttendanceTemplate: (eaterId: string, templateId: string) => void
   copyAttendanceDay: (eaterId: string, day: number) => void
   setEntryStatus: (entryId: string, status: EntryStatus | null) => void
@@ -286,6 +290,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
     [],
   )
+
+  const setNotifications = useCallback((notifications: boolean) => {
+    setState((prev) => ({ ...prev, notifications }))
+  }, [])
 
   /** Правка кладовой: что есть всегда, сколько чего лежит, что в морозилке. */
   const setPantry = useCallback((change: (pantry: Pantry) => Pantry) => {
@@ -679,6 +687,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setExtras,
       setPantry,
       storeBought,
+      setNotifications,
       applyAttendanceTemplate,
       copyAttendanceDay,
       setEntryStatus,
@@ -708,6 +717,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setExtras,
       setPantry,
       storeBought,
+      setNotifications,
       applyAttendanceTemplate,
       copyAttendanceDay,
       setEntryStatus,

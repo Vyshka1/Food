@@ -1043,6 +1043,31 @@ select {
   );
 }
 
+/* ── Сегодня ──────────────────────────────────────────────────────────── */
+.today-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 7px 0;
+  color: var(--green-dark);
+}
+
+.today-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--ink);
+}
+
+.today-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
 /* ── Что есть дома ────────────────────────────────────────────────────── */
 .input {
   border: 1px solid var(--line);

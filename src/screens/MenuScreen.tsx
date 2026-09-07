@@ -11,6 +11,7 @@ import { CalorieRing, Card, Warnings } from '../components/ui'
 import { RecipeSheet } from '../components/RecipeSheet'
 import { RebuildSheet } from '../components/RebuildSheet'
 import { WeekOverview } from '../components/WeekOverview'
+import { TodayCard } from '../components/TodayCard'
 import { Icon } from '../components/icons'
 import { DishThumb } from '../components/DishImage'
 import { plural } from '../lib/format'
@@ -188,6 +189,8 @@ export function MenuScreen() {
       )}
 
       <Warnings items={warnings} />
+
+      <TodayCard day={day} />
 
       {note && <div className="shop__note">{note}</div>}
 
