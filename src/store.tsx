@@ -542,7 +542,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // прошлых недель: блюдо, которое приготовили в понедельник и доедают в
       // среду, тоже помечено морозилкой, но в кладовой его никогда не было.
       if (entry && status === 'eaten' && entry.fromFreezer) {
-        pantry = takeFreezer(pantry, entry.recipeId, 1)
+        // контейнеров ровно столько, сколько ушло на стол: обед на двоих —
+        // это чаще два контейнера, и списывать один значит держать в кладовой
+        // еду, которой там уже нет
+        const lot = pantry.freezer.find((f) => f.recipeId === entry.recipeId)
+        const need = totalPortions(entry)
+        const containers = Math.max(1, Math.ceil(need / Math.max(0.1, lot?.portionsEach ?? 1)))
+        pantry = takeFreezer(pantry, entry.recipeId, containers)
       }
       return { ...prev, menu, pantry }
     })
