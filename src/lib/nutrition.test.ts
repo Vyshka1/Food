@@ -18,6 +18,7 @@ const base: Eater = {
   customAllergens: [],
   dislikes: [],
   bannedRecipes: [],
+  awayMeals: [],
 }
 
 describe('dailyNorm', () => {

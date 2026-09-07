@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
-import type { Eater, Household, Recipe, WeekMenu } from './types'
-import { buildWeekMenu, replaceEntryWith } from './lib/menu'
+import type { Eater, Household, MealSlot, Recipe, WeekMenu } from './types'
+import { awayKey, buildWeekMenu, replaceEntryWith } from './lib/menu'
 import { setCustomRecipes } from './data/recipeRegistry'
 import { decodeProfile } from './lib/transfer'
 
@@ -50,6 +50,7 @@ export function newEater(partial: Partial<Eater> = {}): Eater {
     customAllergens: [],
     dislikes: [],
     bannedRecipes: [],
+    awayMeals: [],
     ...partial,
   }
 }
@@ -69,6 +70,8 @@ interface Store extends AppState {
   saveHousehold: (household: Household) => void
   regenerate: (seed?: number) => void
   swapDish: (entryId: string, recipeId: string) => void
+  togglePin: (entryId: string) => void
+  toggleAway: (eaterId: string, day: number, slot: MealSlot) => void
   toggleAtHome: (ingredientId: string) => void
   toggleBought: (ingredientId: string) => void
   banRecipe: (eaterId: string, recipeId: string) => void
@@ -88,6 +91,13 @@ function load(): AppState {
     if (!raw) return emptyState
     const parsed = JSON.parse(raw) as Partial<AppState>
     const state = { ...emptyState, ...parsed }
+    // анкеты, сохранённые до появления «ест не дома», читаем как «ест всё дома»
+    if (state.household) {
+      state.household = {
+        ...state.household,
+        eaters: state.household.eaters.map((e) => ({ ...e, awayMeals: e.awayMeals ?? [] })),
+      }
+    }
     // реестр должен знать о своих рецептах до первой сборки меню
     setCustomRecipes(state.customRecipes)
     // меню, собранные до появления личных порций, пересобираем на том же seed
@@ -113,14 +123,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
   }, [state])
 
-  const generateFor = useCallback(
-    (household: Household, seed: number): Pick<AppState, 'household' | 'menu' | 'warnings'> => {
-      const { menu, warnings } = buildWeekMenu(household, seed)
-      return { household, menu, warnings }
-    },
-    [],
-  )
-
   const saveHousehold = useCallback(
     (household: Household) => {
       setState((prev) => {
@@ -132,26 +134,69 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [],
   )
 
-  const regenerate = useCallback(
-    (seed?: number) => {
-      setState((prev) => {
-        if (!prev.household) return prev
-        return {
-          ...prev,
-          ...generateFor(prev.household, seed ?? Math.floor(Math.random() * 1e9)),
-          atHome: prev.atHome,
-          bought: [],
-        }
-      })
-    },
-    [generateFor],
-  )
+  /** Пересборка недели: закреплённые блюда переживают её без изменений. */
+  const regenerate = useCallback((seed?: number) => {
+    setState((prev) => {
+      if (!prev.household) return prev
+      const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
+      const { menu, warnings } = buildWeekMenu(
+        prev.household,
+        seed ?? Math.floor(Math.random() * 1e9),
+        keep,
+      )
+      return { ...prev, menu, warnings, atHome: prev.atHome, bought: [] }
+    })
+  }, [])
 
   const swapDish = useCallback((entryId: string, recipeId: string) => {
     setState((prev) => {
       if (!prev.household || !prev.menu) return prev
       const menu: WeekMenu = replaceEntryWith(prev.menu, prev.household, entryId, recipeId)
       return { ...prev, menu }
+    })
+  }, [])
+
+  /** «Оставить это блюдо» — чтобы одна неудачная пересборка не унесла удачное. */
+  const togglePin = useCallback((entryId: string) => {
+    setState((prev) => {
+      if (!prev.menu) return prev
+      return {
+        ...prev,
+        menu: {
+          ...prev.menu,
+          entries: prev.menu.entries.map((e) =>
+            e.id === entryId ? { ...e, pinned: !e.pinned } : e,
+          ),
+        },
+      }
+    })
+  }, [])
+
+  /**
+   * «Кирилл обедает в офисе»: меню пересобирается, потому что меняются и
+   * порции, и состав закупки.
+   */
+  const toggleAway = useCallback((eaterId: string, day: number, slot: MealSlot) => {
+    setState((prev) => {
+      if (!prev.household) return prev
+      const key = awayKey(day, slot)
+      const household: Household = {
+        ...prev.household,
+        eaters: prev.household.eaters.map((e) =>
+          e.id === eaterId
+            ? {
+                ...e,
+                awayMeals: e.awayMeals.includes(key)
+                  ? e.awayMeals.filter((k) => k !== key)
+                  : [...e.awayMeals, key],
+              }
+            : e,
+        ),
+      }
+      const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
+      const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
+      const { menu, warnings } = buildWeekMenu(household, seed, keep)
+      return { ...prev, household, menu, warnings }
     })
   }, [])
 
@@ -254,6 +299,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       saveHousehold,
       regenerate,
       swapDish,
+      togglePin,
+      toggleAway,
       toggleAtHome,
       toggleBought,
       banRecipe,
@@ -268,6 +315,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       saveHousehold,
       regenerate,
       swapDish,
+      togglePin,
+      toggleAway,
       toggleAtHome,
       toggleBought,
       banRecipe,

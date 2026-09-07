@@ -1,5 +1,6 @@
 import type { Activity, Eater, Goal, MealSlot, Norms, Recipe } from '../types'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
+import { portionsLabel } from './format'
 
 export const ACTIVITY_FACTOR: Record<Activity, number> = {
   low: 1.2,
@@ -86,6 +87,11 @@ export function portionWeight(recipe: Recipe, factor: number): number {
     grams += perServing * factor
   }
   return Math.round(grams / 5) * 5
+}
+
+/** Вес тарелки вместе с тем, сколько это порций рецепта. */
+export function pieceLabel(recipe: Recipe, factor: number): string {
+  return `${portionWeight(recipe, factor)} г · ${portionsLabel(factor)}`
 }
 
 const statsCache = new Map<string, RecipeStats>()

@@ -1,11 +1,11 @@
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { recipeById } from '../data/recipeRegistry'
 import type { MenuEntry } from '../types'
-import { portionWeight, recipeStats } from '../lib/nutrition'
+import { pieceLabel, recipeStats } from '../lib/nutrition'
 import { formatQty } from '../lib/shopping'
 import { formatDuration } from '../lib/cookingPlan'
 import { WEEKDAYS_FULL, portionOf, totalPortions } from '../lib/menu'
-import { plural } from '../lib/format'
+import { portionsLabel } from '../lib/format'
 import { useStore } from '../store'
 import { Sheet } from './ui'
 import { Icon, recipeIcon } from './icons'
@@ -27,12 +27,21 @@ export function RecipeSheet({
   onSwap: () => void
   onBan: () => void
 }) {
-  const { household } = useStore()
+  const { household, menu } = useStore()
   const recipe = recipeById(entry.recipeId)
-  if (!recipe || !household) return null
+  if (!recipe || !household || !menu) return null
   const stats = recipeStats(recipe)
   const total = totalPortions(entry)
   const totalMinutes = recipe.steps.reduce((s, st) => s + st.minutes, 0)
+  /** Одна готовка кормит несколько дней — покажем, сколько уйдёт в остаток. */
+  const sameCook = menu.entries.filter(
+    (e) => e.recipeId === entry.recipeId && e.cookDay === entry.cookDay,
+  )
+  const cookedTotal = sameCook.reduce((sum, e) => sum + totalPortions(e), 0)
+  const laterDays = sameCook.filter((e) => e.day > entry.day).map((e) => e.day)
+  const leftover = sameCook
+    .filter((e) => e.day > entry.day)
+    .reduce((sum, e) => sum + totalPortions(e), 0)
 
   return (
     <Sheet onClose={onClose}>
@@ -50,18 +59,33 @@ export function RecipeSheet({
       </div>
 
       <div className="card">
-        <div className="section-title">Кому сколько</div>
+        <div className="section-title">
+          Кому сколько · готовим {pieceLabel(recipe, cookedTotal)}
+        </div>
         {household.eaters.map((eater) => {
           const factor = portionOf(entry, eater.id)
           return (
             <div className="ing-line" key={eater.id}>
               <span>{eater.name}</span>
-              <b>
-                {portionWeight(recipe, factor)} г · {Math.round(stats.kcal * factor)} ккал
-              </b>
+              {factor === 0 ? (
+                <b className="muted">ест не дома</b>
+              ) : (
+                <b>
+                  {pieceLabel(recipe, factor)} · {Math.round(stats.kcal * factor)} ккал
+                </b>
+              )}
             </div>
           )
         })}
+        {leftover > 0 && (
+          <div className="ing-line">
+            <span className="muted">Остаток</span>
+            <b>
+              {pieceLabel(recipe, leftover)} на{' '}
+              {laterDays.map((d) => WEEKDAYS_FULL[d].toLowerCase()).join(', ')}
+            </b>
+          </div>
+        )}
         <p className="hint" style={{ marginBottom: 0 }}>
           Одно блюдо, разные порции: каждому столько, сколько нужно по его норме.
         </p>
@@ -82,10 +106,7 @@ export function RecipeSheet({
       </div>
 
       <div className="card">
-        <div className="section-title">
-          Продукты · {total.toFixed(1).replace('.0', '')}{' '}
-          {plural(Math.round(total), ['порция', 'порции', 'порций'])}
-        </div>
+        <div className="section-title">Продукты · {portionsLabel(total)}</div>
         {recipe.items.map((item) => {
           const ing = INGREDIENT_BY_ID[item.ingredientId]
           if (!ing) return null

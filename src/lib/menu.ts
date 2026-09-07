@@ -61,12 +61,63 @@ export function householdNorms(household: Household): Norms {
   return sumNorms(household.eaters.map(dailyNorm))
 }
 
+/** Ключ приёма пищи вне дома: день недели плюс приём. */
+export function awayKey(day: number, slot: MealSlot): string {
+  return `${day}:${slot}`
+}
+
+/** Ест ли человек этот приём пищи дома. */
+export function eatsAtHome(eater: Eater, day: number, slot: MealSlot): boolean {
+  return !eater.awayMeals?.includes(awayKey(day, slot))
+}
+
+/** Кто из семьи за столом в этот приём пищи. */
+export function eatersAtHome(household: Household, day: number, slot: MealSlot): Eater[] {
+  return household.eaters.filter((e) => eatsAtHome(e, day, slot))
+}
+
+/**
+ * Личная норма на день с поправкой на еду вне дома: если Кирилл обедает в
+ * офисе, дома он должен добрать только завтрак и ужин. Иначе «65% нормы»
+ * выглядит как промах приложения, хотя это офисный обед.
+ */
+export function dayNorms(household: Household, day: number, eaterId?: string): Norms {
+  const shares = slotShares(household.meals)
+  const eaters = eaterId ? household.eaters.filter((e) => e.id === eaterId) : household.eaters
+  const parts = eaters.map((eater) => {
+    const full = dailyNorm(eater)
+    const share = household.meals
+      .filter((slot) => eatsAtHome(eater, day, slot))
+      .reduce((sum, slot) => sum + (shares[slot] ?? 0), 0)
+    return {
+      kcal: Math.round(full.kcal * share),
+      protein: Math.round(full.protein * share),
+      fat: Math.round(full.fat * share),
+      carbs: Math.round(full.carbs * share),
+    }
+  })
+  return sumNorms(parts)
+}
+
 /** Целевая калорийность одного приёма пищи в среднем на едока. */
 export function slotTargets(household: Household): Record<string, number> {
   const shares = slotShares(household.meals)
   const eaters = household.eaters.length || 1
   const perEater = householdNorms(household).kcal / eaters
   return Object.fromEntries(household.meals.map((m) => [m, Math.round(perEater * shares[m])]))
+}
+
+/**
+ * Целевая калорийность блюда на конкретный день: считаем по тем, кто за
+ * столом. Если дома один Кирилл, готовим под его норму, а не под среднее
+ * по семье.
+ */
+export function slotTargetOn(household: Household, slot: MealSlot, day: number): number {
+  const present = eatersAtHome(household, day, slot)
+  if (present.length === 0) return 0
+  const share = slotShares(household.meals)[slot] ?? 0.3
+  const sum = present.reduce((acc, e) => acc + dailyNorm(e).kcal * share, 0)
+  return Math.round(sum / present.length)
 }
 
 function recipeAllergens(recipe: Recipe): Set<Allergen> {
@@ -131,10 +182,17 @@ export function portionScale(recipe: Recipe, targetKcal: number): number {
  * нормой 1316 ккал и Кириллу с 2802 достаются разные объёмы. Это и есть
  * семейный расчёт — без него «общее меню на разные нормы» не работает.
  */
-export function portionsFor(recipe: Recipe, household: Household, slot: MealSlot): EaterPortion[] {
+export function portionsFor(
+  recipe: Recipe,
+  household: Household,
+  slot: MealSlot,
+  day: number,
+): EaterPortion[] {
   const shares = slotShares(household.meals)
   const perServing = recipeStats(recipe).kcal || 1
   return household.eaters.map((eater) => {
+    // ест не дома — порции нет, значит и в закупку она не попадёт
+    if (!eatsAtHome(eater, day, slot)) return { eaterId: eater.id, factor: 0 }
     const target = dailyNorm(eater).kcal * (shares[slot] ?? 0.3)
     const raw = target / perServing
     return {
@@ -292,14 +350,49 @@ const NEAR_SCORE_MARGIN = 50
 /** Свои рецепты добавляют не просто так — при прочих равных они идут первыми. */
 const CUSTOM_RECIPE_BONUS = 100
 
-export function buildWeekMenu(household: Household, seed: number): MenuBuildResult {
+/**
+ * Пересобирает меню. `keep` — блюда, которые человек оставил: они занимают
+ * свои клетки, а остальное подбирается вокруг них, включая баланс БЖУ.
+ */
+export function buildWeekMenu(
+  household: Household,
+  seed: number,
+  keep: MenuEntry[] = [],
+): MenuBuildResult {
   const rnd = mulberry32(seed)
   const warnings: string[] = []
   const segments = cookingSegments(household.cookingDays)
-  const targets = slotTargets(household)
   const targetMacros = macroShares(householdNorms(household))
   const entries: MenuEntry[] = []
   const state: PickState = { usedCount: new Map(), lastDay: new Map(), day: new Map() }
+
+  // закреплённые блюда ставим первыми: они попадают в дневной баланс, и
+  // подбор остального идёт уже с оглядкой на них
+  const pinnedAt = new Map<string, MenuEntry>()
+  for (const entry of keep) {
+    const recipe = recipeById(entry.recipeId)
+    if (!recipe) continue
+    const segment = segments.find((s) => s.days.includes(entry.day))
+    if (!segment) continue
+    const storage = storageFor(recipe, entry.day - segment.cookDay, household.kitchen.hasFreezer)
+    const fixed: MenuEntry = {
+      ...entry,
+      cookDay: segment.cookDay,
+      storage: storage ?? 'fresh',
+      portions: portionsFor(recipe, household, entry.slot, entry.day),
+      pinned: true,
+    }
+    pinnedAt.set(`${entry.slot}:${entry.day}`, fixed)
+    entries.push(fixed)
+    state.usedCount.set(recipe.id, (state.usedCount.get(recipe.id) ?? 0) + 1)
+    state.lastDay.set(recipe.id, entry.day)
+    addToDay(state, entry.day, recipe, portionScale(recipe, slotTargetOn(household, entry.slot, entry.day)))
+    if (!storage) {
+      warnings.push(
+        `${WEEKDAYS_FULL[entry.day]}: «${recipe.title}» оставлено вручную, но столько не хранится — приготовьте в этот день.`,
+      )
+    }
+  }
 
   const implicit = segments.find((s) => s.implicit && household.cookingDays.length > 0)
   if (implicit) {
@@ -321,7 +414,17 @@ export function buildWeekMenu(household: Household, seed: number): MenuBuildResu
       let guard = 0
       while (cursor < segment.days.length && guard++ < 50) {
         const day = segment.days[cursor]
-        const target = targets[slot] ?? 500
+        // клетка занята закреплённым блюдом — идём дальше
+        if (pinnedAt.has(`${slot}:${day}`)) {
+          cursor++
+          continue
+        }
+        // этот приём пищи вся семья ест не дома — готовить нечего
+        if (eatersAtHome(household, day, slot).length === 0) {
+          cursor++
+          continue
+        }
+        const target = slotTargetOn(household, slot, day) || 500
         const ranked = slotPool
           .map((recipe) => ({
             recipe,
@@ -341,10 +444,11 @@ export function buildWeekMenu(household: Household, seed: number): MenuBuildResu
         const near = ranked.filter((c) => c.score <= ranked[0].score + NEAR_SCORE_MARGIN)
         const best = near[Math.floor(rnd() * near.length)].recipe
         const scale = portionScale(best, target)
-        const portions = portionsFor(best, household, slot)
         let produced = 0
         for (let k = 0; k < MAX_RUN && cursor + k < segment.days.length; k++) {
           const eatDay = segment.days[cursor + k]
+          if (pinnedAt.has(`${slot}:${eatDay}`)) break
+          if (eatersAtHome(household, eatDay, slot).length === 0) break
           const storage = storageFor(best, eatDay - segment.cookDay, household.kitchen.hasFreezer)
           if (!storage) break
           entries.push({
@@ -353,7 +457,7 @@ export function buildWeekMenu(household: Household, seed: number): MenuBuildResu
             slot,
             day: eatDay,
             cookDay: segment.cookDay,
-            portions,
+            portions: portionsFor(best, household, slot, eatDay),
             storage,
           })
           produced++
@@ -378,7 +482,7 @@ export function buildWeekMenu(household: Household, seed: number): MenuBuildResu
             slot,
             day,
             cookDay: segment.cookDay,
-            portions: portionsFor(fallback.recipe, household, slot),
+            portions: portionsFor(fallback.recipe, household, slot, day),
             storage: storageFor(
               fallback.recipe,
               day - segment.cookDay,
@@ -409,15 +513,92 @@ export function buildWeekMenu(household: Household, seed: number): MenuBuildResu
   return { menu: { weekStart: household.weekStart, seed, entries }, warnings }
 }
 
-/** Заменяет одно блюдо в меню на следующее по рангу, сохраняя остальное. */
-/** Вариант замены с посчитанной порцией — чтобы показать выбор, а не решать за человека. */
+/**
+ * Почему блюдо не подошло. Причина не просто фильтрует список — она меняет
+ * ранжирование: «дорого» поднимает дешёвые варианты, «нет ингредиентов» —
+ * те, что собраны из уже закупаемых продуктов.
+ */
+export type ReplaceReason =
+  | 'dislike'
+  | 'too_long'
+  | 'expensive'
+  | 'no_ingredients'
+  | 'simpler'
+  | 'recent'
+
+export const REPLACE_REASONS: { id: ReplaceReason; label: string; hint: string }[] = [
+  { id: 'dislike', label: 'Не нравится', hint: 'уберём похожее по составу' },
+  { id: 'too_long', label: 'Слишком долго', hint: 'покажем то, что быстрее' },
+  { id: 'expensive', label: 'Дорого', hint: 'поднимем дешёвые варианты' },
+  { id: 'no_ingredients', label: 'Нет ингредиентов', hint: 'соберём из того, что уже в закупке' },
+  { id: 'simpler', label: 'Хочется проще', hint: 'меньше шагов и продуктов' },
+  { id: 'recent', label: 'Уже недавно ели', hint: 'что давно не было на столе' },
+]
+
+/** Что меняется относительно текущего блюда — чтобы выбор был осознанным. */
 export interface ReplacementOption {
   recipe: Recipe
   scale: number
   kcal: number
   price: number
   minutes: number
+  handsOnMinutes: number
   storage: Storage
+  /** Разница с заменяемым блюдом: ккал, ₽, минуты. */
+  deltaKcal: number
+  deltaPrice: number
+  deltaMinutes: number
+  /** Доля продуктов, которые и так покупаются на эту неделю, 0..1. */
+  reuseShare: number
+}
+
+function totalMinutes(recipe: Recipe): number {
+  return recipe.steps.reduce((sum, step) => sum + step.minutes, 0)
+}
+
+function handsOnMinutes(recipe: Recipe): number {
+  return recipe.steps.reduce((sum, step) => sum + (step.handsOn ? step.minutes : 0), 0)
+}
+
+/** Сколько раз каждый продукт уже встречается в неделе — мера приедания. */
+function ingredientUsage(menu: WeekMenu, skipEntryId: string): Map<string, number> {
+  const counts = new Map<string, number>()
+  for (const entry of menu.entries) {
+    if (entry.id === skipEntryId) continue
+    for (const item of recipeById(entry.recipeId)?.items ?? []) {
+      if (INGREDIENT_BY_ID[item.ingredientId]?.staple) continue
+      counts.set(item.ingredientId, (counts.get(item.ingredientId) ?? 0) + 1)
+    }
+  }
+  return counts
+}
+
+/** Продукты, которые уже нужны на эту неделю без учёта заменяемого блюда. */
+function weekIngredients(menu: WeekMenu, skipEntryId: string): Set<string> {
+  const set = new Set<string>()
+  for (const entry of menu.entries) {
+    if (entry.id === skipEntryId) continue
+    for (const item of recipeById(entry.recipeId)?.items ?? []) set.add(item.ingredientId)
+  }
+  return set
+}
+
+/** Доля продуктов рецепта, которые и так в списке покупок. */
+function reuseShareOf(recipe: Recipe, pool: Set<string>): number {
+  const items = recipe.items.filter((i) => !INGREDIENT_BY_ID[i.ingredientId]?.staple)
+  if (items.length === 0) return 1
+  return items.filter((i) => pool.has(i.ingredientId)).length / items.length
+}
+
+/** Насколько рецепт похож на отвергнутый: общие теги и общие основные продукты. */
+function similarity(candidate: Recipe, rejected: Recipe): number {
+  const tags = new Set(rejected.tags)
+  const shared = candidate.tags.filter((t) => tags.has(t)).length
+  const items = new Set(
+    rejected.items.filter((i) => !INGREDIENT_BY_ID[i.ingredientId]?.staple).map((i) => i.ingredientId),
+  )
+  const sharedItems = candidate.items.filter((i) => items.has(i.ingredientId)).length
+  return shared + sharedItems
 }
 
 /** Ранжированные кандидаты на замену блюда: лучший по подбору — первым. */
@@ -425,11 +606,13 @@ export function replacementOptions(
   menu: WeekMenu,
   household: Household,
   entryId: string,
+  reason?: ReplaceReason,
   limit = 20,
 ): ReplacementOption[] {
   const entry = menu.entries.find((e) => e.id === entryId)
   if (!entry) return []
-  const target = slotTargets(household)[entry.slot] ?? 500
+  const current = recipeById(entry.recipeId)
+  const target = slotTargetOn(household, entry.slot, entry.day) || 500
   const usedToday = new Set(
     menu.entries.filter((e) => e.day === entry.day && e.id !== entryId).map((e) => e.recipeId),
   )
@@ -439,6 +622,12 @@ export function replacementOptions(
     state.usedCount.set(e.recipeId, (state.usedCount.get(e.recipeId) ?? 0) + 1)
     state.lastDay.set(e.recipeId, e.day)
   }
+  const pool = weekIngredients(menu, entryId)
+  const usage = ingredientUsage(menu, entryId)
+  const curStats = current ? recipeStats(current) : null
+  const curScale = current ? portionScale(current, target) : 1
+  const curMinutes = current ? totalMinutes(current) : 0
+  const curHandsOn = current ? handsOnMinutes(current) : 0
 
   return allRecipes()
     .filter(
@@ -449,31 +638,81 @@ export function replacementOptions(
         !usedToday.has(r.id) &&
         storageFor(r, entry.day - entry.cookDay, household.kitchen.hasFreezer) !== null,
     )
-    .map((recipe) => ({
-      recipe,
-      score: scoreRecipe(recipe, {
+    .map((recipe) => {
+      const scale = portionScale(recipe, target)
+      const stats = recipeStats(recipe)
+      const minutes = totalMinutes(recipe)
+      const handsOn = handsOnMinutes(recipe)
+      const reuse = reuseShareOf(recipe, pool)
+      // база сохраняет то, ради чего меню и собиралось: калории, БЖУ, бюджет
+      let score = scoreRecipe(recipe, {
         household,
         targetKcal: target,
         targetMacros: macroShares(householdNorms(household)),
         day: entry.day,
         state,
         jitter: 0,
-      }),
-    }))
-    .sort((a, b) => a.score - b.score)
-    .slice(0, limit)
-    .map(({ recipe }) => {
-      const scale = portionScale(recipe, target)
-      const stats = recipeStats(recipe)
+      })
+      // общие продукты с остальной неделей — всегда в плюс: замена не должна
+      // добавлять полполки продуктов ради одного ужина
+      score -= reuse * 120
+      // и план готовки не должен раздуться от одной замены
+      score += Math.max(0, handsOn - curHandsOn) * 1.5
+
+      switch (reason) {
+        case 'dislike':
+          // похожее по составу и тегам на отвергнутое — мимо
+          if (current) score += similarity(recipe, current) * 110
+          break
+        case 'too_long':
+          score += Math.max(0, minutes - curMinutes) * 6
+          score += minutes * 1.2
+          break
+        case 'expensive':
+          score += Math.max(0, stats.price * scale - (curStats?.price ?? 0) * curScale) * 4
+          score += stats.price * scale * 1.5
+          break
+        case 'no_ingredients':
+          score -= reuse * 260
+          break
+        case 'simpler':
+          score += recipe.steps.length * 30 + recipe.items.length * 20 + minutes * 0.8
+          break
+        case 'recent': {
+          // приелось — значит нужны другие продукты, а не другое название.
+          // общий бонус за переиспользование здесь снимаем: он тянет ровно туда,
+          // откуда человек хочет уйти
+          score += reuse * 120
+          const items = recipe.items.filter((i) => !INGREDIENT_BY_ID[i.ingredientId]?.staple)
+          const repeats = items.reduce((sum, i) => sum + (usage.get(i.ingredientId) ?? 0), 0)
+          score += (repeats / Math.max(1, items.length)) * 90
+          score += (state.usedCount.get(recipe.id) ?? 0) * 200
+          break
+        }
+        default:
+          break
+      }
+
       return {
-        recipe,
-        scale,
-        kcal: Math.round(stats.kcal * scale),
-        price: Math.round(stats.price * scale),
-        minutes: recipe.steps.reduce((sum, step) => sum + step.minutes, 0),
-        storage: storageFor(recipe, entry.day - entry.cookDay, household.kitchen.hasFreezer)!,
+        option: {
+          recipe,
+          scale,
+          kcal: Math.round(stats.kcal * scale),
+          price: Math.round(stats.price * scale),
+          minutes,
+          handsOnMinutes: handsOn,
+          storage: storageFor(recipe, entry.day - entry.cookDay, household.kitchen.hasFreezer)!,
+          deltaKcal: Math.round(stats.kcal * scale - (curStats?.kcal ?? 0) * curScale),
+          deltaPrice: Math.round(stats.price * scale - (curStats?.price ?? 0) * curScale),
+          deltaMinutes: minutes - curMinutes,
+          reuseShare: reuse,
+        },
+        score,
       }
     })
+    .sort((a, b) => a.score - b.score)
+    .slice(0, limit)
+    .map((x) => x.option)
 }
 
 /** Ставит на место блюда конкретный рецепт, выбранный человеком. */
@@ -492,7 +731,7 @@ export function replaceEntryWith(
     ...entry,
     id: `${entry.slot}-${entry.day}-${recipe.id}`,
     recipeId: recipe.id,
-    portions: portionsFor(recipe, household, entry.slot),
+    portions: portionsFor(recipe, household, entry.slot, entry.day),
     storage,
   }
   return { ...menu, entries: menu.entries.map((e) => (e.id === entryId ? replaced : e)) }

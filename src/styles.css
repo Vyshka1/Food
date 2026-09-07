@@ -199,10 +199,42 @@ select {
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.chip--active {
+.chip--active,
+.chip[data-active='true'] {
   background: var(--green);
   border-color: var(--green);
   color: #fff;
+}
+
+/* Насколько замена дешевле и быстрее текущего блюда — знак читается сразу. */
+.dish__deltas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.dish__deltas > span {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: var(--radius-xs);
+  background: var(--card-soft);
+  color: var(--muted);
+}
+
+.dish__deltas > span[data-good='true'] {
+  background: var(--green-soft);
+  color: var(--green-dark);
+}
+
+.dish__deltas > span[data-good='false'] {
+  background: #f6ece4;
+  color: #8f5f28;
+}
+
+.dish__deltas .badge {
+  margin: 0;
 }
 
 .chips {
@@ -404,6 +436,54 @@ select {
   width: 100%;
   border: none;
   text-align: left;
+}
+
+/* Строка блюда: карточка открывается, булавка закрепляет — две разные цели. */
+.dish--row {
+  padding: 0;
+  align-items: stretch;
+  gap: 0;
+  overflow: hidden;
+}
+
+.dish__open {
+  flex: 1;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 14px 4px 14px 16px;
+  min-width: 0;
+}
+
+.dish__pin {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 0 14px;
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+}
+
+.dish__pin[data-on='true'] {
+  color: var(--green-dark);
+}
+
+.dish--row[data-pinned='true'] {
+  outline: 1.5px solid var(--green-soft);
+  outline-offset: -1.5px;
+}
+
+.meal-head__away {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
 }
 
 .dish__emoji {
@@ -762,6 +842,62 @@ select {
   font-size: 13px;
   font-weight: 700;
   flex: 0 0 auto;
+}
+
+/* ── Кто где ест ──────────────────────────────────────────────────────── */
+.attend {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.attend__row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.attend__label {
+  flex: 0 0 62px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.attend__day {
+  flex: 1;
+  text-align: center;
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.attend__cell {
+  flex: 1;
+  height: 34px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  border-radius: var(--radius-sm);
+  position: relative;
+}
+
+.attend__cell[data-home='true'] {
+  background: var(--green-soft);
+  border-color: var(--green-soft);
+}
+
+/* «Не дома» — перечёркнутая клетка, чтобы состояние читалось без цвета. */
+.attend__cell[data-home='false']::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to top right,
+    transparent calc(50% - 1px),
+    var(--line) calc(50% - 1px),
+    var(--line) calc(50% + 1px),
+    transparent calc(50% + 1px)
+  );
 }
 
 /* ── Нижняя навигация ─────────────────────────────────────────────────── */
