@@ -9,11 +9,12 @@ import type {
   MealPlace,
   MealSlot,
   OilChoice,
+  RepeatRules,
   Recipe,
   WeekMenu,
   WeekRecord,
 } from './types'
-import { buildWeekMenu, replaceEntryWith } from './lib/menu'
+import { buildWeekMenu, defaultRepeats, replaceEntryWith } from './lib/menu'
 import { defaultOils } from './lib/oil'
 import {
   ATTENDANCE_TEMPLATES,
@@ -99,6 +100,7 @@ export function defaultHousehold(): Household {
     budgetPerWeek: 0,
     drinks: [],
     oils: defaultOils(),
+    repeats: defaultRepeats(),
     weekStart: mondayOf(),
   }
 }
@@ -111,6 +113,7 @@ interface Store extends AppState {
   cycleMealPlace: (eaterId: string, day: number, slot: MealSlot) => void
   setDrinks: (drinks: DrinkHabit[]) => void
   setOils: (oils: OilChoice) => void
+  setRepeats: (repeats: RepeatRules) => void
   applyAttendanceTemplate: (eaterId: string, templateId: string) => void
   copyAttendanceDay: (eaterId: string, day: number) => void
   setEntryStatus: (entryId: string, status: EntryStatus | null) => void
@@ -197,6 +200,8 @@ function load(): AppState {
         drinks: state.household.drinks ?? [],
         // а масло раньше было тем, что стоит в рецепте: подсолнечное с оливковым
         oils: state.household.oils ?? defaultOils(),
+        // а повторы раньше были жёстко зашиты: до двух дней подряд из партии
+        repeats: state.household.repeats ?? defaultRepeats(),
         eaters: state.household.eaters.map(migrateEater),
       }
     }
@@ -248,6 +253,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
     [],
   )
+
+  /** Насколько человек готов есть одно и то же. */
+  const setRepeats = useCallback((repeats: RepeatRules) => {
+    setState((prev) => {
+      if (!prev.household) return prev
+      const household: Household = { ...prev.household, repeats }
+      const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
+      const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
+      const { menu, warnings } = buildWeekMenu(household, seed, keep)
+      return { ...prev, household, menu, warnings }
+    })
+  }, [])
 
   /** На чём готовим. Масло входит в состав блюд, поэтому меню пересобирается. */
   const setOils = useCallback((oils: OilChoice) => {
@@ -544,6 +561,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       cycleMealPlace,
       setDrinks,
       setOils,
+      setRepeats,
       applyAttendanceTemplate,
       copyAttendanceDay,
       setEntryStatus,
@@ -569,6 +587,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       cycleMealPlace,
       setDrinks,
       setOils,
+      setRepeats,
       applyAttendanceTemplate,
       copyAttendanceDay,
       setEntryStatus,

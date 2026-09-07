@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { RECIPE_BY_ID } from '../data/recipes'
 import type { Eater, Household } from '../types'
-import { buildWeekMenu, totalPortions } from './menu'
+import { buildWeekMenu, totalPortions, defaultRepeats} from './menu'
 import { buildShoppingList } from './shopping'
 import { recipeStats } from './nutrition'
 import { cookBatch } from './servings'
@@ -28,6 +28,7 @@ const household: Household = {
   budgetPerWeek: 0,
   drinks: [],
   oils: defaultOils(),
+  repeats: defaultRepeats(),
   weekStart: '2026-09-07',
 }
 

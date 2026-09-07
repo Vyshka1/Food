@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { RECIPES, RECIPE_BY_ID } from '../data/recipes'
 import type { Eater, Household } from '../types'
-import { buildWeekMenu } from './menu'
+import { buildWeekMenu, defaultRepeats} from './menu'
 import { buildCookingPlans } from './cookingPlan'
 import { containerLabel, formatUseBy, isSafeThaw, rawFreezeStep, thawReminders, useByDate } from './freezing'
 import { defaultOils } from './oil'
@@ -117,7 +117,8 @@ describe('когда доставать из морозилки', () => {
       hasProcessor: false, hasMicrowave: true, hasDishwasher: false, containers: 10, hasFreezer: true },
     budgetPerWeek: 0,
     drinks: [],
-    oils: defaultOils(), weekStart: '2026-09-07',
+    oils: defaultOils(),
+    repeats: defaultRepeats(), weekStart: '2026-09-07',
   }
 
   it('накануне, если размораживать в холодильнике', () => {

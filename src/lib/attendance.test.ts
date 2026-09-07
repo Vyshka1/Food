@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { Eater, Household, Kitchen, MealPlace, Recipe } from '../types'
 import { RECIPES, RECIPE_BY_ID } from '../data/recipes'
 import { recipeById, setCustomRecipes } from '../data/recipeRegistry'
+import { recipeStats } from './nutrition'
 import {
   ATTENDANCE_TEMPLATES,
   attendanceSummary,
@@ -16,7 +17,7 @@ import {
   placeCounts,
   takeawayEaters,
 } from './attendance'
-import { buildWeekMenu, portionOf, replacementOptions, totalPortions } from './menu'
+import { buildWeekMenu, portionOf, replacementOptions, totalPortions, defaultRepeats} from './menu'
 import { defaultOils } from './oil'
 
 function eater(patch: Partial<Eater> = {}): Eater {
@@ -61,6 +62,7 @@ function household(patch: Partial<Household> = {}): Household {
     budgetPerWeek: 0,
     drinks: [],
     oils: defaultOils(),
+    repeats: defaultRepeats(),
     weekStart: '2026-01-05',
     ...patch,
   }
@@ -198,9 +200,13 @@ describe('меню считается с местами', () => {
   it('офисный обед закупку уменьшает, а обед с собой — нет', () => {
     const workweek = ATTENDANCE_TEMPLATES.find((t) => t.id === 'workweek')!.build([...MEALS])
     const office = ATTENDANCE_TEMPLATES.find((t) => t.id === 'office')!.build([...MEALS])
+    // мера — калории, а не сумма долей: доля зависит и от того, какое блюдо
+    // выпало, поэтому как «сколько еды» она врёт
     const total = (places: Record<string, 'home' | 'takeaway' | 'away'>) =>
-      buildWeekMenu(household({ eaters: [eater({ mealPlaces: places })] }), 17)
-        .menu.entries.reduce((sum, e) => sum + totalPortions(e), 0)
+      buildWeekMenu(household({ eaters: [eater({ mealPlaces: places })] }), 17).menu.entries.reduce(
+        (sum, e) => sum + recipeStats(recipeById(e.recipeId)!).kcal * totalPortions(e),
+        0,
+      )
     const home = total({})
     // с собой блюда другие (в контейнер идёт только то, что доедет), поэтому
     // и порции слегка другие — но еда никуда не исчезает

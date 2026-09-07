@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { DrinkHabit, Eater, Household, Kitchen } from '../types'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
+import { RECIPE_BY_ID } from '../data/recipes'
 import {
   MIN_FOOD_SHARE,
   cupIngredients,
@@ -11,8 +12,8 @@ import {
   foodNorm,
   habitLabel,
 } from './drinks'
-import { dailyNorm } from './nutrition'
-import { buildWeekMenu, dayNorms } from './menu'
+import { dailyNorm, recipeStats } from './nutrition'
+import { buildWeekMenu, dayNorms, defaultRepeats} from './menu'
 import { buildShoppingList } from './shopping'
 import { defaultOils } from './oil'
 
@@ -73,6 +74,7 @@ function household(patch: Partial<Household> = {}): Household {
     budgetPerWeek: 0,
     drinks: [],
     oils: defaultOils(),
+    repeats: defaultRepeats(),
     weekStart: '2026-01-05',
     ...patch,
   }
@@ -155,9 +157,17 @@ describe('калории резервируются заранее', () => {
   it('меню становится легче, а не остаётся прежним', () => {
     const dry = household()
     const withDrinks = household({ drinks: [habit({ perDay: 2 })] })
+    // считаем именно калории, а не сумму долей: доля порции зависит ещё и от
+    // того, какое блюдо выпало, и как мера «сколько еды» она врёт
     const kcal = (h: Household) => {
       const { menu } = buildWeekMenu(h, 9)
-      return menu.entries.reduce((sum, e) => sum + e.portions.reduce((s, p) => s + p.factor, 0), 0)
+      return menu.entries.reduce(
+        (sum, e) =>
+          sum +
+          recipeStats(RECIPE_BY_ID[e.recipeId]).kcal *
+            e.portions.reduce((s, p) => s + p.factor, 0),
+        0,
+      )
     }
     expect(kcal(withDrinks)).toBeLessThan(kcal(dry))
   })

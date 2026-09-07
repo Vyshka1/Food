@@ -9,6 +9,7 @@ import type {
   MenuEntry,
   Norms,
   Recipe,
+  RepeatRules,
   Storage,
   WeekMenu,
 } from '../types'
@@ -431,21 +432,21 @@ function scoreRecipe(
   for (const eater of household.eaters) score += dislikeHits(recipe, eater).length * 60
 
   // Оценки блюд. Веса намеренно несимметричны и подобраны замером на 40
-  // неделях («овсяная запеканка» / «гречневые оладьи», появлений за 40 недель):
+  // неделях — появлений блюда при нейтральной оценке / при «не нравится»:
   //
-  //   вес «не нравится»   8    20    35    50    70
-  //   запеканка          49    46    35    27    13   (нейтрально 50)
-  //   оладьи             29    23    12     5     3   (нейтрально 35)
+  //   вес «не нравится»          35        60        90
+  //   овсяная запеканка       61→53     61→41     61→14
+  //   гречневые оладьи        42→16      42→6      42→0
+  //   курица с брокколи       60→41     60→27      60→8
   //
-  // При восьми «не нравится» почти не работало на блюдах, которые подбор и так
-  // выбирает часто: 49 против 50 — это шум. При пятидесяти оладьи практически
-  // исчезают, а это уже не оценка, а скрытие. Тридцать пять даёт заметное
-  // сокращение, оставляя блюдо в подборе: «нравится» поднимает вчетверо,
-  // «не нравится» опускает втрое, «больше не показывать» убирает совсем —
-  // три варианта дают три разных результата, а не два.
+  // Тридцати пяти мало на блюдах, которые подбор и так выбирает часто;
+  // девяносто превращают оценку в скрытие — оладьи исчезают совсем. Шестьдесят
+  // сокращает вдвое-втрое, оставляя блюдо в подборе: «нравится» поднимает,
+  // «не нравится» опускает, «больше не показывать» убирает — три варианта
+  // дают три разных результата, а не два.
   const rating = ratingScore(recipe, household)
   score -= Math.max(0, rating) * 90
-  score += Math.max(0, -rating) * 35
+  score += Math.max(0, -rating) * 60
 
   // блюдо, которое не докормит самого большого едока даже в максимальной доле
   const top = opts.topTarget ?? 0
@@ -492,6 +493,52 @@ export interface MenuBuildResult {
 
 /** Максимум дней подряд с одним и тем же блюдом в одном приёме пищи. */
 const MAX_RUN = 2
+
+/**
+ * Правила повторов по умолчанию.
+ *
+ * Числа взяты из того, как еда живёт: суп и завтрак повторяются спокойно,
+ * ужин — хуже, перекус вообще один и тот же каждый день у большинства людей.
+ */
+export function defaultRepeats(): RepeatRules {
+  return {
+    maxPerWeek: { breakfast: 3, lunch: 2, dinner: 2, snack: 7 },
+    backToBack: true,
+    gapDays: 1,
+  }
+}
+
+export function repeatsOf(household: Household): RepeatRules {
+  return household.repeats ?? defaultRepeats()
+}
+
+/**
+ * «Что вы готовы есть чаще» — это и есть «нравится». Отдельный список тех же
+ * блюд человек вёл бы дважды, а расходились бы они на второй неделе.
+ */
+function likedBonus(recipe: Recipe, household: Household): number {
+  return ratingScore(recipe, household) > 0 ? 1 : 0
+}
+
+/** Можно ли поставить блюдо в этот день, не нарушив правила повторов. */
+function repeatAllowed(
+  recipe: Recipe,
+  slot: MealSlot,
+  day: number,
+  state: PickState,
+  rules: RepeatRules,
+  bonus: number,
+): boolean {
+  const limit = rules.maxPerWeek[slot] ?? 0
+  const used = state.usedCount.get(recipe.id) ?? 0
+  // «нравится» — это и есть ответ на вопрос «что вы готовы есть чаще»
+  if (limit > 0 && used >= limit + bonus) return false
+  const last = state.lastDay.get(recipe.id)
+  if (last === undefined) return true
+  const gap = day - last
+  if (!rules.backToBack && gap <= 1) return false
+  return gap >= (rules.backToBack ? 1 : Math.max(1, rules.gapDays))
+}
 
 /** Насколько кандидат может уступать лучшему, чтобы всё ещё попасть в жеребьёвку. */
 const NEAR_SCORE_MARGIN = 50
@@ -561,6 +608,8 @@ export function buildWeekMenu(
 ): MenuBuildResult {
   const rnd = mulberry32(seed)
   const warnings: string[] = []
+  const repeats = repeatsOf(household)
+  let repeatsRelaxed = false
   const segments = cookingSegments(household.cookingDays)
   const targetMacros = macroShares(householdNorms(household))
   const entries: MenuEntry[] = []
@@ -648,8 +697,18 @@ export function buildWeekMenu(
         // ставило в контейнер салат, который к полудню развалится.
         const takeaway = takeawayEaters(household, day, slot).length
         const travelPool = takeaway > 0 ? slotPool.filter(travels) : slotPool
-        // выбора нет — блюдо всё равно нужно поставить, но об этом предупредим
-        const dayPool = travelPool.length > 0 ? travelPool : slotPool
+        // Правила повторов: сколько раз блюдо может выпасть за неделю и можно
+        // ли есть его два дня подряд. Это жёсткое правило, а не штраф: «не
+        // хочу одно и то же два дня» — не пожелание, которое можно перевесить
+        // удачной калорийностью.
+        const allowedPool = travelPool.filter((r) =>
+          repeatAllowed(r, slot, day, state, repeats, likedBonus(r, household)),
+        )
+        // выбора не осталось — блюдо всё равно нужно поставить, но об этом
+        // предупредим: пустая тарелка хуже повтора
+        const dayPool =
+          allowedPool.length > 0 ? allowedPool : travelPool.length > 0 ? travelPool : slotPool
+        if (allowedPool.length === 0) repeatsRelaxed = true
         const ranked = dayPool
           .map((recipe) => ({
             recipe,
@@ -691,7 +750,17 @@ export function buildWeekMenu(
         const best = near[Math.floor(rnd() ** 2 * near.length)].recipe
         const scale = portionScale(best, target2)
         let produced = 0
-        for (let k = 0; k < MAX_RUN && cursor + k < segment.days.length; k++) {
+        // одно и то же два дня подряд — это и есть партия на два дня; если
+        // человек так не хочет, серия сокращается до одного дня, и готовить
+        // придётся чаще
+        // серия не может съесть больше, чем блюду разрешено за неделю
+        const limit = repeats.maxPerWeek[slot] ?? 0
+        const left =
+          limit > 0
+            ? limit + likedBonus(best, household) - (state.usedCount.get(best.id) ?? 0)
+            : MAX_RUN
+        const runLimit = Math.max(1, Math.min(repeats.backToBack ? MAX_RUN : 1, left))
+        for (let k = 0; k < runLimit && cursor + k < segment.days.length; k++) {
           const eatDay = segment.days[cursor + k]
           if (pinnedAt.has(`${slot}:${eatDay}`)) break
           if (fedEaters(household, eatDay, slot).length === 0) break
@@ -748,7 +817,9 @@ export function buildWeekMenu(
           cursor++
           continue
         }
-        state.usedCount.set(best.id, (state.usedCount.get(best.id) ?? 0) + 1)
+        // считаем приёмы пищи, а не готовки: «блюдо появляется дважды» для
+        // человека — это две тарелки, а не два захода к плите
+        state.usedCount.set(best.id, (state.usedCount.get(best.id) ?? 0) + produced)
         state.lastDay.set(best.id, segment.days[cursor + produced - 1])
         for (let k = 0; k < produced; k++) {
           addToDay(state, segment.days[cursor + k], best, scale)
@@ -763,6 +834,12 @@ export function buildWeekMenu(
     (a, b) =>
       a.day - b.day || household.meals.indexOf(a.slot) - household.meals.indexOf(b.slot),
   )
+
+  if (repeatsRelaxed) {
+    warnings.push(
+      'Правила повторов пришлось ослабить: подходящих блюд на неделю не хватило. Разрешите блюду появляться чаще или добавьте свои рецепты.',
+    )
+  }
 
   // Напитки съедают часть нормы — и если почти всю, ужимать обед бессмысленно:
   // норма еды упирается в нижнюю границу, и об этом нужно сказать вслух.

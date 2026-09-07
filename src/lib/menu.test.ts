@@ -21,6 +21,7 @@ import {
   replacementOptions,
   slotTargetOn,
   totalPortions,
+  defaultRepeats,
 } from './menu'
 import { defaultOils } from './oil'
 
@@ -69,6 +70,7 @@ function household(patch: Partial<Household> = {}): Household {
     budgetPerWeek: 0,
     drinks: [],
     oils: defaultOils(),
+    repeats: defaultRepeats(),
     weekStart: '2026-09-07',
     ...patch,
   }

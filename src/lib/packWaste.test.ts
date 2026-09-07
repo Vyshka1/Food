@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import type { Eater, Household } from '../types'
 import { RECIPE_BY_ID } from '../data/recipes'
-import { buildWeekMenu, dayTotals, dislikeHits } from './menu'
+import { buildWeekMenu, dayTotals, dislikeHits, defaultRepeats} from './menu'
 import { dailyNorm } from './nutrition'
 import { buildShoppingList } from './shopping'
 import { defaultOils } from './oil'
@@ -27,6 +27,7 @@ const household: Household = {
   budgetPerWeek: 0,
   drinks: [],
   oils: defaultOils(),
+  repeats: defaultRepeats(),
   weekStart: '2026-09-07',
 }
 

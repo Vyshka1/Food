@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { Eater, Household } from '../types'
 import { RECIPE_BY_ID } from '../data/recipes'
 import { dailyNorm, recipeStats, slotShares } from './nutrition'
-import { buildWeekMenu, dayTotals, householdNorms, slotTargets, totalPortions } from './menu'
+import { buildWeekMenu, dayTotals, householdNorms, slotTargets, totalPortions, defaultRepeats} from './menu'
 import { buildShoppingList } from './shopping'
 import { defaultOils } from './oil'
 
@@ -71,6 +71,7 @@ describe('меню и норма', () => {
     budgetPerWeek: 0,
     drinks: [],
     oils: defaultOils(),
+    repeats: defaultRepeats(),
     weekStart: '2026-09-07',
   }
 
@@ -131,6 +132,7 @@ describe('buildShoppingList', () => {
     budgetPerWeek: 0,
     drinks: [],
     oils: defaultOils(),
+    repeats: defaultRepeats(),
     weekStart: '2026-09-07',
   }
 
@@ -185,6 +187,7 @@ describe('баланс БЖУ по дню', () => {
     budgetPerWeek: 0,
     drinks: [],
     oils: defaultOils(),
+    repeats: defaultRepeats(),
     weekStart: '2026-09-07',
   }
 

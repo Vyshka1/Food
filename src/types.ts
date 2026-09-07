@@ -139,6 +139,23 @@ export interface OilChoice {
   greaseForms: boolean
 }
 
+/**
+ * Правила повторов.
+ *
+ * Повторение — не порок: одно и то же блюдо два дня подряд экономит и время,
+ * и продукты, ради этого готовку и собирают партиями. Но комфортная граница у
+ * каждого своя и разная для разных приёмов пищи: суп можно есть три дня, а
+ * ужин — вряд ли.
+ */
+export interface RepeatRules {
+  /** Сколько раз блюдо может появиться за неделю. По приёму пищи. */
+  maxPerWeek: Record<MealSlot, number>
+  /** Можно ли есть одно и то же два дня подряд. */
+  backToBack: boolean
+  /** Если нельзя — через сколько дней блюдо может вернуться. */
+  gapDays: number
+}
+
 export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'snack'
 
 export const MEAL_SLOTS: { id: MealSlot; label: string; icon: 'sun' | 'leaf' | 'moon' | 'apple' }[] =
@@ -222,6 +239,8 @@ export interface Household {
   drinks: DrinkHabit[]
   /** На чём готовим: основное масло и чем его заменять. */
   oils: OilChoice
+  /** Насколько человек готов есть одно и то же. */
+  repeats: RepeatRules
   /** Дата понедельника недели, ISO yyyy-mm-dd. */
   weekStart: string
 }

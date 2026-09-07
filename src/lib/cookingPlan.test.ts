@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { RECIPE_BY_ID } from '../data/recipes'
 import type { Eater, Household, Kitchen, RecipeStep, Station } from '../types'
-import { buildWeekMenu } from './menu'
+import { buildWeekMenu, defaultRepeats} from './menu'
 import { buildCookingPlans, scaledMinutes, scheduleSteps } from './cookingPlan'
 import { deriveRecipeSteps } from './stepDetail'
 import { defaultOils } from './oil'
@@ -47,6 +47,7 @@ function household(patch: Partial<Household> = {}): Household {
     budgetPerWeek: 0,
     drinks: [],
     oils: defaultOils(),
+    repeats: defaultRepeats(),
     weekStart: '2026-09-07',
     ...patch,
   }
