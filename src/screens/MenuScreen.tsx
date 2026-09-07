@@ -10,6 +10,7 @@ import { useStore } from '../store'
 import { CalorieRing, Card, Warnings } from '../components/ui'
 import { RecipeSheet } from '../components/RecipeSheet'
 import { RebuildSheet } from '../components/RebuildSheet'
+import { WeekOverview } from '../components/WeekOverview'
 import { Icon } from '../components/icons'
 import { DishThumb } from '../components/DishImage'
 import { plural } from '../lib/format'
@@ -36,6 +37,8 @@ export function MenuScreen() {
   const [note, setNote] = useState('')
   const [replacing, setReplacing] = useState<MenuEntry | null>(null)
   const [rebuilding, setRebuilding] = useState(false)
+  /** «День» и «Неделя» — один и тот же экран, разный масштаб. */
+  const [weekView, setWeekView] = useState(false)
   /** null — вся семья, иначе тарелка одного едока. */
   const [who, setWho] = useState<string | null>(null)
 
@@ -142,6 +145,26 @@ export function MenuScreen() {
         </button>
       </div>
 
+      <div className="segmented" style={{ marginBottom: 10 }}>
+        <button data-active={!weekView} onClick={() => setWeekView(false)}>
+          День
+        </button>
+        <button data-active={weekView} onClick={() => setWeekView(true)}>
+          Неделя
+        </button>
+      </div>
+
+      {weekView && (
+        <WeekOverview
+          onOpenDay={(d) => {
+            setDay(d)
+            setWeekView(false)
+          }}
+        />
+      )}
+
+      {!weekView && (
+      <>
       <div className="week-strip">
         {WEEKDAYS.map((label, i) => (
           <button key={label} data-active={i === day} onClick={() => setDay(i)}>
@@ -335,6 +358,8 @@ export function MenuScreen() {
           </div>
         )
       })}
+      </>
+      )}
 
       {rebuilding && <RebuildSheet day={day} onClose={() => setRebuilding(false)} />}
 
