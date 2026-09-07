@@ -11,13 +11,22 @@ import type {
   MealSlot,
   MenuGoal,
   OilChoice,
+  Pantry,
   RepeatRules,
   Recipe,
   WeekMenu,
   WeekRecord,
 } from './types'
-import { buildWeekMenu, defaultRepeats, replaceEntryWith } from './lib/menu'
+import { buildWeekMenu, cookTasks, defaultRepeats, replaceEntryWith, totalPortions } from './lib/menu'
 import { defaultOils } from './lib/oil'
+import {
+  addFreezer,
+  consumeRecipe,
+  emptyPantry,
+  storePurchase,
+  takeFreezer,
+} from './lib/pantry'
+import { buildShoppingList } from './lib/shopping'
 import {
   ATTENDANCE_TEMPLATES,
   copyDayToWorkdays,
@@ -25,7 +34,7 @@ import {
   mealPlaceOf,
   nextPlace,
 } from './lib/attendance'
-import { setCustomRecipes, setOilChoice } from './data/recipeRegistry'
+import { recipeById, setCustomRecipes, setOilChoice } from './data/recipeRegistry'
 import { decodeProfile } from './lib/transfer'
 
 const STORAGE_KEY = 'menu-nedelya.v1'
@@ -37,6 +46,8 @@ export interface AppState {
   menu: WeekMenu | null
   /** Ингредиенты, которые уже есть дома — не считаем в сумму покупок. */
   atHome: string[]
+  /** Что есть дома: постоянные продукты, запасы и морозилка. */
+  pantry: Pantry
   bought: string[]
   warnings: string[]
   /** Рецепты, добавленные вручную. */
@@ -49,6 +60,7 @@ const emptyState: AppState = {
   household: null,
   menu: null,
   atHome: [],
+  pantry: emptyPantry(),
   bought: [],
   warnings: [],
   customRecipes: [],
@@ -130,6 +142,8 @@ interface Store extends AppState {
   setOils: (oils: OilChoice) => void
   setRepeats: (repeats: RepeatRules) => void
   setExtras: (extras: DailyExtra[]) => void
+  setPantry: (change: (pantry: Pantry) => Pantry) => void
+  storeBought: () => void
   applyAttendanceTemplate: (eaterId: string, templateId: string) => void
   copyAttendanceDay: (eaterId: string, day: number) => void
   setEntryStatus: (entryId: string, status: EntryStatus | null) => void
@@ -226,6 +240,8 @@ function load(): AppState {
     // сборки меню: масло входит в состав, а значит и в калории, и в закупку
     if (state.household) setOilChoice(state.household.oils)
     setCustomRecipes(state.customRecipes)
+    // кладовой раньше не было: заводим её из базовых продуктов
+    if (!state.pantry) state.pantry = emptyPantry()
     // меню, собранные до появления личных порций, пересобираем на том же seed
     const outdated = state.menu?.entries.some((e) => !Array.isArray(e.portions))
     if (state.household && state.menu && outdated) {
@@ -270,6 +286,27 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
     [],
   )
+
+  /** Правка кладовой: что есть всегда, сколько чего лежит, что в морозилке. */
+  const setPantry = useCallback((change: (pantry: Pantry) => Pantry) => {
+    setState((prev) => ({ ...prev, pantry: change(prev.pantry) }))
+  }, [])
+
+  /**
+   * Разложить покупки: излишек упаковок уходит в запасы. До сих пор
+   * приложение честно писало «останется 225 г» и на этом о них забывало.
+   */
+  const storeBought = useCallback(() => {
+    setState((prev) => {
+      if (!prev.menu) return prev
+      const today = new Date().toISOString().slice(0, 10)
+      const list = buildShoppingList(prev.menu, prev.household ?? undefined, prev.pantry)
+      const lines = list.lines.filter(
+        (l) => !l.staple && prev.bought.includes(l.ingredientId),
+      )
+      return { ...prev, pantry: storePurchase(prev.pantry, lines, today), bought: [] }
+    })
+  }, [])
 
   /** Ежедневные дополнения: их калории тоже резервируются до раскладки. */
   const setExtras = useCallback((extras: DailyExtra[]) => {
@@ -449,15 +486,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const setEntryStatus = useCallback((entryId: string, status: EntryStatus | null) => {
     setState((prev) => {
       if (!prev.menu) return prev
-      return {
-        ...prev,
-        menu: {
-          ...prev.menu,
-          entries: prev.menu.entries.map((e) =>
-            e.id === entryId ? { ...e, status: status ?? undefined } : e,
-          ),
-        },
+      const entry = prev.menu.entries.find((e) => e.id === entryId)
+      const menu: WeekMenu = {
+        ...prev.menu,
+        entries: prev.menu.entries.map((e) =>
+          e.id === entryId ? { ...e, status: status ?? undefined } : e,
+        ),
       }
+      let pantry = prev.pantry
+      const recipe = entry ? recipeById(entry.recipeId) : undefined
+      const today = new Date().toISOString().slice(0, 10)
+      // Отметки «приготовлено» и «съедено» — это то, что реально произошло на
+      // кухне, и запасы должны за этим следовать. Иначе «700 г риса» лежали бы
+      // в списке вечно и каждую неделю вычитались из закупки заново.
+      if (entry && recipe && status === 'cooked' && entry.status !== 'cooked') {
+        pantry = consumeRecipe(pantry, recipe, totalPortions(entry))
+        const task = cookTasks(menu).find(
+          (t) => t.recipeId === entry.recipeId && t.cookDay === entry.cookDay,
+        )
+        if (task && task.freezerPortions > 0) {
+          pantry = addFreezer(pantry, recipe, 1, task.freezerPortions, today)
+        }
+      }
+      // достали из морозилки и съели — контейнера больше нет
+      if (entry && status === 'eaten' && entry.storage === 'freezer') {
+        pantry = takeFreezer(pantry, entry.recipeId, 1)
+      }
+      return { ...prev, menu, pantry }
     })
   }, [])
 
@@ -622,6 +677,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setOils,
       setRepeats,
       setExtras,
+      setPantry,
+      storeBought,
       applyAttendanceTemplate,
       copyAttendanceDay,
       setEntryStatus,
@@ -649,6 +706,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setOils,
       setRepeats,
       setExtras,
+      setPantry,
+      storeBought,
       applyAttendanceTemplate,
       copyAttendanceDay,
       setEntryStatus,

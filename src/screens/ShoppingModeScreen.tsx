@@ -8,12 +8,12 @@ import { Icon } from '../components/icons'
 import { useKeepAwake } from '../hooks/useKeepAwake'
 
 export function ShoppingModeScreen({ onExit }: { onExit: () => void }) {
-  const { menu, household, atHome, bought, toggleBought } = useStore()
+  const { menu, household, pantry, atHome, bought, toggleBought, storeBought } = useStore()
   const [hideBought, setHideBought] = useState(false)
   const [shareNote, setShareNote] = useState('')
   useKeepAwake()
 
-  const list = useMemo(() => (menu ? buildShoppingList(menu, household ?? undefined) : null), [menu, household])
+  const list = useMemo(() => (menu ? buildShoppingList(menu, household ?? undefined, pantry) : null), [menu, household])
   if (!menu || !list) return null
 
   const skip = new Set(atHome)
@@ -75,7 +75,19 @@ export function ShoppingModeScreen({ onExit }: { onExit: () => void }) {
         <div className="shop__done">
           <Icon name="party" size={30} />
           <div>Всё собрано</div>
-          <button className="btn btn--soft" style={{ marginTop: 16 }} onClick={onExit}>
+          {/* Излишек упаковок — это продукты, которые останутся дома. Раньше
+              приложение писало «останется 225 г» и на этом о них забывало. */}
+          <button
+            className="btn"
+            style={{ marginTop: 16 }}
+            onClick={() => {
+              storeBought()
+              onExit()
+            }}
+          >
+            Разложить покупки
+          </button>
+          <button className="btn btn--soft" style={{ marginTop: 10 }} onClick={onExit}>
             Готово
           </button>
         </div>

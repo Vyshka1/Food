@@ -591,6 +591,46 @@ export interface Norms {
   fiber: number
 }
 
+/**
+ * Что есть дома.
+ *
+ * Раньше отметка «есть дома» жила ровно одну неделю: соль, рис и масло
+ * приходилось отмечать заново каждый понедельник. Но дома есть две разные
+ * вещи: то, что есть всегда (соль, специи, масло), и то, что есть сейчас
+ * (700 г риса, полпачки фарша, четыре яйца). Первое не покупают вообще,
+ * второе вычитают из закупки и тратят по мере готовки.
+ */
+export interface StockItem {
+  ingredientId: string
+  /** Сколько есть, в базовых единицах продукта. */
+  qty: number
+  /** Когда положили — чтобы понимать, насколько запись свежая. ISO-дата. */
+  addedAt: string
+}
+
+/** Контейнер в морозилке: что это, сколько порций и до какого числа. */
+export interface FreezerItem {
+  id: string
+  recipeId: string
+  /** Сколько контейнеров. */
+  containers: number
+  /** Порций в одном контейнере. */
+  portionsEach: number
+  /** Когда приготовлено, ISO-дата. */
+  cookedAt: string
+  /** Сколько дней хранится. */
+  keepDays: number
+}
+
+export interface Pantry {
+  /** Продукты, которые есть всегда: их не покупают и не считают. */
+  always: string[]
+  /** Текущие запасы с количеством. */
+  stock: StockItem[]
+  /** Морозилка. */
+  freezer: FreezerItem[]
+}
+
 export interface ShoppingLine {
   ingredientId: string
   name: string
@@ -603,6 +643,8 @@ export interface ShoppingLine {
   packs?: { count: number; size: number }
   price: number
   staple: boolean
+  /** Сколько закрыто запасами дома — покупать это не нужно. */
+  fromStock?: number
 }
 
 export interface PlannedStep {

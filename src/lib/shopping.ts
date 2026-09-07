@@ -1,9 +1,10 @@
 import { CATEGORY_LABEL, CATEGORY_ORDER, INGREDIENT_BY_ID } from '../data/ingredients'
 import { recipeById } from '../data/recipeRegistry'
-import type { Household, ShoppingLine, WeekMenu } from '../types'
+import type { Household, Pantry, ShoppingLine, WeekMenu } from '../types'
 import { cookTasks } from './menu'
 import { drinkShopping } from './drinks'
 import { extraShopping } from './extras'
+import { isAlways, stockOf } from './pantry'
 
 function roundUpTo(value: number, step: number): number {
   return Math.ceil(value / step) * step
@@ -15,7 +16,11 @@ export interface ShoppingList {
   total: number
 }
 
-export function buildShoppingList(menu: WeekMenu, household?: Household): ShoppingList {
+export function buildShoppingList(
+  menu: WeekMenu,
+  household?: Household,
+  pantry?: Pantry,
+): ShoppingList {
   const needed = new Map<string, number>()
 
   // Напитки — не блюда, но молоко для капучино покупать всё равно нужно, и
@@ -42,7 +47,11 @@ export function buildShoppingList(menu: WeekMenu, household?: Household): Shoppi
   for (const [ingredientId, rawQty] of needed) {
     const ing = INGREDIENT_BY_ID[ingredientId]
     if (!ing) continue
-    const neededQty = ing.unit === 'pcs' ? Math.ceil(rawQty) : roundUpTo(rawQty, 10)
+    // То, что уже лежит дома, покупать не нужно. Считаем до округления: 700 г
+    // риса в запасе — это 700 г, которых нет в чеке, а не «есть немного».
+    const inStock = pantry ? Math.min(rawQty, stockOf(pantry, ingredientId)) : 0
+    const restQty = Math.max(0, rawQty - inStock)
+    const neededQty = ing.unit === 'pcs' ? Math.ceil(restQty) : roundUpTo(restQty, 10)
     let buy = neededQty
     let packs: ShoppingLine['packs']
     if (ing.pack && ing.pack > 0) {
@@ -60,7 +69,9 @@ export function buildShoppingList(menu: WeekMenu, household?: Household): Shoppi
       buy,
       packs,
       price: Math.round(price),
-      staple: Boolean(ing.staple),
+      // «постоянно есть» — это тот же staple, только выбранный человеком
+      staple: Boolean(ing.staple) || Boolean(pantry && isAlways(pantry, ingredientId)),
+      fromStock: inStock > 0 ? Math.round(inStock) : undefined,
     })
   }
 
