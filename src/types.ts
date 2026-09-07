@@ -125,6 +125,20 @@ export interface DrinkHabit {
   days: number[]
 }
 
+/**
+ * На чём готовим. Масло заметно влияет и на калорийность, и на вкус, а в
+ * рецептах оно всегда стоит числом — здесь выбирается только то, каким
+ * именно маслом заменить написанное.
+ */
+export interface OilChoice {
+  /** Основное масло. */
+  mainId: string
+  /** Чем можно заменить, если основное не годится (сливочное на сковороду). */
+  alternatives: string[]
+  /** Считать ли масло для смазывания формы. */
+  greaseForms: boolean
+}
+
 export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'snack'
 
 export const MEAL_SLOTS: { id: MealSlot; label: string; icon: 'sun' | 'leaf' | 'moon' | 'apple' }[] =
@@ -206,6 +220,8 @@ export interface Household {
   budgetPerWeek: number
   /** Привычные напитки: их калории резервируются до раскладки меню. */
   drinks: DrinkHabit[]
+  /** На чём готовим: основное масло и чем его заменять. */
+  oils: OilChoice
   /** Дата понедельника недели, ISO yyyy-mm-dd. */
   weekStart: string
 }

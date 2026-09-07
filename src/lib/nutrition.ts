@@ -88,11 +88,19 @@ export function portionWeight(recipe: Recipe, factor: number): number {
   return Math.round(grams / 5) * 5
 }
 
-const statsCache = new Map<string, RecipeStats>()
+/**
+ * Кэш по самому объекту рецепта, а не по его id.
+ *
+ * По id он и был — и это ловушка: рецепт с подставленным маслом имеет тот же
+ * id, но другой состав, и карточка получала калории от прежнего масла. С
+ * WeakMap такое невозможно по устройству: другой состав — другой объект —
+ * другой счёт, а сбрасывать кэш руками не нужно вовсе.
+ */
+const statsCache = new WeakMap<Recipe, RecipeStats>()
 
 /** Ккал, БЖУ и цена одной порции рецепта. */
 export function recipeStats(recipe: Recipe): RecipeStats {
-  const cached = recipe.custom ? undefined : statsCache.get(recipe.id)
+  const cached = statsCache.get(recipe)
   if (cached) return cached
   let kcal = 0
   let protein = 0
@@ -116,6 +124,6 @@ export function recipeStats(recipe: Recipe): RecipeStats {
     carbs: Math.round(carbs),
     price: Math.round(price),
   }
-  if (!recipe.custom) statsCache.set(recipe.id, stats)
+  statsCache.set(recipe, stats)
   return stats
 }

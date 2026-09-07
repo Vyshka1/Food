@@ -8,11 +8,13 @@ import type {
   Kitchen,
   MealPlace,
   MealSlot,
+  OilChoice,
   Recipe,
   WeekMenu,
   WeekRecord,
 } from './types'
 import { buildWeekMenu, replaceEntryWith } from './lib/menu'
+import { defaultOils } from './lib/oil'
 import {
   ATTENDANCE_TEMPLATES,
   copyDayToWorkdays,
@@ -20,7 +22,7 @@ import {
   mealPlaceOf,
   nextPlace,
 } from './lib/attendance'
-import { setCustomRecipes } from './data/recipeRegistry'
+import { setCustomRecipes, setOilChoice } from './data/recipeRegistry'
 import { decodeProfile } from './lib/transfer'
 
 const STORAGE_KEY = 'menu-nedelya.v1'
@@ -96,6 +98,7 @@ export function defaultHousehold(): Household {
     },
     budgetPerWeek: 0,
     drinks: [],
+    oils: defaultOils(),
     weekStart: mondayOf(),
   }
 }
@@ -107,6 +110,7 @@ interface Store extends AppState {
   togglePin: (entryId: string) => void
   cycleMealPlace: (eaterId: string, day: number, slot: MealSlot) => void
   setDrinks: (drinks: DrinkHabit[]) => void
+  setOils: (oils: OilChoice) => void
   applyAttendanceTemplate: (eaterId: string, templateId: string) => void
   copyAttendanceDay: (eaterId: string, day: number) => void
   setEntryStatus: (entryId: string, status: EntryStatus | null) => void
@@ -191,10 +195,14 @@ function load(): AppState {
         kitchen: migrateKitchen(state.household.kitchen),
         // напитков в старых анкетах не было — это пустой список, а не «не знаем»
         drinks: state.household.drinks ?? [],
+        // а масло раньше было тем, что стоит в рецепте: подсолнечное с оливковым
+        oils: state.household.oils ?? defaultOils(),
         eaters: state.household.eaters.map(migrateEater),
       }
     }
-    // реестр должен знать о своих рецептах до первой сборки меню
+    // реестр должен знать о своих рецептах и о выбранном масле до первой
+    // сборки меню: масло входит в состав, а значит и в калории, и в закупку
+    if (state.household) setOilChoice(state.household.oils)
     setCustomRecipes(state.customRecipes)
     // меню, собранные до появления личных порций, пересобираем на том же seed
     const outdated = state.menu?.entries.some((e) => !Array.isArray(e.portions))
@@ -240,6 +248,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
     [],
   )
+
+  /** На чём готовим. Масло входит в состав блюд, поэтому меню пересобирается. */
+  const setOils = useCallback((oils: OilChoice) => {
+    setState((prev) => {
+      if (!prev.household) return prev
+      const household: Household = { ...prev.household, oils }
+      setOilChoice(oils)
+      const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
+      const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
+      const { menu, warnings } = buildWeekMenu(household, seed, keep)
+      return { ...prev, household, menu, warnings }
+    })
+  }, [])
 
   /** Привычные напитки: их калории резервируются, поэтому меню пересобирается. */
   const setDrinks = useCallback((drinks: DrinkHabit[]) => {
@@ -433,6 +454,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const importProfile = useCallback((input: string): boolean => {
     const payload = decodeProfile(input)
     if (!payload) return false
+    setOilChoice(payload.household.oils ?? defaultOils())
     setCustomRecipes(payload.customRecipes)
     const { menu, warnings } = buildWeekMenu(payload.household, Math.floor(Math.random() * 1e9))
     setState((prev) => ({
@@ -521,6 +543,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       togglePin,
       cycleMealPlace,
       setDrinks,
+      setOils,
       applyAttendanceTemplate,
       copyAttendanceDay,
       setEntryStatus,
@@ -545,6 +568,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       togglePin,
       cycleMealPlace,
       setDrinks,
+      setOils,
       applyAttendanceTemplate,
       copyAttendanceDay,
       setEntryStatus,

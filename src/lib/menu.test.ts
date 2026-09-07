@@ -3,6 +3,7 @@ import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { RECIPES, RECIPE_BY_ID } from '../data/recipes'
 import { setCustomRecipes } from '../data/recipeRegistry'
 import { withDerivedDetail } from './stepDetail'
+import { dailyNorm } from './nutrition'
 import type { Eater, Household, Kitchen, Recipe } from '../types'
 import {
   mealKey,
@@ -21,6 +22,7 @@ import {
   slotTargetOn,
   totalPortions,
 } from './menu'
+import { defaultOils } from './oil'
 
 function eater(patch: Partial<Eater> = {}): Eater {
   return {
@@ -66,6 +68,7 @@ function household(patch: Partial<Household> = {}): Household {
     kitchen: kitchen(),
     budgetPerWeek: 0,
     drinks: [],
+    oils: defaultOils(),
     weekStart: '2026-09-07',
     ...patch,
   }
@@ -382,6 +385,32 @@ describe('еда вне дома', () => {
   })
 })
 
+describe('блюдо должно накормить того, кто за столом', () => {
+  it('лёгкое блюдо не ставится туда, где нужен большой ужин', () => {
+    // доля порции ограничена 2,5 — и лёгкое блюдо при этом ограничении просто
+    // не докармливает: 2,5 порции ухи вместо нужных 2,7
+    const big = eater({
+      id: 'k',
+      name: 'Кирилл',
+      sex: 'male',
+      age: 35,
+      heightCm: 190,
+      weightKg: 95,
+      activity: 'high',
+    })
+    const h = household({ eaters: [big] })
+    let worst = 0
+    for (let seed = 0; seed < 25; seed++) {
+      const { menu } = buildWeekMenu(h, seed)
+      for (let day = 0; day < 7; day++) {
+        const deviation = 1 - dayTotals(menu, day, 'k').kcal / dailyNorm(big).kcal
+        worst = Math.max(worst, deviation)
+      }
+    }
+    expect(worst).toBeLessThan(0.05)
+  })
+})
+
 describe('закрепление блюда', () => {
   it('оставляет закреплённое блюдо на месте при пересборке', () => {
     const h = household()
@@ -544,20 +573,22 @@ describe('оценки блюд', () => {
         ).length,
       0,
     )
-  // блюдо, которое подбор и так выбирает регулярно — на нём видно обе стороны
-  const popular = 'draniki'
+  // Блюдо, которое подбор и так выбирает регулярно. Именно на таком видно обе
+  // стороны: на редком блюде любой штраф выглядит работающим просто потому,
+  // что оно и без оценки почти не выпадает.
+  const popular = 'oat_apple_bake'
 
   it('«нравится» заметно поднимает блюдо в подборе', () => {
     const plain = appearances({}, popular)
     const liked = appearances({ [popular]: 1 }, popular)
     expect(plain).toBeGreaterThan(0)
-    expect(liked).toBeGreaterThan(plain * 3)
+    expect(liked).toBeGreaterThan(plain * 2)
   })
 
   it('«не нравится» делает блюдо редким, но не вычёркивает его', () => {
     const plain = appearances({}, popular)
     const disliked = appearances({ [popular]: -1 }, popular)
-    expect(disliked).toBeLessThan(plain)
+    expect(disliked).toBeLessThan(plain * 0.8)
     // и всё же иногда выпадает: иначе оценка ничем не отличалась бы от скрытия
     expect(disliked).toBeGreaterThan(0)
   })

@@ -364,6 +364,7 @@ export const RECIPES: Recipe[] = [
       ['carrot', 40],
       ['onion', 40],
       ['tomato_paste', 20],
+      ['sunflower_oil', 5],
       ['sour_cream', 25],
       ['salt', 3],
     ],
@@ -480,6 +481,7 @@ export const RECIPES: Recipe[] = [
       ['carrot', 40],
       ['egg', 0.3],
       ['tomato_paste', 15],
+      ['sunflower_oil', 5],
       ['sour_cream', 20],
     ],
     [
@@ -1042,7 +1044,7 @@ export const RECIPES: Recipe[] = [
     'Рис с яйцом и зелёным луком',
     '🍚',
     ['breakfast', 'lunch'],
-    [['rice', 70], ['egg', 1], ['green_onion', 15], ['soy_sauce', 10], ['sesame', 5]],
+    [['rice', 70], ['egg', 1], ['green_onion', 15], ['soy_sauce', 10], ['sesame', 5], ['sunflower_oil', 5]],
     [
       ['Промыть рис, поставить варить', 4, 'prep'],
       ['Варить рис', 18, 'stove', false],
@@ -1101,7 +1103,7 @@ export const RECIPES: Recipe[] = [
     'Гуляш из говядины с гречкой',
     '🥣',
     ['lunch', 'dinner'],
-    [['beef', 130], ['buckwheat', 70], ['onion', 40], ['carrot', 50], ['tomato_paste', 15], ['paprika', 2]],
+    [['beef', 130], ['buckwheat', 70], ['onion', 40], ['carrot', 50], ['tomato_paste', 15], ['paprika', 2], ['sunflower_oil', 6]],
     [
       ['Нарезать мясо и овощи', 11, 'prep'],
       ['Обжарить мясо', 10, 'stove', true],
@@ -1160,7 +1162,7 @@ export const RECIPES: Recipe[] = [
     'Ленивые голубцы',
     '🥬',
     ['lunch', 'dinner'],
-    [['minced_turkey', 130], ['cabbage', 180], ['rice', 45], ['onion', 40], ['canned_tomatoes', 100], ['sour_cream', 20]],
+    [['minced_turkey', 130], ['cabbage', 180], ['rice', 45], ['onion', 40], ['canned_tomatoes', 100], ['sour_cream', 20], ['sunflower_oil', 5]],
     [
       ['Нашинковать капусту и лук', 10, 'prep'],
       ['Смешать фарш с рисом и овощами', 7, 'prep'],
@@ -1247,7 +1249,7 @@ export const RECIPES: Recipe[] = [
     'Креветки с рисовой лапшой',
     '🍤',
     ['dinner'],
-    [['shrimp', 130], ['rice_noodles', 70], ['green_beans', 80], ['garlic', 5], ['soy_sauce', 12], ['sesame', 5]],
+    [['shrimp', 130], ['rice_noodles', 70], ['green_beans', 80], ['garlic', 5], ['soy_sauce', 12], ['sesame', 5], ['sunflower_oil', 5]],
     [
       ['Замочить лапшу в кипятке', 8, 'wait', false],
       ['Обжарить чеснок и креветки', 7, 'stove', true],
@@ -1317,7 +1319,7 @@ export const RECIPES: Recipe[] = [
     'Карри с тофу и овощами',
     '🍲',
     ['dinner'],
-    [['tofu', 130], ['coconut_milk', 90], ['broccoli', 100], ['bell_pepper', 70], ['rice', 55], ['curry', 3]],
+    [['tofu', 130], ['coconut_milk', 90], ['broccoli', 100], ['bell_pepper', 70], ['rice', 55], ['curry', 3], ['sunflower_oil', 5]],
     [
       ['Поставить рис вариться', 4, 'prep'],
       ['Варить рис', 18, 'stove', false],

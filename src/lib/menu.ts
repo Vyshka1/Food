@@ -114,6 +114,34 @@ export function dayNorms(household: Household, day: number, eaterId?: string): N
   return sumNorms(parts)
 }
 
+/**
+ * Сколько нужно самому большому едоку за этим столом.
+ *
+ * Доля порции ограничена сверху (2,5 порции — это уже не порция, а кастрюля),
+ * и лёгкое блюдо при этом ограничении просто не докармливает: Кирилл получал
+ * 2,5 порции ухи вместо нужных 2,7 и оставался на 12% ниже нормы. Значит,
+ * такое блюдо в этот приём и не надо ставить.
+ */
+export function topEaterTarget(household: Household, slot: MealSlot, day: number): number {
+  const present = fedEaters(household, day, slot)
+  if (present.length === 0) return 0
+  const share = slotShares(household.meals)[slot] ?? 0.3
+  return Math.max(...present.map((e) => foodNorm(e, household, day).kcal * share))
+}
+
+/** Дневная норма на среднего едока за столом — сумма его приёмов дома. */
+export function dayTargetOn(household: Household, day: number): number {
+  return household.meals.reduce((sum, slot) => sum + slotTargetOn(household, slot, day), 0)
+}
+
+/**
+ * Насколько ужин может отличаться от своей доли, добирая день. Вдвое больше
+ * обычного — это ещё ужин; втрое — уже не ужин, а способ закрыть отчёт.
+ */
+function clampTarget(remaining: number, slotTarget: number): number {
+  return Math.min(slotTarget * 1.8, Math.max(slotTarget * 0.5, remaining))
+}
+
 /** Целевая калорийность одного приёма пищи в среднем на едока. */
 export function slotTargets(household: Household): Record<string, number> {
   const shares = slotShares(household.meals)
@@ -215,10 +243,17 @@ export function portionsFor(
     const raw = target / perServing
     return {
       eaterId: eater.id,
-      factor: Math.min(2.5, Math.max(0.4, Math.round(raw * 20) / 20)),
+      factor: Math.min(MAX_PORTION_FACTOR, Math.max(MIN_PORTION_FACTOR, Math.round(raw * 20) / 20)),
     }
   })
 }
+
+/**
+ * Границы личной доли. Больше двух с половиной порций — это уже не порция,
+ * а кастрюля; меньше четырёх десятых — не еда, а проба.
+ */
+export const MAX_PORTION_FACTOR = 2.5
+const MIN_PORTION_FACTOR = 0.4
 
 /** Сколько порций готовим всего — сумма личных долей. */
 export function totalPortions(entry: MenuEntry): number {
@@ -329,6 +364,8 @@ function scoreRecipe(
     day: number
     state: PickState
     jitter: number
+    /** Сколько нужно самому большому едоку за столом. */
+    topTarget?: number
   },
 ): number {
   const { household, targetKcal, targetMacros, day, state, jitter } = opts
@@ -382,14 +419,29 @@ function scoreRecipe(
   // «не люблю» — мягкий, но очень заметный штраф
   for (const eater of household.eaters) score += dislikeHits(recipe, eater).length * 60
 
-  // оценки блюд. Веса намеренно несимметричны и подобраны замером: «нравится»
-  // поднимает блюдо с 7 появлений на 40 недель до 60, «не нравится» опускает
-  // до 2 — то есть делает редким, но не вычёркивает. Вычёркивает «больше не
-  // показывать», и три варианта оценки должны давать три разных результата,
-  // а не два
+  // Оценки блюд. Веса намеренно несимметричны и подобраны замером на 40
+  // неделях («овсяная запеканка» / «гречневые оладьи», появлений за 40 недель):
+  //
+  //   вес «не нравится»   8    20    35    50    70
+  //   запеканка          49    46    35    27    13   (нейтрально 50)
+  //   оладьи             29    23    12     5     3   (нейтрально 35)
+  //
+  // При восьми «не нравится» почти не работало на блюдах, которые подбор и так
+  // выбирает часто: 49 против 50 — это шум. При пятидесяти оладьи практически
+  // исчезают, а это уже не оценка, а скрытие. Тридцать пять даёт заметное
+  // сокращение, оставляя блюдо в подборе: «нравится» поднимает вчетверо,
+  // «не нравится» опускает втрое, «больше не показывать» убирает совсем —
+  // три варианта дают три разных результата, а не два.
   const rating = ratingScore(recipe, household)
   score -= Math.max(0, rating) * 90
-  score += Math.max(0, -rating) * 8
+  score += Math.max(0, -rating) * 35
+
+  // блюдо, которое не докормит самого большого едока даже в максимальной доле
+  const top = opts.topTarget ?? 0
+  if (top > 0) {
+    const reachable = stats.kcal * MAX_PORTION_FACTOR
+    score += Math.max(0, top - reachable) * 1.5
+  }
 
   // разнообразие
   score += (state.usedCount.get(recipe.id) ?? 0) * 45
@@ -531,6 +583,9 @@ export function buildWeekMenu(
   const pool = allRecipes().filter((r) => isRecipeAllowed(r, household))
 
   for (const slot of household.meals) {
+    // приёмы перебираются в порядке household.meals, поэтому «последний» —
+    // это тот, на котором уже известны остальные блюда дня
+    const isLastSlot = slot === household.meals[household.meals.length - 1]
     const slotPool = pool.filter((r) => r.slots.includes(slot))
     if (slotPool.length === 0) {
       warnings.push(`Для приёма «${slot}» не осталось подходящих рецептов — ослабьте ограничения.`)
@@ -552,6 +607,13 @@ export function buildWeekMenu(
           continue
         }
         const target = slotTargetOn(household, slot, day) || 500
+        // Последний приём пищи закрывает день: если завтрак и обед вышли
+        // легче обычного, ужин должен добрать разницу, а не снова целиться в
+        // свою долю. Без этого один день из 840 уходил на 12% ниже нормы —
+        // при том, что каждый приём в отдельности был «в размер».
+        const target2 = isLastSlot
+          ? clampTarget(dayTargetOn(household, day) - accOf(state, day).kcal, target)
+          : target
         // Кто-то берёт этот приём пищи с собой — значит, блюдо должно доехать.
         // Это не вопрос предпочтения, а вопрос того, что человек откроет в
         // обед: штрафа мало, разнообразие его перевешивало и раз в неделю
@@ -565,11 +627,12 @@ export function buildWeekMenu(
             recipe,
             score: scoreRecipe(recipe, {
               household,
-              targetKcal: target,
+              targetKcal: target2,
               targetMacros,
               day,
               state,
               jitter: rnd(),
+              topTarget: topEaterTarget(household, slot, day),
             }),
           }))
           .sort((a, b) => a.score - b.score)
@@ -593,12 +656,12 @@ export function buildWeekMenu(
               (sum, e) => sum + dislikeHits(c.recipe, e).length,
               0,
             ),
-            waste: packWasteCost(c.recipe, portionScale(c.recipe, target), state),
+            waste: packWasteCost(c.recipe, portionScale(c.recipe, target2), state),
           }))
           .sort((a, b) => a.dislikes - b.dislikes || a.waste - b.waste)
         // rnd² смещает выбор к началу списка, не убирая разнообразия совсем
         const best = near[Math.floor(rnd() ** 2 * near.length)].recipe
-        const scale = portionScale(best, target)
+        const scale = portionScale(best, target2)
         let produced = 0
         for (let k = 0; k < MAX_RUN && cursor + k < segment.days.length; k++) {
           const eatDay = segment.days[cursor + k]
@@ -860,6 +923,7 @@ export function replacementOptions(
         day: entry.day,
         state,
         jitter: 0,
+        topTarget: topEaterTarget(household, entry.slot, entry.day),
       })
       // общие продукты с остальной неделей — всегда в плюс: замена не должна
       // добавлять полполки продуктов ради одного ужина

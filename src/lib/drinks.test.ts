@@ -14,6 +14,7 @@ import {
 import { dailyNorm } from './nutrition'
 import { buildWeekMenu, dayNorms } from './menu'
 import { buildShoppingList } from './shopping'
+import { defaultOils } from './oil'
 
 function eater(patch: Partial<Eater> = {}): Eater {
   return {
@@ -71,6 +72,7 @@ function household(patch: Partial<Household> = {}): Household {
     kitchen,
     budgetPerWeek: 0,
     drinks: [],
+    oils: defaultOils(),
     weekStart: '2026-01-05',
     ...patch,
   }

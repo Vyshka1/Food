@@ -4,6 +4,7 @@ import type { Eater, Household, Kitchen, RecipeStep, Station } from '../types'
 import { buildWeekMenu } from './menu'
 import { buildCookingPlans, scaledMinutes, scheduleSteps } from './cookingPlan'
 import { deriveRecipeSteps } from './stepDetail'
+import { defaultOils } from './oil'
 
 function kitchen(patch: Partial<Kitchen> = {}): Kitchen {
   return {
@@ -45,6 +46,7 @@ function household(patch: Partial<Household> = {}): Household {
     kitchen: kitchen(),
     budgetPerWeek: 0,
     drinks: [],
+    oils: defaultOils(),
     weekStart: '2026-09-07',
     ...patch,
   }

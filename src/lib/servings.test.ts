@@ -5,6 +5,7 @@ import { buildWeekMenu, totalPortions } from './menu'
 import { buildShoppingList } from './shopping'
 import { recipeStats } from './nutrition'
 import { cookBatch } from './servings'
+import { defaultOils } from './oil'
 
 function eater(patch: Partial<Eater> = {}): Eater {
   return {
@@ -26,6 +27,7 @@ const household: Household = {
   },
   budgetPerWeek: 0,
   drinks: [],
+  oils: defaultOils(),
   weekStart: '2026-09-07',
 }
 

@@ -4,6 +4,7 @@ import type { Eater, Household } from '../types'
 import { buildWeekMenu } from './menu'
 import { buildCookingPlans } from './cookingPlan'
 import { containerLabel, formatUseBy, isSafeThaw, rawFreezeStep, thawReminders, useByDate } from './freezing'
+import { defaultOils } from './oil'
 
 describe('на каком этапе морозить', () => {
   it('лепное и потом жареное морозится сырым', () => {
@@ -115,7 +116,8 @@ describe('когда доставать из морозилки', () => {
     kitchen: { burners: 4, ovens: 1, hasAirfryer: false, hasMulticooker: false, hasBlender: true,
       hasProcessor: false, hasMicrowave: true, hasDishwasher: false, containers: 10, hasFreezer: true },
     budgetPerWeek: 0,
-    drinks: [], weekStart: '2026-09-07',
+    drinks: [],
+    oils: defaultOils(), weekStart: '2026-09-07',
   }
 
   it('накануне, если размораживать в холодильнике', () => {

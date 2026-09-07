@@ -11,6 +11,7 @@ import { RECIPES } from '../data/recipes'
 import { plural } from '../lib/format'
 import { AttendanceGrid } from '../components/AttendanceGrid'
 import { DrinksEditor } from '../components/DrinksEditor'
+import { OilEditor } from '../components/OilEditor'
 import { WeekHistory } from '../components/WeekHistory'
 import { KitchenEditor } from '../components/KitchenEditor'
 import { MACRO_COLOR } from '../lib/palette'
@@ -105,6 +106,10 @@ export function ProfileScreen({
 
       <Section title="Привычные напитки" icon="drink">
         <DrinksEditor />
+      </Section>
+
+      <Section title="На чём готовим" icon="pan">
+        <OilEditor />
       </Section>
 
       <Section title="Состав семьи" icon="people">

@@ -4,6 +4,7 @@ import { RECIPE_BY_ID } from '../data/recipes'
 import { dailyNorm, recipeStats, slotShares } from './nutrition'
 import { buildWeekMenu, dayTotals, householdNorms, slotTargets, totalPortions } from './menu'
 import { buildShoppingList } from './shopping'
+import { defaultOils } from './oil'
 
 const base: Eater = {
   id: 'e1',
@@ -69,6 +70,7 @@ describe('меню и норма', () => {
     },
     budgetPerWeek: 0,
     drinks: [],
+    oils: defaultOils(),
     weekStart: '2026-09-07',
   }
 
@@ -128,6 +130,7 @@ describe('buildShoppingList', () => {
     },
     budgetPerWeek: 0,
     drinks: [],
+    oils: defaultOils(),
     weekStart: '2026-09-07',
   }
 
@@ -181,6 +184,7 @@ describe('баланс БЖУ по дню', () => {
     },
     budgetPerWeek: 0,
     drinks: [],
+    oils: defaultOils(),
     weekStart: '2026-09-07',
   }
 

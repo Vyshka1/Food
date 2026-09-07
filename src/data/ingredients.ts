@@ -175,6 +175,16 @@ export const INGREDIENTS: Ingredient[] = [
     pack: 1000,
     tbspGrams: 17,
   }),
+  ing('ghee', 'Топлёное масло гхи', 'g', 'pantry', [900, 0, 99.8, 0], 1600, {
+    staple: true,
+    pack: 400,
+    tbspGrams: 17,
+  }),
+  ing('coconut_oil', 'Кокосовое масло', 'ml', 'pantry', [899, 0, 99.9, 0], 1200, {
+    staple: true,
+    pack: 500,
+    tbspGrams: 17,
+  }),
   ing('salt', 'Соль', 'g', 'pantry', [0, 0, 0, 0], 30, { staple: true, pack: 1000 }),
   ing('pepper', 'Чёрный перец', 'g', 'pantry', [251, 10, 3.3, 38.3], 2000, { staple: true, pack: 50 }),
   ing('paprika', 'Паприка', 'g', 'pantry', [282, 14.1, 12.9, 34], 1500, { staple: true, pack: 50 }),
