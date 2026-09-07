@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { householdQty, measureText } from './measures'
+import { packPlan } from './purchase'
 
 describe('то, что считают штуками', () => {
   it('лук — луковицами, а не граммами', () => {
@@ -42,9 +43,28 @@ describe('штучное остаётся штучным', () => {
     expect(householdQty(INGREDIENT_BY_ID['egg'], 3).text).toBe('3 шт')
   })
 
-  it('дробное яйцо округляется до понятного', () => {
-    const text = householdQty(INGREDIENT_BY_ID['egg'], 2.5).text
-    expect(text).toBe('2½ шт')
+  it('дробное округляется вверх до целого', () => {
+    // «1½ банана» не купить и не отложить: половина потемнеет за день
+    expect(householdQty(INGREDIENT_BY_ID['banana'], 1.5).text).toBe('2 шт')
+    expect(householdQty(INGREDIENT_BY_ID['egg'], 2.5).text).toBe('3 шт')
+    expect(householdQty(INGREDIENT_BY_ID['egg'], 0.5).text).toBe('1 шт')
+  })
+
+  it('целое не раздувается лишней штукой', () => {
+    expect(householdQty(INGREDIENT_BY_ID['apple'], 3).text).toBe('3 шт')
+    expect(householdQty(INGREDIENT_BY_ID['pear'], 1).text).toBe('1 шт')
+  })
+
+  it('карточка и список покупок сходятся на штучном', () => {
+    // карточка показывала «1½ шт», а закупка уже округляла вверх — на одном и
+    // том же продукте выходили разные числа
+    for (const id of ['egg', 'banana', 'apple', 'pear', 'avocado', 'orange']) {
+      const ing = INGREDIENT_BY_ID[id]
+      for (const qty of [0.3, 0.5, 1.5, 2.4, 3]) {
+        const card = Number(householdQty(ing, qty).text.replace(' шт', ''))
+        expect(card, `${ing.name} ${qty}`).toBe(packPlan(ing, qty).buy)
+      }
+    }
   })
 })
 

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { RECIPES, RECIPE_BY_ID } from '../data/recipes'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { buildOption, planBatch, yieldLabel } from './batch'
-import { packPlan, purchaseInfo } from './purchase'
+import { leftoverAdvice, packPlan, purchaseInfo } from './purchase'
 import { recipeStats } from './nutrition'
 
 const CONTEXT = { neededGrams: 1080, hasFreezer: true, freezerRoomGrams: 4000 }
@@ -169,6 +169,22 @@ describe('модель покупки', () => {
     const egg = INGREDIENT_BY_ID['egg']
     expect(purchaseInfo(egg).partialUse).toBe(false)
     expect(packPlan(egg, 2.3).buy).toBe(3)
+  })
+
+  it('штучное без типовой упаковки всё равно считается штуками', () => {
+    // у банана нет фасовки, и план ушёл в весовую ветку: 0,3 банана
+    // превращались в «10» — округление до десятков граммов на штучном продукте
+    const banana = INGREDIENT_BY_ID['banana']
+    expect(packPlan(banana, 0.3).buy).toBe(1)
+    expect(packPlan(banana, 1.5).buy).toBe(2)
+    expect(packPlan(banana, 3).buy).toBe(3)
+  })
+
+  it('у штучного нет остатка, о котором стоит говорить', () => {
+    // «0 шт — использовать за 5 дн» человеку сказать нечего: меньше штуки —
+    // это остаток округления, а не продукт в холодильнике
+    expect(leftoverAdvice(INGREDIENT_BY_ID['banana'], 0.5)).toBeNull()
+    expect(leftoverAdvice(INGREDIENT_BY_ID['minced_turkey'], 120)).toContain('120 г')
   })
 
   it('сырое мясо живёт сутки, крупы — месяцами', () => {
