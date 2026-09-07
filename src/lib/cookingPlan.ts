@@ -6,7 +6,7 @@ import type {
   Household,
   Kitchen,
   PackTask,
-  Recipe,
+  Pantry,
   PlannedStep,
   RecipeStep,
   WeekMenu,
@@ -14,10 +14,9 @@ import type {
 import { APPLIANCE_LABEL, applianceCapacity } from '../types'
 import { WEEKDAYS_FULL, cookTasks, type CookTask } from './menu'
 import { containerLabel, thawReminders, useByDate } from './freezing'
-import { FRY_STEP, optionPieces, planBatch } from './batch'
+import { FRY_STEP, optionPieces } from './batch'
+import { planWeekBatches } from './weekBatch'
 import { fryMinutes, pieceCookingOf, useTwoPans } from './pieces'
-import { portionWeight } from './nutrition'
-import { freezerRoomGrams } from './pantry'
 
 /**
  * Длительность шага с поправкой на количество порций: ручная работа растёт
@@ -239,17 +238,12 @@ export function scheduleSteps(
   }
 }
 
-/** Сколько изделий выйдет у этой готовки — по той же партии, что и в карточке. */
-function piecesForTask(recipe: Recipe, task: CookTask, household: Household): number | undefined {
-  const plan = planBatch(recipe, {
-    neededGrams: portionWeight(recipe, task.portions),
-    hasFreezer: household.kitchen.hasFreezer,
-    freezerRoomGrams: freezerRoomGrams(household.kitchen),
-  })
-  return plan ? optionPieces(plan.batch, plan.chosen.scale) : undefined
-}
-
-function toSchedTask(task: CookTask, index: number, household?: Household): SchedTask | null {
+function toSchedTask(
+  task: CookTask,
+  index: number,
+  household?: Household,
+  pieces?: number,
+): SchedTask | null {
   const recipe = recipeById(task.recipeId)
   if (!recipe) return null
   const portions = task.portions
@@ -260,7 +254,6 @@ function toSchedTask(task: CookTask, index: number, household?: Household): Sche
    * обещала полчаса работы там, где её на час.
    */
   const cooking = pieceCookingOf(recipe)
-  const pieces = household ? piecesForTask(recipe, task, household) : undefined
   const pans =
     cooking && pieces && household && useTwoPans(pieces, cooking, household.kitchen) ? 2 : 1
   const steps = recipe.steps.map((step) => {
@@ -292,7 +285,10 @@ export function buildCookingPlans(
   menu: WeekMenu,
   household: Household,
   cooks = 1,
+  pantry?: Pantry,
 ): CookingPlan[] {
+  // Партии берём из общего плана недели — те же самые, что показывает карточка
+  const plans = planWeekBatches(menu, household, { pantry })
   const byDay = new Map<number, CookTask[]>()
   for (const task of cookTasks(menu)) {
     const list = byDay.get(task.cookDay) ?? []
@@ -304,7 +300,11 @@ export function buildCookingPlans(
     .sort((a, b) => a[0] - b[0])
     .map(([cookDay, tasks]) => {
       const sched = tasks
-        .map((task, i) => toSchedTask(task, i, household))
+        .map((task, i) => {
+          const plan = plans.get(task.key)
+          const pieces = plan ? optionPieces(plan.batch, plan.chosen.scale) : undefined
+          return toSchedTask(task, i, household, pieces)
+        })
         .filter((t): t is SchedTask => t !== null)
       const result = scheduleSteps(sched, household.kitchen, cooks)
 

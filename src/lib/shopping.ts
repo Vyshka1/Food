@@ -1,13 +1,12 @@
 import { CATEGORY_LABEL, CATEGORY_ORDER, INGREDIENT_BY_ID } from '../data/ingredients'
 import { recipeById } from '../data/recipeRegistry'
-import type { Household, Pantry, Recipe, ShoppingLine, WeekMenu } from '../types'
+import type { Household, Pantry, ShoppingLine, WeekMenu } from '../types'
 import { cookTasks } from './menu'
-import { portionWeight } from './nutrition'
-import { planBatch } from './batch'
 import type { BatchPreference } from './batch'
 import { drinkShopping } from './drinks'
 import { extraShopping } from './extras'
-import { freezerRoomGrams, isAlways, stockOf } from './pantry'
+import { isAlways, stockOf } from './pantry'
+import { planWeekBatches, weekServings } from './weekBatch'
 
 function roundUpTo(value: number, step: number): number {
   return Math.ceil(value / step) * step
@@ -19,23 +18,6 @@ export interface ShoppingList {
   total: number
 }
 
-/** Сколько долей рецепта реально ставится на плиту — с учётом партии. */
-function cookServings(
-  recipe: Recipe,
-  demandPortions: number,
-  household: Household,
-  pantry?: Pantry,
-  prefer?: BatchPreference,
-): number {
-  const plan = planBatch(recipe, {
-    neededGrams: portionWeight(recipe, demandPortions),
-    hasFreezer: household.kitchen.hasFreezer,
-    freezerRoomGrams: freezerRoomGrams(household.kitchen, pantry),
-    prefer,
-  })
-  return plan ? plan.chosen.servings : demandPortions
-}
-
 export function buildShoppingList(
   menu: WeekMenu,
   household?: Household,
@@ -43,6 +25,7 @@ export function buildShoppingList(
   prefer?: BatchPreference,
 ): ShoppingList {
   const needed = new Map<string, number>()
+  const plans = household ? planWeekBatches(menu, household, { pantry, prefer }) : null
 
   // Напитки — не блюда, но молоко для капучино покупать всё равно нужно, и
   // покупает его тот же список. Без этого две пачки молока в неделю уходили
@@ -65,9 +48,7 @@ export function buildShoppingList(
      * 1,2 кг», а продуктов покупалось на 1,0 кг: разойтись должно было прямо
      * на кухне.
      */
-    const portions = household
-      ? cookServings(recipe, task.portions, household, pantry, prefer)
-      : task.portions
+    const portions = plans ? weekServings(plans, task) : task.portions
     for (const item of recipe.items) {
       needed.set(item.ingredientId, (needed.get(item.ingredientId) ?? 0) + item.qty * portions)
     }
@@ -146,11 +127,12 @@ export function weekSpending(
 
   // сколько каждого продукта реально уйдёт в готовку этой недели
   const need = new Map<string, number>()
+  const plans = planWeekBatches(menu, household, { pantry })
   const add = (id: string, qty: number) => need.set(id, (need.get(id) ?? 0) + qty)
   for (const task of cookTasks(menu)) {
     const recipe = recipeById(task.recipeId)
     if (!recipe) continue
-    const portions = cookServings(recipe, task.portions, household, pantry)
+    const portions = weekServings(plans, task)
     for (const item of recipe.items) add(item.ingredientId, item.qty * portions)
   }
   for (const source of [drinkShopping(household), extraShopping(household)]) {

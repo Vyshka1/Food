@@ -97,20 +97,30 @@ describe('целые изделия', () => {
 })
 
 describe('сходимость карточки', () => {
-  it('выход = распределено + заморожено + непристроенное', () => {
+  it('выход = распределено + заморожено + доесть + непристроенное', () => {
     for (const card of allCards()) {
       const placed = card.rows.reduce((s, r) => s + r.grams, 0)
-      const sum = placed + card.freezeGrams + card.unplacedGrams
+      const sum = placed + card.freezeGrams + card.eatSoonGrams + card.unplacedGrams
       expect(Math.abs(sum - card.cookGrams), `${card.recipe.title}: ${sum} ≠ ${card.cookGrams}`)
         .toBeLessThanOrEqual(Math.max(5, card.cookGrams * 0.02))
     }
   })
 
-  it('изделия тоже сходятся', () => {
+  it('в морозилку не уходит больше, чем осталось', () => {
+    /*
+     * Изделия в морозилку считаем по доле граммов, а не «все, что не легли на
+     * тарелки»: часть остатка теперь не заготовка, а хвост на доесть, и класть
+     * его в контейнер незачем.
+     */
     for (const card of allCards()) {
       if (!card.cookPieces) continue
       const placed = card.rows.reduce((s, r) => s + (r.pieces ?? 0), 0)
-      expect(placed + (card.freezePieces ?? 0)).toBe(card.cookPieces)
+      expect(placed + (card.freezePieces ?? 0), card.recipe.title).toBeLessThanOrEqual(
+        card.cookPieces,
+      )
+      if (card.eatSoonGrams === 0 && card.unplacedGrams === 0) {
+        expect(placed + (card.freezePieces ?? 0), card.recipe.title).toBe(card.cookPieces)
+      }
     }
   })
 

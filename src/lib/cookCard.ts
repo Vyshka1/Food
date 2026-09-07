@@ -13,10 +13,10 @@ import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { recipeById } from '../data/recipeRegistry'
 import { portionOf, totalPortions } from './menu'
 import { portionWeight, recipeStats } from './nutrition'
-import { planBatch } from './batch'
+import { FREEZE_MIN_GRAMS } from './batch'
+import { planWeekBatches } from './weekBatch'
 import type { BatchPlan } from './batch'
 import { packPlan, purchaseInfo } from './purchase'
-import { freezerRoomGrams } from './pantry'
 import { householdGrams } from './measures'
 import { fryMinutes, loads as loadCount, pieceCookingOf, useTwoPans } from './pieces'
 import { FRY_STEP } from './batch'
@@ -119,7 +119,9 @@ export interface CookCard {
   meals: number
   freezeGrams: number
   freezePieces?: number
-  /** Ни в тарелки, ни в морозилку. */
+  /** Хвост в порцию: не заготовка, но и не потеря — доедается за пару дней. */
+  eatSoonGrams: number
+  /** Ни в тарелки, ни в морозилку, ни на доесть. */
   unplacedGrams: number
   items: CardItem[]
   /** КБЖУ и клетчатка всей готовки. */
@@ -224,12 +226,10 @@ export function cookCard(
   const demandFactor = entries.reduce((sum, e) => sum + totalPortions(e), 0)
   const neededGrams = portionWeight(recipe, demandFactor)
 
-  const plan = planBatch(recipe, {
-    neededGrams,
-    hasFreezer: household.kitchen.hasFreezer,
-    // место в морозилке считаем с учётом того, что там уже лежит
-    freezerRoomGrams: freezerRoomGrams(household.kitchen, pantry),
-  })
+  // Партия — из общего плана недели: место в морозилке одно на всю неделю,
+  // и делят его все готовки, а не каждая по отдельности.
+  const plan =
+    planWeekBatches(menu, household, { pantry }).get(`${entry.recipeId}|${entry.cookDay}`) ?? null
 
   // Сколько реально ставим на плиту. Всё остальное в карточке считается
   // отсюда — иначе продукты, КБЖУ и «приготовим» разойдутся между собой.
@@ -282,8 +282,17 @@ export function cookCard(
       placedGrams += Math.round(pieces * pieceGrams)
     })
   } else {
+    /*
+     * Делим по калориям, но раскладываем ровно столько, сколько нужно по
+     * меню. Пока доля считалась от всей готовки, тарелки выходили на десятую
+     * часть легче потребности: выверенный выход партии и расчётный вес порции
+     * — это два разных числа. Карточка обещала «нужно 995 г», раздавала 874 и
+     * объявляла оставшиеся сто граммов непристроенными.
+     */
+    const toPlates = Math.min(cookGrams, neededGrams)
+    const needKcal = needs.reduce((sum, n) => sum + n.kcal, 0)
     for (const need of needs) {
-      const grams = Math.round((need.kcal / Math.max(1, cookKcal)) * cookGrams)
+      const grams = Math.round((need.kcal / Math.max(1, needKcal)) * toPlates)
       rows.push({
         day: need.day,
         eaterId: need.eater.id,
@@ -296,12 +305,21 @@ export function cookCard(
     }
   }
 
+  /*
+   * Куда денется то, что не легло на тарелки, берём из того же плана партии,
+   * по которому считалась закупка. Пока карточка решала это сама, она обещала
+   * убрать в морозилку и то, что туда не влезет, и то, что для контейнера
+   * слишком мало.
+   */
   const restGrams = Math.max(0, cookGrams - placedGrams)
   const canFreeze = recipe.freezable && household.kitchen.hasFreezer
-  const freezeGrams = canFreeze ? restGrams : 0
+  const freezeGrams = canFreeze ? Math.min(restGrams, plan?.chosen.freezeGrams ?? restGrams) : 0
+  const eatSoonGrams = Math.min(restGrams - freezeGrams, FREEZE_MIN_GRAMS)
   const freezePieces =
-    cookPieces && canFreeze ? Math.max(0, cookPieces - placedPieces) : undefined
-  const unplacedGrams = canFreeze ? 0 : restGrams
+    cookPieces && freezeGrams > 0
+      ? Math.max(0, Math.round((freezeGrams / Math.max(1, cookGrams)) * cookPieces))
+      : undefined
+  const unplacedGrams = restGrams - freezeGrams - eatSoonGrams
 
   // продукты и остатки упаковок
   const skip = new Set(entries.map((e) => e.id))
@@ -443,6 +461,7 @@ export function cookCard(
     rows,
     meals: entries.length,
     freezeGrams,
+    eatSoonGrams,
     freezePieces,
     unplacedGrams,
     items,

@@ -44,6 +44,8 @@ export interface BatchOption {
   freezeGrams: number
   /** Некуда деть: ни в тарелки, ни в морозилку. */
   unplacedGrams: number
+  /** Хвост в порцию: не заготовка, но и не потеря — доедается за пару дней. */
+  tailGrams: number
   /** Не хватает до потребности по меню. */
   shortfallGrams: number
   /** Сырой остаток главного продукта. */
@@ -108,22 +110,114 @@ function packLines(recipe: Recipe, servings: number): PackLine[] {
 }
 
 /**
+ * Граница между заготовкой и хвостом.
+ *
+ * Двести граммов — это не заготовка, а остаток: на приём пищи он никогда не
+ * наберёт, но полку займёт и через полтора месяца пропадёт. И ровно потому,
+ * что он мал, его доедают за пару дней без всякого плана. Одно число служит
+ * обеим сторонам: что слишком мало для контейнера — то и есть хвост.
+ *
+ * Замер (12 недель × 12 прогонов, «сбалансированно»): касса ₽/нед, выброшено
+ * ₽/нед, некуда деть кг/нед, морозилка кг, приёмов пищи из морозилки:
+ *   300 г — 7955, 689, 0.11, 2.1, 0.2
+ *   500 г — 7987, 681, 0.01, 1.7, 0.4
+ *   700 г — 7901, 636, 0.00, 1.6, 0.4
+ *   900 г — 7873, 617, 0.00, 0.8, 0.5
+ * По деньгам разница внутри шума. Ниже трёхсот морозилка забивается крошками
+ * и перестаёт кормить, выше девятисот — пустеет совсем. Берём половину
+ * килограмма: это примерно контейнер, то есть та заготовка, которую меню
+ * сможет достать целиком.
+ */
+export const FREEZE_MIN_GRAMS = 500
+
+/**
+ * Во сколько обходится грамм недобора: стол не закрыт.
+ *
+ * Замер по всей базе (936 случаев) и на 12 неделях × 12 прогонов:
+ *   6  — недобор в 41% случаев (в среднем 46 г), варим на 10% больше нужного, касса 7983 ₽/нед
+ *   10 — 37% (42 г), 12%, 8117 ₽/нед
+ *   14 — 37% (42 г), 12%, 8283 ₽/нед
+ *   20 — 37% (42 г), 12%, 8386 ₽/нед
+ * Выше шести недобор почти не убывает: оставшийся — не выбор модели, а сетка
+ * (нет варианта, который закрывал бы потребность точнее). Платить за него
+ * четыреста рублей в неделю не за что, а сорок граммов на килограмм закрывает
+ * дополнение к столу.
+ */
+const SHORT_WEIGHT = 6
+
+/**
+ * Во сколько обходится грамм хвоста — добавки, которую доедают.
+ *
+ * Замер (12 недель × 12 прогонов, «сбалансированно»): касса ₽/нед, готовим
+ * кг/нед, хвостов г/нед:
+ *   1 — 8203, 24.3, 1169
+ *   2 — 7987, 23.7, 678
+ *   3 — 7972, 23.7, 663
+ * Разница между 1 и 2 — это полкилограмма еды в неделю сверх нормы: её
+ * покупают и съедают, потому что приготовили. Хвост дешевле выброшенного,
+ * но не бесплатен. После двух ничего не меняется.
+ */
+const TAIL_WEIGHT = 2
+
+/**
+ * Во сколько обходится грамм заготовки.
+ *
+ * Заготовка полезна — она экономит будущую готовку, — но не бесплатна:
+ * продукты куплены сегодня, место занято сегодня, съесть надо до срока.
+ * Пока этот грамм считался даром, порог заморозки толкал партии вверх:
+ * голубцы на потребность в 1080 г предлагали шестнадцать штук вместо десяти
+ * и две пачки фарша вместо одной — лишь бы остаток дотянул до контейнера.
+ *
+ * Замер (12 недель × 12 прогонов): касса ₽/нед, некуда деть кг/нед,
+ * морозилка кг:
+ *   0   — 7950, 0.01, 1.9
+ *   0.2 — 7944, 0.01, 1.9
+ *   0.4 — 7987, 0.01, 1.7
+ *   0.6 — 7869, 0.00, 0.9
+ * По деньгам всё внутри шума, на 0.6 морозилка пустеет — а она нужна.
+ * Берём 0.4: это наименьший вес, при котором обещание «готовим под упаковку»
+ * не проигрывает желанию набить контейнер.
+ */
+const FREEZE_WEIGHT = 0.4
+
+/**
  * Куда разойдётся приготовленное.
  *
  * Сначала тарелки по меню, потом морозилка — но только если блюдо вообще
- * морозится и морозилка есть. Всё, что не уместилось, честно считается
- * непристроенным: приготовить и выбросить хуже, чем не приготовить.
+ * морозится, морозилка есть и на полке хватает места. Всё, что не уместилось,
+ * честно считается непристроенным: приготовить и выбросить хуже, чем не
+ * приготовить.
  */
 function place(
   yieldGrams: number,
   neededGrams: number,
   canFreeze: boolean,
   freezerRoomGrams: number,
-): { servedGrams: number; freezeGrams: number; unplacedGrams: number } {
+): { servedGrams: number; freezeGrams: number; tailGrams: number; unplacedGrams: number } {
   const servedGrams = Math.min(yieldGrams, neededGrams)
   const rest = yieldGrams - servedGrams
-  const freezeGrams = canFreeze ? Math.min(rest, freezerRoomGrams) : 0
-  return { servedGrams, freezeGrams, unplacedGrams: Math.round(rest - freezeGrams) }
+  const room = Math.min(rest, freezerRoomGrams)
+  const freezeGrams = canFreeze && room >= FREEZE_MIN_GRAMS ? room : 0
+  const left = rest - freezeGrams
+  /*
+   * Хвост — это добавка, а не потеря: за два-три дня его доедают без всякого
+   * плана. Граница у хвоста та же, что у контейнера: то, что слишком мало,
+   * чтобы стать заготовкой, ровно поэтому и доедается. Всё, что больше,
+   * девать уже некуда — это либо морозилка, либо мусор.
+   *
+   * Разделять хвост и непристроенное пришлось из-за порога заморозки: пока
+   * лишние двести граммов считались такой же потерей, как лишний килограмм,
+   * выгоднее было сварить вдвое больше нужного — лишь бы остаток дотянул до
+   * контейнера. Голубцы на потребность в 1080 г предлагали шестнадцать штук
+   * вместо десяти.
+   */
+  const tailGrams = Math.min(left, FREEZE_MIN_GRAMS)
+  return {
+    servedGrams,
+    freezeGrams,
+    tailGrams: Math.round(tailGrams),
+    unplacedGrams: Math.round(left - tailGrams),
+  }
 }
 
 /**
@@ -162,11 +256,19 @@ function rank(options: BatchOption[], batch: RecipeBatch, prefer: BatchPreferenc
     )
   }
   if (prefer === 'max') {
-    const placed = options.filter((o) => o.shortfallGrams === 0 && o.unplacedGrams === 0)
-    const pool = placed.length > 0 ? placed : options
-    return [...pool].sort(
-      (a, b) => a.unplacedGrams - b.unplacedGrams || b.yieldGrams - a.yieldGrams,
-    )
+    /*
+     * «Впрок» — это не «побольше сварить», а «побольше пристроить»: считаем
+     * тарелки и морозилку, а не выход. Пока сортировка шла по выходу среди
+     * вариантов с нулём непристроенного, порог заморозки мог оставить такие
+     * варианты вовсе без кандидатов, и «впрок» выбирала наименьшую партию —
+     * ровно наоборот тому, что обещает.
+     */
+    const enough = options.filter((o) => o.shortfallGrams === 0)
+    const covering = enough.length > 0 ? enough : options
+    const placed = covering.filter((o) => o.unplacedGrams === 0)
+    const pool = placed.length > 0 ? placed : covering
+    const canPlace = (o: BatchOption) => o.servedGrams + o.freezeGrams + o.tailGrams
+    return [...pool].sort((a, b) => canPlace(b) - canPlace(a) || a.unplacedGrams - b.unplacedGrams)
   }
   return [...options].sort((a, b) => optionCost(a, batch) - optionCost(b, batch))
 }
@@ -193,7 +295,7 @@ export function buildOption(
       : rawGramsPerServing(recipe) * servings * 0.88,
   )
   const canFreeze = batch.freezeCooked && context.hasFreezer
-  const { servedGrams, freezeGrams, unplacedGrams } = place(
+  const { servedGrams, freezeGrams, tailGrams, unplacedGrams } = place(
     yieldGrams,
     context.neededGrams,
     canFreeze,
@@ -209,6 +311,7 @@ export function buildOption(
     yieldGrams,
     servedGrams: Math.round(servedGrams),
     freezeGrams: Math.round(freezeGrams),
+    tailGrams,
     unplacedGrams,
     shortfallGrams: Math.max(0, Math.round(context.neededGrams - servedGrams)),
     anchorLeftover: anchorLine?.leftover ?? 0,
@@ -219,18 +322,23 @@ export function buildOption(
 }
 
 /**
- * Во что обходится вариант. Непристроенная еда дороже всего — её придётся
- * выбросить; сырой остаток дешевле, его можно заморозить или доесть; цена и
- * время учитываются в последнюю очередь, потому что приготовить из полной
- * пачки почти не дольше, чем из половины.
+ * Во что обходится вариант.
+ *
+ * Непристроенная еда дороже всего — её придётся выбросить; хвост в порцию
+ * дешевле, его доедают; заготовка ещё дешевле, но и она чего-то стоит; сырой
+ * остаток можно заморозить или доесть; цена и время учитываются в последнюю
+ * очередь, потому что приготовить из полной пачки почти не дольше, чем из
+ * половины.
  */
 export function optionCost(option: BatchOption, batch: RecipeBatch): number {
   // Недобор дороже излишка: лишнее можно заморозить или доесть, а нехватку
   // придётся закрывать второй готовкой или пустой тарелкой. Первая версия
   // штрафовала только излишек, и «Гречка с яйцом» предлагала 500 г там, где
   // по меню нужно 900.
-  let cost = option.shortfallGrams * 6
+  let cost = option.shortfallGrams * SHORT_WEIGHT
   cost += option.unplacedGrams * 3
+  cost += option.tailGrams * TAIL_WEIGHT
+  cost += option.freezeGrams * FREEZE_WEIGHT
   // сырой остаток, который нельзя заморозить, почти так же плох, как готовый
   const rawPenalty = batch.freezeRawAnchor ? 0.4 : 2
   cost += option.anchorLeftover * rawPenalty

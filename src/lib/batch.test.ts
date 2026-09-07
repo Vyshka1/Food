@@ -3,7 +3,7 @@ import { RECIPES, RECIPE_BY_ID } from '../data/recipes'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { buildOption, planBatch, yieldLabel } from './batch'
 import { leftoverAdvice, packPlan, purchaseInfo } from './purchase'
-import { recipeStats } from './nutrition'
+import { portionWeight, recipeStats } from './nutrition'
 
 const CONTEXT = { neededGrams: 1080, hasFreezer: true, freezerRoomGrams: 4000 }
 
@@ -114,16 +114,79 @@ describe('выбор партии', () => {
     const plan = planBatch(recipe, CONTEXT)!
     expect(plan.batch.reason).toBe('anchor-pack')
     const anchor = plan.chosen.packs.find((l) => l.ingredientId === 'minced_turkey')!
-    // сырого фарша почти не остаётся: партия подогнана под пачку
-    expect(anchor.leftover).toBeLessThan(40)
+    // берём целую пачку и с неё же готовим, а не отрезаем под потребность
+    expect(anchor.packs).toBe(1)
+    expect(anchor.leftover).toBeLessThan(anchor.packSize / 4)
+  })
+
+  it('пачка чаще всего уходит в ноль', () => {
+    /*
+     * Обещание правила «под упаковку» проверяем по всей базе, а не на одном
+     * блюде: на отдельном сочетании блюда и потребности выгоднее бывает
+     * оставить сто граммов сырого фарша, чем сварить лишние двести готового.
+     * Важно, чтобы это оставалось исключением.
+     */
+    let cases = 0
+    let whole = 0
+    let leftover = 0
+    for (const recipe of RECIPES) {
+      const batch = recipe.batch
+      if (!batch || batch.reason !== 'anchor-pack' || !batch.anchorIngredientId) continue
+      for (const portions of [2, 3, 4, 6]) {
+        for (const freezerRoomGrams of [0, 1200, 4000]) {
+          const neededGrams = portionWeight(recipe, portions)
+          const plan = planBatch(recipe, { neededGrams, hasFreezer: true, freezerRoomGrams })
+          const line = plan?.chosen.packs.find((l) => l.ingredientId === batch.anchorIngredientId)
+          if (!line) continue
+          cases++
+          leftover += line.leftover
+          if (line.leftover < 40) whole++
+        }
+      }
+    }
+    expect(cases).toBeGreaterThan(100)
+    // измерено: пачка в ноль в 54% случаев, средний остаток 72 г
+    expect(whole / cases).toBeGreaterThan(0.5)
+    expect(leftover / cases).toBeLessThan(100)
+  })
+
+  it('приготовленное всё куда-то девается', () => {
+    /*
+     * Тарелки, морозилка, хвост на доесть и то, чему места не нашлось, — в
+     * сумме ровно то, что приготовили. Пока хвост не отделяли от лишнего,
+     * порог заморозки толкал партию вверх: лишь бы остаток дотянул до
+     * контейнера.
+     */
+    for (const recipe of RECIPES) {
+      for (const portions of [2, 4, 6]) {
+        for (const freezerRoomGrams of [0, 1200, 4000]) {
+          const neededGrams = portionWeight(recipe, portions)
+          const plan = planBatch(recipe, { neededGrams, hasFreezer: true, freezerRoomGrams })
+          if (!plan) continue
+          const o = plan.chosen
+          const sum = o.servedGrams + o.freezeGrams + o.tailGrams + o.unplacedGrams
+          expect(Math.abs(sum - o.yieldGrams), `${recipe.title} ×${portions}`).toBeLessThanOrEqual(2)
+          // в морозилку не кладут того, чему там нет места
+          expect(o.freezeGrams, recipe.title).toBeLessThanOrEqual(freezerRoomGrams)
+        }
+      }
+    }
   })
 
   it('излишек уходит в морозилку, а не в никуда', () => {
     const recipe = RECIPE_BY_ID['lazy_cabbage_rolls']
-    const plan = planBatch(recipe, CONTEXT)!
-    expect(plan.chosen.unplacedGrams).toBe(0)
-    expect(plan.chosen.servedGrams).toBe(1080)
-    expect(plan.chosen.freezeGrams).toBeGreaterThan(0)
+    const batch = recipe.batch!
+    const ctx = { ...CONTEXT, neededGrams: 700 }
+    // двойная партия при половинной потребности: излишку деваться некуда,
+    // кроме морозилки, — и он должен там оказаться, а не исчезнуть
+    const big = buildOption(recipe, batch, 2, ctx)
+    expect(big.servedGrams).toBe(700)
+    expect(big.freezeGrams).toBeGreaterThan(1000)
+    expect(big.unplacedGrams).toBe(0)
+    // а если морозилки нет — то же самое честно считается непристроенным
+    const nowhere = buildOption(recipe, batch, 2, { ...ctx, freezerRoomGrams: 0 })
+    expect(nowhere.freezeGrams).toBe(0)
+    expect(nowhere.unplacedGrams).toBeGreaterThan(1000)
   })
 
   it('без морозилки лишнее не готовим', () => {
