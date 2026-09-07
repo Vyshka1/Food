@@ -2,11 +2,16 @@ import { useMemo, useState } from 'react'
 import { recipeById } from '../data/recipeRegistry'
 import { ENTRY_STATUS, MEAL_SLOTS } from '../types'
 import type { MenuEntry } from '../types'
-import { WEEKDAYS, dayNorms, dayTotals, eatersAtHome, portionOf, totalPortions } from '../lib/menu'
+import { WEEKDAYS, dayNorms, dayTotals, fedEaters, portionOf, takeawayEaters, totalPortions } from '../lib/menu'
+import { drinkNorms } from '../lib/drinks'
+import { extraNorms, extraStats, extraSummary, extrasAt } from '../lib/extras'
 import { portionWeight, recipeStats } from '../lib/nutrition'
 import { useStore } from '../store'
 import { CalorieRing, Card, Warnings } from '../components/ui'
 import { RecipeSheet } from '../components/RecipeSheet'
+import { RebuildSheet } from '../components/RebuildSheet'
+import { WeekOverview } from '../components/WeekOverview'
+import { TodayCard } from '../components/TodayCard'
 import { Icon } from '../components/icons'
 import { DishThumb } from '../components/DishImage'
 import { plural } from '../lib/format'
@@ -26,12 +31,15 @@ function todayIndex(weekStart: string): number {
 }
 
 export function MenuScreen() {
-  const { household, menu, warnings, regenerate, swapDish, banRecipe, togglePin, setEntryStatus } =
+  const { household, menu, warnings, swapDish, banRecipe, togglePin, setEntryStatus } =
     useStore()
   const [day, setDay] = useState(() => (menu ? todayIndex(menu.weekStart) : 0))
   const [openEntry, setOpenEntry] = useState<MenuEntry | null>(null)
   const [note, setNote] = useState('')
   const [replacing, setReplacing] = useState<MenuEntry | null>(null)
+  const [rebuilding, setRebuilding] = useState(false)
+  /** «День» и «Неделя» — один и тот же экран, разный масштаб. */
+  const [weekView, setWeekView] = useState(false)
   /** null — вся семья, иначе тарелка одного едока. */
   const [who, setWho] = useState<string | null>(null)
 
@@ -45,6 +53,46 @@ export function MenuScreen() {
     () => (menu ? dayTotals(menu, day, eater?.id) : null),
     [menu, day, eater],
   )
+  /**
+   * Напитки показываем отдельной строкой, а не подмешиваем в еду: человек
+   * должен видеть, что 140 ккал ушли в капучино, а не гадать, почему обед
+   * стал меньше.
+   */
+  /** Дополнения к столу — их человек тоже съест, и они тоже считаются. */
+  const extras = useMemo(() => {
+    if (!household) return { kcal: 0, protein: 0, fat: 0, carbs: 0, fiber: 0 }
+    const who = eater ? [eater] : household.eaters
+    return who.reduce(
+      (acc, e) => {
+        const x = extraNorms(household, e.id, day)
+        return {
+          kcal: acc.kcal + x.kcal,
+          protein: acc.protein + x.protein,
+          fat: acc.fat + x.fat,
+          carbs: acc.carbs + x.carbs,
+          fiber: acc.fiber + x.fiber,
+        }
+      },
+      { kcal: 0, protein: 0, fat: 0, carbs: 0, fiber: 0 },
+    )
+  }, [household, day, eater])
+
+  const drinks = useMemo(() => {
+    if (!household) return { kcal: 0, protein: 0, fat: 0, carbs: 0 }
+    const who = eater ? [eater] : household.eaters
+    return who.reduce(
+      (acc, e) => {
+        const d = drinkNorms(household, e.id, day)
+        return {
+          kcal: acc.kcal + d.kcal,
+          protein: acc.protein + d.protein,
+          fat: acc.fat + d.fat,
+          carbs: acc.carbs + d.carbs,
+        }
+      },
+      { kcal: 0, protein: 0, fat: 0, carbs: 0 },
+    )
+  }, [household, day, eater])
 
   if (!household || !menu || !norms || !totals) return null
 
@@ -93,11 +141,31 @@ export function MenuScreen() {
               : `меню на ${household.eaters.length} ${plural(household.eaters.length, ['человек', 'человека', 'человек'])} · ${household.cookingDays.length} ${plural(household.cookingDays.length, ['день', 'дня', 'дней'])} готовки`}
           </div>
         </div>
-        <button className="btn btn--soft btn--small" onClick={() => regenerate()}>
+        <button className="btn btn--soft btn--small" onClick={() => setRebuilding(true)}>
           Пересобрать
         </button>
       </div>
 
+      <div className="segmented" style={{ marginBottom: 10 }}>
+        <button data-active={!weekView} onClick={() => setWeekView(false)}>
+          День
+        </button>
+        <button data-active={weekView} onClick={() => setWeekView(true)}>
+          Неделя
+        </button>
+      </div>
+
+      {weekView && (
+        <WeekOverview
+          onOpenDay={(d) => {
+            setDay(d)
+            setWeekView(false)
+          }}
+        />
+      )}
+
+      {!weekView && (
+      <>
       <div className="week-strip">
         {WEEKDAYS.map((label, i) => (
           <button key={label} data-active={i === day} onClick={() => setDay(i)}>
@@ -121,6 +189,8 @@ export function MenuScreen() {
       )}
 
       <Warnings items={warnings} />
+
+      <TodayCard day={day} />
 
       {note && <div className="shop__note">{note}</div>}
 
@@ -146,29 +216,62 @@ export function MenuScreen() {
               <span style={off(percent)}>калории {percent}%</span>
               <span>≈ {totals.price} ₽</span>
             </div>
+            {drinks.kcal > 0 && (
+              <div className="macro muted small">
+                <span>напитки {drinks.kcal} ккал</span>
+                <span>всего {totals.kcal + drinks.kcal}</span>
+              </div>
+            )}
+            {extras.kcal > 0 && (
+              <div className="macro muted small">
+                <span>дополнения {extras.kcal} ккал</span>
+                <span>всего {totals.kcal + drinks.kcal + extras.kcal}</span>
+              </div>
+            )}
+            {/* Клетчатка без четвёртого кольца: она важна, но не настолько,
+                чтобы спорить за место с калориями. */}
+            <div className="macro muted small">
+              <span>клетчатка</span>
+              <span
+                style={
+                  totals.fiber + extras.fiber < norms.fiber + extras.fiber
+                    ? { color: 'var(--warn)' }
+                    : undefined
+                }
+              >
+                {Math.round(totals.fiber + extras.fiber)} из{' '}
+                {Math.round(norms.fiber + extras.fiber)} г
+              </span>
+            </div>
           </div>
         </div>
       </Card>
 
       {MEAL_SLOTS.filter((m) => household.meals.includes(m.id)).map((meal) => {
         const entries = menu.entries.filter((e) => e.day === day && e.slot === meal.id)
-        const home = eatersAtHome(household, day, meal.id)
-        const away = household.eaters.filter((e) => !home.some((h) => h.id === e.id))
+        const fed = fedEaters(household, day, meal.id)
+        const away = household.eaters.filter((e) => !fed.some((h) => h.id === e.id))
+        const withMe = takeawayEaters(household, day, meal.id)
         return (
           <div key={meal.id}>
             <div className="meal-head">
               <Icon name={meal.icon} size={18} />
               {meal.label}
+              {withMe.length > 0 && (
+                <span className="meal-head__take">
+                  {withMe.map((e) => e.name).join(', ')} — с собой
+                </span>
+              )}
               {away.length > 0 && (
                 <span className="meal-head__away">
                   {away.map((e) => e.name).join(', ')} не дома
                 </span>
               )}
             </div>
-            {home.length === 0 && (
+            {fed.length === 0 && (
               <p className="hint">Все едят не дома — на этот приём ничего не готовим.</p>
             )}
-            {home.length > 0 && entries.length === 0 && (
+            {fed.length > 0 && entries.length === 0 && (
               <p className="hint">Ничего не запланировано.</p>
             )}
             {entries.map((entry) => {
@@ -238,9 +341,30 @@ export function MenuScreen() {
                 </div>
               )
             })}
+            {/* Дополнения к этому приёму: не блюда, но на столе они есть, и
+                человек должен видеть их там же, где еду. */}
+            {extrasAt(household, day, meal.id)
+              .filter((x) => !eater || x.eaterId === eater.id)
+              .map((extra) => {
+                const owner = household.eaters.find((e) => e.id === extra.eaterId)
+                return (
+                  <div className="extra-line" key={extra.id}>
+                    <Icon name="salad" size={16} />
+                    <span>
+                      {extraSummary(extra)}
+                      {household.eaters.length > 1 && owner ? ` · ${owner.name}` : ''}
+                    </span>
+                    <b>{extraStats(extra).kcal} ккал</b>
+                  </div>
+                )
+              })}
           </div>
         )
       })}
+      </>
+      )}
+
+      {rebuilding && <RebuildSheet day={day} onClose={() => setRebuilding(false)} />}
 
       {openEntry && (
         <RecipeSheet

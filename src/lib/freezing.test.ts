@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { RECIPES, RECIPE_BY_ID } from '../data/recipes'
 import type { Eater, Household } from '../types'
-import { buildWeekMenu } from './menu'
+import { buildWeekMenu, defaultRepeats} from './menu'
 import { buildCookingPlans } from './cookingPlan'
 import { containerLabel, formatUseBy, isSafeThaw, rawFreezeStep, thawReminders, useByDate } from './freezing'
+import { defaultOils } from './oil'
 
 describe('на каком этапе морозить', () => {
   it('лепное и потом жареное морозится сырым', () => {
@@ -108,13 +109,17 @@ describe('когда доставать из морозилки', () => {
   const eater: Eater = {
     id: 'e1', name: 'Юлия', sex: 'female', age: 32, heightCm: 168, weightKg: 62,
     activity: 'light', goal: 'keep', allergies: [], customAllergens: [], dislikes: [],
-    bannedRecipes: [], awayMeals: [], ratings: {},
+    bannedRecipes: [], mealPlaces: {}, ratings: {},
   }
   const household: Household = {
     eaters: [eater], cookingDays: [0], meals: ['breakfast', 'lunch', 'dinner'],
     kitchen: { burners: 4, ovens: 1, hasAirfryer: false, hasMulticooker: false, hasBlender: true,
       hasProcessor: false, hasMicrowave: true, hasDishwasher: false, containers: 10, hasFreezer: true },
-    budgetPerWeek: 0, weekStart: '2026-09-07',
+    budgetPerWeek: 0,
+    drinks: [],
+    oils: defaultOils(),
+    repeats: defaultRepeats(),
+    extras: [], weekStart: '2026-09-07',
   }
 
   it('накануне, если размораживать в холодильнике', () => {

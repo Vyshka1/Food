@@ -67,10 +67,18 @@ export function parseTemp(text: string): number | undefined {
  */
 const SOAKING = /замочить|замачива|залить кипятк|кипятком|запарить|настоять|под плёнк/i
 
+/**
+ * …но только если в том же шаге не варят. «Замочить нут заранее и отварить» —
+ * это один шаг, в котором вторая половина занимает конфорку на сорок минут;
+ * правило по первому слову оставляло плиту «свободной», и план ставил на две
+ * конфорки три кастрюли.
+ */
+const ALSO_COOKS = /отварить|варить|тушить|обжар|пожар|жарить|запеч|припуст/i
+
 export function parseAppliance(text: string, station: Station): Appliance | undefined {
   // станция «ожидание» проставлена в рецепте руками и всегда сильнее текста
   if (station === 'wait') return undefined
-  if (SOAKING.test(text)) return undefined
+  if (SOAKING.test(text) && !ALSO_COOKS.test(text)) return undefined
   for (const [re, appliance] of APPLIANCE_WORDS) if (re.test(text)) return appliance
   // текст молчит — доверяем станции, которая проставлена в рецепте руками
   if (station === 'oven') return 'oven'

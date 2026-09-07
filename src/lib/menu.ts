@@ -7,13 +7,19 @@ import type {
   Household,
   MealSlot,
   MenuEntry,
+  MenuGoal,
   Norms,
   Recipe,
+  RepeatRules,
   Storage,
   WeekMenu,
 } from '../types'
+import type { RecipeStats } from './nutrition'
 import { dailyNorm, recipeStats, slotShares, sumNorms } from './nutrition'
 import { mulberry32 } from './random'
+import { plural } from './format'
+import { drinkNorms, drinksOvershoot, foodNorm } from './drinks'
+import { containersOn, fedEaters, isFed, slotLabel, takeawayEaters } from './attendance'
 
 export const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 /**
@@ -75,20 +81,17 @@ export function householdNorms(household: Household): Norms {
   return sumNorms(household.eaters.map(dailyNorm))
 }
 
-/** Ключ приёма пищи вне дома: день недели плюс приём. */
-export function awayKey(day: number, slot: MealSlot): string {
-  return `${day}:${slot}`
-}
-
-/** Ест ли человек этот приём пищи дома. */
-export function eatsAtHome(eater: Eater, day: number, slot: MealSlot): boolean {
-  return !eater.awayMeals?.includes(awayKey(day, slot))
-}
-
-/** Кто из семьи за столом в этот приём пищи. */
-export function eatersAtHome(household: Household, day: number, slot: MealSlot): Eater[] {
-  return household.eaters.filter((e) => eatsAtHome(e, day, slot))
-}
+// Кто где ест — в lib/attendance: там же три состояния и готовые расклады.
+export {
+  containersOn,
+  containersPerWeek,
+  fedEaters,
+  isFed,
+  isTakeaway,
+  mealKey,
+  mealPlaceOf,
+  takeawayEaters,
+} from './attendance'
 
 /**
  * Личная норма на день с поправкой на еду вне дома: если Кирилл обедает в
@@ -99,18 +102,49 @@ export function dayNorms(household: Household, day: number, eaterId?: string): N
   const shares = slotShares(household.meals)
   const eaters = eaterId ? household.eaters.filter((e) => e.id === eaterId) : household.eaters
   const parts = eaters.map((eater) => {
-    const full = dailyNorm(eater)
+    // норма еды — это норма минус привычные напитки: капучино уже выпит
+    const full = foodNorm(eater, household, day)
     const share = household.meals
-      .filter((slot) => eatsAtHome(eater, day, slot))
+      .filter((slot) => isFed(eater, day, slot))
       .reduce((sum, slot) => sum + (shares[slot] ?? 0), 0)
     return {
       kcal: Math.round(full.kcal * share),
       protein: Math.round(full.protein * share),
       fat: Math.round(full.fat * share),
       carbs: Math.round(full.carbs * share),
+      // клетчатка делится вместе с приёмами пищи так же, как калории
+      fiber: Math.round(full.fiber * share),
     }
   })
   return sumNorms(parts)
+}
+
+/**
+ * Сколько нужно самому большому едоку за этим столом.
+ *
+ * Доля порции ограничена сверху (2,5 порции — это уже не порция, а кастрюля),
+ * и лёгкое блюдо при этом ограничении просто не докармливает: Кирилл получал
+ * 2,5 порции ухи вместо нужных 2,7 и оставался на 12% ниже нормы. Значит,
+ * такое блюдо в этот приём и не надо ставить.
+ */
+export function topEaterTarget(household: Household, slot: MealSlot, day: number): number {
+  const present = fedEaters(household, day, slot)
+  if (present.length === 0) return 0
+  const share = slotShares(household.meals)[slot] ?? 0.3
+  return Math.max(...present.map((e) => foodNorm(e, household, day).kcal * share))
+}
+
+/** Дневная норма на среднего едока за столом — сумма его приёмов дома. */
+export function dayTargetOn(household: Household, day: number): number {
+  return household.meals.reduce((sum, slot) => sum + slotTargetOn(household, slot, day), 0)
+}
+
+/**
+ * Насколько ужин может отличаться от своей доли, добирая день. Вдвое больше
+ * обычного — это ещё ужин; втрое — уже не ужин, а способ закрыть отчёт.
+ */
+function clampTarget(remaining: number, slotTarget: number): number {
+  return Math.min(slotTarget * 1.8, Math.max(slotTarget * 0.5, remaining))
 }
 
 /** Целевая калорийность одного приёма пищи в среднем на едока. */
@@ -127,10 +161,10 @@ export function slotTargets(household: Household): Record<string, number> {
  * по семье.
  */
 export function slotTargetOn(household: Household, slot: MealSlot, day: number): number {
-  const present = eatersAtHome(household, day, slot)
+  const present = fedEaters(household, day, slot)
   if (present.length === 0) return 0
   const share = slotShares(household.meals)[slot] ?? 0.3
-  const sum = present.reduce((acc, e) => acc + dailyNorm(e).kcal * share, 0)
+  const sum = present.reduce((acc, e) => acc + foodNorm(e, household, day).kcal * share, 0)
   return Math.round(sum / present.length)
 }
 
@@ -209,15 +243,22 @@ export function portionsFor(
   const perServing = recipeStats(recipe).kcal || 1
   return household.eaters.map((eater) => {
     // ест не дома — порции нет, значит и в закупку она не попадёт
-    if (!eatsAtHome(eater, day, slot)) return { eaterId: eater.id, factor: 0 }
-    const target = dailyNorm(eater).kcal * (shares[slot] ?? 0.3)
+    if (!isFed(eater, day, slot)) return { eaterId: eater.id, factor: 0 }
+    const target = foodNorm(eater, household, day).kcal * (shares[slot] ?? 0.3)
     const raw = target / perServing
     return {
       eaterId: eater.id,
-      factor: Math.min(2.5, Math.max(0.4, Math.round(raw * 20) / 20)),
+      factor: Math.min(MAX_PORTION_FACTOR, Math.max(MIN_PORTION_FACTOR, Math.round(raw * 20) / 20)),
     }
   })
 }
+
+/**
+ * Границы личной доли. Больше двух с половиной порций — это уже не порция,
+ * а кастрюля; меньше четырёх десятых — не еда, а проба.
+ */
+export const MAX_PORTION_FACTOR = 2.5
+const MIN_PORTION_FACTOR = 0.4
 
 /** Сколько порций готовим всего — сумма личных долей. */
 export function totalPortions(entry: MenuEntry): number {
@@ -234,6 +275,7 @@ interface DayAcc {
   fat: number
   protein: number
   carbs: number
+  fiber: number
 }
 
 interface PickState {
@@ -289,7 +331,7 @@ function addIngredients(state: PickState, recipe: Recipe, scale: number): void {
 }
 
 function accOf(state: PickState, day: number): DayAcc {
-  return state.day.get(day) ?? { kcal: 0, fat: 0, protein: 0, carbs: 0 }
+  return state.day.get(day) ?? { kcal: 0, fat: 0, protein: 0, carbs: 0, fiber: 0 }
 }
 
 function addToDay(state: PickState, day: number, recipe: Recipe, scale: number): void {
@@ -300,6 +342,7 @@ function addToDay(state: PickState, day: number, recipe: Recipe, scale: number):
     fat: acc.fat + stats.fat * scale,
     protein: acc.protein + stats.protein * scale,
     carbs: acc.carbs + stats.carbs * scale,
+    fiber: acc.fiber + stats.fiber * scale,
   })
 }
 
@@ -319,6 +362,46 @@ function macroShares(n: Norms): MacroShares {
   }
 }
 
+/**
+ * Во что цель пересборки оценивает блюдо.
+ *
+ * Веса подобраны так, чтобы цель было видно, но норма оставалась главной:
+ * «дешевле» — это про выбор среди подходящего, а не про пустую тарелку.
+ * Замер на восьми неделях (цена недели / руки у плиты / худшее отклонение
+ * дня от нормы):
+ *
+ *   обычно      2803 ₽   205 мин   2.2%
+ *   дешевле     2041 ₽   236 мин   —
+ *   быстрее     3115 ₽   173 мин   1.7%
+ *
+ * Видно и обратную сторону: быстрые блюда дороже, дешёвые — дольше. Это
+ * честный размен, и человек выбирает его сам.
+ */
+function goalCost(
+  recipe: Recipe,
+  stats: RecipeStats,
+  scale: number,
+  options: BuildOptions | undefined,
+): number {
+  switch (options?.goal) {
+    case 'cheaper':
+      return stats.price * scale * 1.2
+    case 'faster':
+      return recipe.steps.reduce((sum, s) => sum + (s.handsOn ? s.minutes : s.minutes * 0.2), 0) * 10
+    case 'stock': {
+      const home = new Set(options.atHome ?? [])
+      if (home.size === 0) return 0
+      const own = recipe.items.filter((i) => home.has(i.ingredientId)).length
+      const missing = recipe.items.length - own
+      return missing * 12 - own * 20
+    }
+    case 'variety':
+      return 0
+    default:
+      return 0
+  }
+}
+
 function scoreRecipe(
   recipe: Recipe,
   opts: {
@@ -328,6 +411,10 @@ function scoreRecipe(
     day: number
     state: PickState
     jitter: number
+    /** Сколько нужно самому большому едоку за столом. */
+    topTarget?: number
+    /** Чего человек хочет от этой пересборки. */
+    options?: BuildOptions
   },
 ): number {
   const { household, targetKcal, targetMacros, day, state, jitter } = opts
@@ -361,6 +448,13 @@ function scoreRecipe(
   score += Math.max(0, carbBudget - projCarbs) * 4
   score += Math.max(0, projCarbs - carbBudget) * 1.5
 
+  // Клетчатка. Рацион может попадать в калории и БЖУ и при этом состоять из
+  // творога, фарша и круп — клетчатка ровно то, чем нормальное питание от
+  // такого отличается. Штрафуем только недобор: перебор клетчатки бытовым
+  // меню недостижим.
+  const fiberBudget = (projectedKcal * FIBER_PER_1000) / 1000
+  score += Math.max(0, fiberBudget - (acc.fiber + stats.fiber * scale)) * FIBER_WEIGHT
+
   // Небольшой вклад излишка упаковок в общий счёт. Основная экономия делается
   // не здесь, а на выборе среди почти равных вариантов (см. buildWeekMenu):
   // большой вес в общем счёте начинает перевешивать норму человека.
@@ -381,17 +475,37 @@ function scoreRecipe(
   // «не люблю» — мягкий, но очень заметный штраф
   for (const eater of household.eaters) score += dislikeHits(recipe, eater).length * 60
 
-  // оценки блюд. Веса намеренно несимметричны и подобраны замером: «нравится»
-  // поднимает блюдо с 7 появлений на 40 недель до 60, «не нравится» опускает
-  // до 2 — то есть делает редким, но не вычёркивает. Вычёркивает «больше не
-  // показывать», и три варианта оценки должны давать три разных результата,
-  // а не два
+  // Оценки блюд. Веса намеренно несимметричны и подобраны замером на 40
+  // неделях — появлений блюда при нейтральной оценке / при «не нравится»:
+  //
+  //   вес «не нравится»          35        60        90
+  //   овсяная запеканка       61→53     61→41     61→14
+  //   гречневые оладьи        42→16      42→6      42→0
+  //   курица с брокколи       60→41     60→27      60→8
+  //
+  // Тридцати пяти мало на блюдах, которые подбор и так выбирает часто;
+  // девяносто превращают оценку в скрытие — оладьи исчезают совсем. Шестьдесят
+  // сокращает вдвое-втрое, оставляя блюдо в подборе: «нравится» поднимает,
+  // «не нравится» опускает, «больше не показывать» убирает — три варианта
+  // дают три разных результата, а не два.
   const rating = ratingScore(recipe, household)
   score -= Math.max(0, rating) * 90
-  score += Math.max(0, -rating) * 8
+  score += Math.max(0, -rating) * 60
 
-  // разнообразие
-  score += (state.usedCount.get(recipe.id) ?? 0) * 45
+  // блюдо, которое не докормит самого большого едока даже в максимальной доле
+  const top = opts.topTarget ?? 0
+  if (top > 0) {
+    const reachable = stats.kcal * MAX_PORTION_FACTOR
+    score += Math.max(0, top - reachable) * 1.5
+  }
+
+  // Цель пересборки. Это не отдельный алгоритм, а сдвиг весов: «дешевле» не
+  // должно ломать норму, оно должно среди подходящих блюд поднимать дешёвые.
+  score += goalCost(recipe, stats, scale, opts.options)
+
+  // разнообразие; при цели «разнообразнее» повтор стоит втрое дороже
+  const repeatWeight = opts.options?.goal === 'variety' ? 135 : 45
+  score += (state.usedCount.get(recipe.id) ?? 0) * repeatWeight
   const last = state.lastDay.get(recipe.id)
   if (last !== undefined) score += Math.max(0, 4 - (day - last)) * 20
 
@@ -429,8 +543,89 @@ export interface MenuBuildResult {
 /** Максимум дней подряд с одним и тем же блюдом в одном приёме пищи. */
 const MAX_RUN = 2
 
+/**
+ * Правила повторов по умолчанию.
+ *
+ * Числа взяты из того, как еда живёт: суп и завтрак повторяются спокойно,
+ * ужин — хуже, перекус вообще один и тот же каждый день у большинства людей.
+ */
+export function defaultRepeats(): RepeatRules {
+  return {
+    maxPerWeek: { breakfast: 3, lunch: 2, dinner: 2, snack: 7 },
+    backToBack: true,
+    gapDays: 1,
+  }
+}
+
+export function repeatsOf(household: Household): RepeatRules {
+  return household.repeats ?? defaultRepeats()
+}
+
+/**
+ * «Что вы готовы есть чаще» — это и есть «нравится». Отдельный список тех же
+ * блюд человек вёл бы дважды, а расходились бы они на второй неделе.
+ */
+function likedBonus(recipe: Recipe, household: Household): number {
+  return ratingScore(recipe, household) > 0 ? 1 : 0
+}
+
+/** Можно ли поставить блюдо в этот день, не нарушив правила повторов. */
+function repeatAllowed(
+  recipe: Recipe,
+  slot: MealSlot,
+  day: number,
+  state: PickState,
+  rules: RepeatRules,
+  bonus: number,
+): boolean {
+  const limit = rules.maxPerWeek[slot] ?? 0
+  const used = state.usedCount.get(recipe.id) ?? 0
+  // «нравится» — это и есть ответ на вопрос «что вы готовы есть чаще»
+  if (limit > 0 && used >= limit + bonus) return false
+  const last = state.lastDay.get(recipe.id)
+  if (last === undefined) return true
+  const gap = day - last
+  if (!rules.backToBack && gap <= 1) return false
+  return gap >= (rules.backToBack ? 1 : Math.max(1, rules.gapDays))
+}
+
 /** Насколько кандидат может уступать лучшему, чтобы всё ещё попасть в жеребьёвку. */
 const NEAR_SCORE_MARGIN = 50
+
+/**
+ * Блюдо, которое едут есть в контейнере, должно продержаться хотя бы до
+ * обеда. Порог в днях холодильника — самый близкий признак: у смузи-боула и
+ * тоста с авокадо он равен одному дню, и это ровно те блюда, которые в сумке
+ * портятся.
+ *
+ * Это фильтр, а не штраф. Штрафом это и было сначала — и разнообразие его
+ * перевешивало: раз в неделю в контейнер всё равно попадал салат, который к
+ * полудню развалится. Выбор «повторить блюдо или взять несъедобное» решается
+ * в пользу повтора.
+ */
+const TAKEAWAY_MIN_FRIDGE_DAYS = 2
+
+/**
+ * Норма клетчатки на тысячу килокалорий и вес её недобора в счёте.
+ *
+ * Вес подобран замером на 280 днях (дней ниже нормы / худший день, при норме
+ * 26 г):
+ *
+ *   вес       0     2     6    12    20
+ *   дней     50    46    33    16     8
+ *   худший   11    13    20    20    24
+ *
+ * Двенадцать — там, где кривая ещё падает вдвое, а разнообразие не страдает
+ * (27 разных блюд за 40 недель против 24 при шестёрке). Двадцать даёт ещё
+ * немного, но начинает подтягивать одни и те же бобовые.
+ */
+const FIBER_PER_1000 = 14
+const FIBER_WEIGHT = 12
+
+/** Доедет ли блюдо до обеда в контейнере. */
+function travels(recipe: Recipe): boolean {
+  return recipe.fridgeDays >= TAKEAWAY_MIN_FRIDGE_DAYS
+}
 
 /** Свои рецепты добавляют не просто так — при прочих равных они идут первыми. */
 const CUSTOM_RECIPE_BONUS = 100
@@ -455,13 +650,23 @@ const PACK_WASTE_WEIGHT = 0.1
  * Пересобирает меню. `keep` — блюда, которые человек оставил: они занимают
  * свои клетки, а остальное подбирается вокруг них, включая баланс БЖУ.
  */
+export interface BuildOptions {
+  /** Чего человек хочет от этой пересборки. */
+  goal?: MenuGoal
+  /** Что уже лежит дома — для цели «из запасов». */
+  atHome?: string[]
+}
+
 export function buildWeekMenu(
   household: Household,
   seed: number,
   keep: MenuEntry[] = [],
+  options: BuildOptions = {},
 ): MenuBuildResult {
   const rnd = mulberry32(seed)
   const warnings: string[] = []
+  const repeats = repeatsOf(household)
+  let repeatsRelaxed = false
   const segments = cookingSegments(household.cookingDays)
   const targetMacros = macroShares(householdNorms(household))
   const entries: MenuEntry[] = []
@@ -512,6 +717,9 @@ export function buildWeekMenu(
   const pool = allRecipes().filter((r) => isRecipeAllowed(r, household))
 
   for (const slot of household.meals) {
+    // приёмы перебираются в порядке household.meals, поэтому «последний» —
+    // это тот, на котором уже известны остальные блюда дня
+    const isLastSlot = slot === household.meals[household.meals.length - 1]
     const slotPool = pool.filter((r) => r.slots.includes(slot))
     if (slotPool.length === 0) {
       warnings.push(`Для приёма «${slot}» не осталось подходящих рецептов — ослабьте ограничения.`)
@@ -528,21 +736,48 @@ export function buildWeekMenu(
           continue
         }
         // этот приём пищи вся семья ест не дома — готовить нечего
-        if (eatersAtHome(household, day, slot).length === 0) {
+        if (fedEaters(household, day, slot).length === 0) {
           cursor++
           continue
         }
         const target = slotTargetOn(household, slot, day) || 500
-        const ranked = slotPool
+        // Последний приём пищи закрывает день: если завтрак и обед вышли
+        // легче обычного, ужин должен добрать разницу, а не снова целиться в
+        // свою долю. Без этого один день из 840 уходил на 12% ниже нормы —
+        // при том, что каждый приём в отдельности был «в размер».
+        const target2 = isLastSlot
+          ? clampTarget(dayTargetOn(household, day) - accOf(state, day).kcal, target)
+          : target
+        // Кто-то берёт этот приём пищи с собой — значит, блюдо должно доехать.
+        // Это не вопрос предпочтения, а вопрос того, что человек откроет в
+        // обед: штрафа мало, разнообразие его перевешивало и раз в неделю
+        // ставило в контейнер салат, который к полудню развалится.
+        const takeaway = takeawayEaters(household, day, slot).length
+        const travelPool = takeaway > 0 ? slotPool.filter(travels) : slotPool
+        // Правила повторов: сколько раз блюдо может выпасть за неделю и можно
+        // ли есть его два дня подряд. Это жёсткое правило, а не штраф: «не
+        // хочу одно и то же два дня» — не пожелание, которое можно перевесить
+        // удачной калорийностью.
+        const allowedPool = travelPool.filter((r) =>
+          repeatAllowed(r, slot, day, state, repeats, likedBonus(r, household)),
+        )
+        // выбора не осталось — блюдо всё равно нужно поставить, но об этом
+        // предупредим: пустая тарелка хуже повтора
+        const dayPool =
+          allowedPool.length > 0 ? allowedPool : travelPool.length > 0 ? travelPool : slotPool
+        if (allowedPool.length === 0) repeatsRelaxed = true
+        const ranked = dayPool
           .map((recipe) => ({
             recipe,
             score: scoreRecipe(recipe, {
               household,
-              targetKcal: target,
+              targetKcal: target2,
               targetMacros,
               day,
               state,
               jitter: rnd(),
+              topTarget: topEaterTarget(household, slot, day),
+              options,
             }),
           }))
           .sort((a, b) => a.score - b.score)
@@ -566,17 +801,30 @@ export function buildWeekMenu(
               (sum, e) => sum + dislikeHits(c.recipe, e).length,
               0,
             ),
-            waste: packWasteCost(c.recipe, portionScale(c.recipe, target), state),
+            waste: packWasteCost(c.recipe, portionScale(c.recipe, target2), state),
           }))
           .sort((a, b) => a.dislikes - b.dislikes || a.waste - b.waste)
         // rnd² смещает выбор к началу списка, не убирая разнообразия совсем
         const best = near[Math.floor(rnd() ** 2 * near.length)].recipe
-        const scale = portionScale(best, target)
+        const scale = portionScale(best, target2)
         let produced = 0
-        for (let k = 0; k < MAX_RUN && cursor + k < segment.days.length; k++) {
+        // одно и то же два дня подряд — это и есть партия на два дня; если
+        // человек так не хочет, серия сокращается до одного дня, и готовить
+        // придётся чаще
+        // серия не может съесть больше, чем блюду разрешено за неделю
+        const limit = repeats.maxPerWeek[slot] ?? 0
+        const left =
+          limit > 0
+            ? limit + likedBonus(best, household) - (state.usedCount.get(best.id) ?? 0)
+            : MAX_RUN
+        const runLimit = Math.max(1, Math.min(repeats.backToBack ? MAX_RUN : 1, left))
+        for (let k = 0; k < runLimit && cursor + k < segment.days.length; k++) {
           const eatDay = segment.days[cursor + k]
           if (pinnedAt.has(`${slot}:${eatDay}`)) break
-          if (eatersAtHome(household, eatDay, slot).length === 0) break
+          if (fedEaters(household, eatDay, slot).length === 0) break
+          // блюдо готовится на несколько дней — но в контейнер поедет только
+          // то, что дорогу переносит
+          if (takeawayEaters(household, eatDay, slot).length > 0 && !travels(best)) break
           const storage = storageFor(best, eatDay - segment.cookDay, household.kitchen.hasFreezer)
           if (!storage) break
           entries.push({
@@ -627,7 +875,9 @@ export function buildWeekMenu(
           cursor++
           continue
         }
-        state.usedCount.set(best.id, (state.usedCount.get(best.id) ?? 0) + 1)
+        // считаем приёмы пищи, а не готовки: «блюдо появляется дважды» для
+        // человека — это две тарелки, а не два захода к плите
+        state.usedCount.set(best.id, (state.usedCount.get(best.id) ?? 0) + produced)
         state.lastDay.set(best.id, segment.days[cursor + produced - 1])
         for (let k = 0; k < produced; k++) {
           addToDay(state, segment.days[cursor + k], best, scale)
@@ -642,6 +892,49 @@ export function buildWeekMenu(
     (a, b) =>
       a.day - b.day || household.meals.indexOf(a.slot) - household.meals.indexOf(b.slot),
   )
+
+  if (repeatsRelaxed) {
+    warnings.push(
+      'Правила повторов пришлось ослабить: подходящих блюд на неделю не хватило. Разрешите блюду появляться чаще или добавьте свои рецепты.',
+    )
+  }
+
+  // Напитки съедают часть нормы — и если почти всю, ужимать обед бессмысленно:
+  // норма еды упирается в нижнюю границу, и об этом нужно сказать вслух.
+  for (const eater of household.eaters) {
+    for (let day = 0; day < 7; day++) {
+      if (!drinksOvershoot(eater, household, day)) continue
+      warnings.push(
+        `${WEEKDAYS_FULL[day]}: напитки ${eater.name} — это ${drinkNorms(household, eater.id, day).kcal} ккал, больше трети дневной нормы. Меню собрано на остаток.`,
+      )
+      break
+    }
+  }
+
+  // Контейнеры: их число ограничено, и «собрать три обеда с собой» при двух
+  // контейнерах — не план, а сюрприз утром вторника.
+  for (let day = 0; day < 7; day++) {
+    const need = containersOn(household, day)
+    if (need > household.kitchen.containers) {
+      warnings.push(
+        `${WEEKDAYS_FULL[day]}: с собой нужно ${need} ${plural(need, ['контейнер', 'контейнера', 'контейнеров'])}, а на кухне их ${household.kitchen.containers}.`,
+      )
+    }
+  }
+
+  // И отдельно — блюда, которые до обеда в сумке не доедут. Штраф в подборе
+  // мягкий: если выбора нет, блюдо всё равно встанет в меню, и тогда об этом
+  // нужно сказать, а не промолчать.
+  for (const entry of entries) {
+    const takeaway = takeawayEaters(household, entry.day, entry.slot)
+    if (takeaway.length === 0) continue
+    const recipe = recipeById(entry.recipeId)
+    if (!recipe || recipe.fridgeDays >= TAKEAWAY_MIN_FRIDGE_DAYS) continue
+    warnings.push(
+      `${WEEKDAYS_FULL[entry.day]}: «${recipe.title}» плохо переносит дорогу — на ${slotLabel(entry.slot)} с собой лучше взять что-то другое.`,
+    )
+  }
+
   return { menu: { weekStart: household.weekStart, seed, entries }, warnings }
 }
 
@@ -765,6 +1058,9 @@ export function replacementOptions(
   const curScale = current ? portionScale(current, target) : 1
   const curMinutes = current ? totalMinutes(current) : 0
   const curHandsOn = current ? handsOnMinutes(current) : 0
+  // тот же фильтр, что и при сборке меню: в контейнер предлагаем только то,
+  // что доедет — иначе замена подсовывает салат на офисный обед
+  const mustTravel = takeawayEaters(household, entry.day, entry.slot).length > 0
 
   return allRecipes()
     .filter(
@@ -772,6 +1068,7 @@ export function replacementOptions(
         r.slots.includes(entry.slot) &&
         isRecipeAllowed(r, household) &&
         r.id !== entry.recipeId &&
+        (!mustTravel || travels(r)) &&
         !usedToday.has(r.id) &&
         storageFor(r, entry.day - entry.cookDay, household.kitchen.hasFreezer) !== null,
     )
@@ -789,6 +1086,7 @@ export function replacementOptions(
         day: entry.day,
         state,
         jitter: 0,
+        topTarget: topEaterTarget(household, entry.slot, entry.day),
       })
       // общие продукты с остальной неделей — всегда в плюс: замена не должна
       // добавлять полполки продуктов ради одного ужина
@@ -885,7 +1183,7 @@ export interface DayTotals extends Norms {
  * полную норму.
  */
 export function dayTotals(menu: WeekMenu, day: number, eaterId?: string): DayTotals {
-  const acc: DayTotals = { kcal: 0, protein: 0, fat: 0, carbs: 0, price: 0 }
+  const acc: DayTotals = { kcal: 0, protein: 0, fat: 0, carbs: 0, fiber: 0, price: 0 }
   for (const entry of menu.entries) {
     if (entry.day !== day) continue
     // пропущенное блюдо в тарелку не попало — считать его в норму дня нечестно
@@ -898,6 +1196,7 @@ export function dayTotals(menu: WeekMenu, day: number, eaterId?: string): DayTot
     acc.protein += s.protein * factor
     acc.fat += s.fat * factor
     acc.carbs += s.carbs * factor
+    acc.fiber += s.fiber * factor
     acc.price += s.price * factor
   }
   return {
@@ -905,6 +1204,7 @@ export function dayTotals(menu: WeekMenu, day: number, eaterId?: string): DayTot
     protein: Math.round(acc.protein),
     fat: Math.round(acc.fat),
     carbs: Math.round(acc.carbs),
+    fiber: Math.round(acc.fiber),
     price: Math.round(acc.price),
   }
 }

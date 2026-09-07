@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { RECIPE_BY_ID } from '../data/recipes'
 import type { Eater, Household, Kitchen, RecipeStep, Station } from '../types'
-import { buildWeekMenu } from './menu'
+import { buildWeekMenu, defaultRepeats} from './menu'
 import { buildCookingPlans, scaledMinutes, scheduleSteps } from './cookingPlan'
 import { deriveRecipeSteps } from './stepDetail'
+import { defaultOils } from './oil'
 
 function kitchen(patch: Partial<Kitchen> = {}): Kitchen {
   return {
@@ -35,7 +36,7 @@ function household(patch: Partial<Household> = {}): Household {
     customAllergens: [],
     dislikes: [],
     bannedRecipes: [],
-    awayMeals: [],
+    mealPlaces: {},
     ratings: {},
   }
   return {
@@ -44,6 +45,10 @@ function household(patch: Partial<Household> = {}): Household {
     meals: ['breakfast', 'lunch', 'dinner'],
     kitchen: kitchen(),
     budgetPerWeek: 0,
+    drinks: [],
+    oils: defaultOils(),
+    repeats: defaultRepeats(),
+    extras: [],
     weekStart: '2026-09-07',
     ...patch,
   }

@@ -5,6 +5,7 @@ import { buildShoppingList, formatQty } from '../lib/shopping'
 import { useStore } from '../store'
 import { Card } from '../components/ui'
 import { Icon } from '../components/icons'
+import { PantryCard } from '../components/PantryCard'
 
 /**
  * Сколько останется от вскрытой упаковки. Пачка фарша 500 г при нужных 275 г
@@ -21,8 +22,11 @@ function leftover(line: ShoppingLine): string | null {
 }
 
 export function ProductsScreen({ onShoppingMode }: { onShoppingMode: () => void }) {
-  const { menu, household, atHome, bought, toggleAtHome, toggleBought } = useStore()
-  const list = useMemo(() => (menu ? buildShoppingList(menu) : null), [menu])
+  const { menu, household, pantry, atHome, bought, toggleAtHome, toggleBought } = useStore()
+  const list = useMemo(
+    () => (menu ? buildShoppingList(menu, household ?? undefined, pantry) : null),
+    [menu, household, pantry],
+  )
 
   if (!menu || !list || !household) return null
 
@@ -110,6 +114,7 @@ export function ProductsScreen({ onShoppingMode }: { onShoppingMode: () => void 
                   </b>
                   <span className="muted small">
                     нужно {formatQty(line.needed, line.unit)}
+                    {line.fromStock ? ` · ${formatQty(line.fromStock, line.unit)} из запасов` : ''}
                     {line.buy !== line.needed && ` · купить ${formatQty(line.buy, line.unit)}`}
                     {leftover(line) && (
                       <>
@@ -135,6 +140,8 @@ export function ProductsScreen({ onShoppingMode }: { onShoppingMode: () => void 
           })}
         </Card>
       ))}
+
+      <PantryCard />
 
       <p className="hint">
         Специи, соль и масло всегда считаются домашними и в сумму не входят. Цены —

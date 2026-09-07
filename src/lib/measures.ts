@@ -74,11 +74,12 @@ export interface Measure {
 export function householdQty(ing: Ingredient, qty: number): Measure {
   if (qty <= 0) return { text: '—' }
 
-  // штучное как есть: яйца и тортильи дробными не бывают
+  // Штучное — только целыми. Половину банана не купить и не отложить: она
+  // потемнеет за день. Список покупок штучное и так округлял вверх, а карточка
+  // показывала «1½ шт» — карточка и закупка расходились на одном и том же
+  // продукте.
   if (ing.unit === 'pcs') {
-    const count = Math.round(qty * 2) / 2
-    const label = countLabel(count) ?? String(Math.max(1, Math.round(count)))
-    return { text: `${label} шт` }
+    return { text: `${Math.max(1, Math.ceil(qty - 0.001))} шт` }
   }
 
   const unit = ing.unit === 'ml' ? 'мл' : 'г'

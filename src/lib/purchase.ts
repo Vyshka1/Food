@@ -96,13 +96,17 @@ export function packPlan(
   needed: number,
 ): { packSize: number; packs: number; buy: number; leftover: number } {
   const info = purchaseInfo(ing)
+  // Штучное считается штуками всегда — даже когда типовой упаковки нет.
+  // Проверка на пустой список фасовок стояла раньше и перехватывала бананы:
+  // получалось «купить 10» на 0,3 банана, потому что вес округлялся до
+  // десятков граммов.
+  if (info.form === 'piece') {
+    const buy = Math.max(1, Math.ceil(needed - 1e-9))
+    return { packSize: 1, packs: buy, buy, leftover: buy - needed }
+  }
   if (info.form === 'weight' || info.packSizes.length === 0) {
     const buy = Math.ceil(needed / 10) * 10
     return { packSize: 0, packs: 0, buy, leftover: Math.max(0, buy - needed) }
-  }
-  if (info.form === 'piece') {
-    const buy = Math.ceil(needed)
-    return { packSize: 1, packs: buy, buy, leftover: buy - needed }
   }
   // из типовых фасовок берём ту, что даёт наименьший остаток; при равенстве —
   // предпочтительную, потому что её проще найти в магазине
@@ -124,7 +128,11 @@ export function packPlan(
 export function leftoverAdvice(ing: Ingredient, leftover: number): string | null {
   if (leftover <= 0) return null
   const info = purchaseInfo(ing)
-  const unit = ing.unit === 'ml' ? 'мл' : ing.unit === 'pcs' ? 'шт' : 'г'
+  // У штучного остатка нет: покупают и кладут в блюдо целыми штуками, а меньше
+  // штуки — это остаток округления, а не продукт. Совет «0 шт использовать за
+  // 5 дн» человеку сказать нечего.
+  if (info.form === 'piece') return null
+  const unit = ing.unit === 'ml' ? 'мл' : 'г'
   if (info.rawFreezable) {
     return `${Math.round(leftover)} ${unit} — заморозить сырым или добавить в блюдо на этой неделе`
   }

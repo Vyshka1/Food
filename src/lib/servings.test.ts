@@ -1,16 +1,17 @@
 import { describe, expect, it } from 'vitest'
 import { RECIPE_BY_ID } from '../data/recipes'
 import type { Eater, Household } from '../types'
-import { buildWeekMenu, totalPortions } from './menu'
+import { buildWeekMenu, totalPortions, defaultRepeats} from './menu'
 import { buildShoppingList } from './shopping'
 import { recipeStats } from './nutrition'
 import { cookBatch } from './servings'
+import { defaultOils } from './oil'
 
 function eater(patch: Partial<Eater> = {}): Eater {
   return {
     id: 'j', name: 'Юлия', sex: 'female', age: 32, heightCm: 168, weightKg: 62,
     activity: 'light', goal: 'keep', allergies: [], customAllergens: [], dislikes: [],
-    bannedRecipes: [], awayMeals: [], ratings: {},
+    bannedRecipes: [], mealPlaces: {}, ratings: {},
     ...patch,
   }
 }
@@ -25,6 +26,10 @@ const household: Household = {
     hasFreezer: true,
   },
   budgetPerWeek: 0,
+  drinks: [],
+  oils: defaultOils(),
+  repeats: defaultRepeats(),
+  extras: [],
   weekStart: '2026-09-07',
 }
 
@@ -111,8 +116,13 @@ describe('кухонные величины вместо коэффициент�
       ...household,
       eaters: [
         eater(),
-        eater({ id: 'k', name: 'Кирилл', awayMeals: ['0:lunch', '1:lunch', '2:lunch',
-          '3:lunch', '4:lunch', '5:lunch', '6:lunch'] }),
+        eater({
+          id: 'k',
+          name: 'Кирилл',
+          mealPlaces: Object.fromEntries(
+            [0, 1, 2, 3, 4, 5, 6].map((d) => [`${d}:lunch`, 'away' as const]),
+          ),
+        }),
       ],
     }
     const awayMenu = buildWeekMenu(away, 4).menu

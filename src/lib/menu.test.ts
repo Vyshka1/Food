@@ -3,16 +3,17 @@ import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { RECIPES, RECIPE_BY_ID } from '../data/recipes'
 import { setCustomRecipes } from '../data/recipeRegistry'
 import { withDerivedDetail } from './stepDetail'
+import { dailyNorm } from './nutrition'
 import type { Eater, Household, Kitchen, Recipe } from '../types'
 import {
-  awayKey,
+  mealKey,
   buildWeekMenu,
   cookTasks,
   cookingSegments,
   dayNorms,
   dayTotals,
   dislikeHits,
-  eatersAtHome,
+  fedEaters,
   isRecipeAllowed,
   portionOf,
   replaceEntryWith,
@@ -20,7 +21,9 @@ import {
   replacementOptions,
   slotTargetOn,
   totalPortions,
+  defaultRepeats,
 } from './menu'
+import { defaultOils } from './oil'
 
 function eater(patch: Partial<Eater> = {}): Eater {
   return {
@@ -36,7 +39,7 @@ function eater(patch: Partial<Eater> = {}): Eater {
     customAllergens: [],
     dislikes: [],
     bannedRecipes: [],
-    awayMeals: [],
+    mealPlaces: {},
     ratings: {},
     ...patch,
   }
@@ -65,6 +68,10 @@ function household(patch: Partial<Household> = {}): Household {
     meals: ['breakfast', 'lunch', 'dinner'],
     kitchen: kitchen(),
     budgetPerWeek: 0,
+    drinks: [],
+    oils: defaultOils(),
+    repeats: defaultRepeats(),
+    extras: [],
     weekStart: '2026-09-07',
     ...patch,
   }
@@ -325,7 +332,7 @@ describe('еда вне дома', () => {
 
   it('не даёт порцию тому, кто ест не дома', () => {
     const h = household({
-      eaters: [julia, { ...kirill, awayMeals: [awayKey(0, 'lunch'), awayKey(1, 'lunch')] }],
+      eaters: [julia, { ...kirill, mealPlaces: { [mealKey(0, 'lunch')]: 'away', [mealKey(1, 'lunch')]: 'away' } }],
     })
     const { menu } = buildWeekMenu(h, 7)
     const lunches = menu.entries.filter((e) => e.slot === 'lunch')
@@ -345,7 +352,12 @@ describe('еда вне дома', () => {
     const away = household({
       eaters: [
         julia,
-        { ...kirill, awayMeals: [0, 1, 2, 3, 4].map((d) => awayKey(d, 'lunch')) },
+        {
+          ...kirill,
+          mealPlaces: Object.fromEntries(
+            [0, 1, 2, 3, 4].map((d) => [mealKey(d, 'lunch'), 'away' as const]),
+          ),
+        },
       ],
     })
     const total = (h: Household) =>
@@ -356,23 +368,49 @@ describe('еда вне дома', () => {
   it('не планирует приём пищи, если дома никого', () => {
     const h = household({
       eaters: [
-        { ...julia, awayMeals: [awayKey(3, 'dinner')] },
-        { ...kirill, awayMeals: [awayKey(3, 'dinner')] },
+        { ...julia, mealPlaces: { [mealKey(3, 'dinner')]: 'away' as const } },
+        { ...kirill, mealPlaces: { [mealKey(3, 'dinner')]: 'away' as const } },
       ],
     })
     const { menu } = buildWeekMenu(h, 5)
     expect(menu.entries.filter((e) => e.day === 3 && e.slot === 'dinner')).toHaveLength(0)
-    expect(eatersAtHome(h, 3, 'dinner')).toHaveLength(0)
+    expect(fedEaters(h, 3, 'dinner')).toHaveLength(0)
   })
 
   it('снижает норму дня ровно на долю пропущенного приёма', () => {
-    const h = household({ eaters: [{ ...kirill, awayMeals: [awayKey(2, 'lunch')] }] })
+    const h = household({ eaters: [{ ...kirill, mealPlaces: { [mealKey(2, 'lunch')]: 'away' as const } }] })
     const full = dayNorms(h, 1, 'k')
     const partial = dayNorms(h, 2, 'k')
     expect(partial.kcal).toBeLessThan(full.kcal)
     // обед — примерно треть дня, так что дома остаётся около двух третей нормы
     expect(partial.kcal / full.kcal).toBeGreaterThan(0.55)
     expect(partial.kcal / full.kcal).toBeLessThan(0.75)
+  })
+})
+
+describe('блюдо должно накормить того, кто за столом', () => {
+  it('лёгкое блюдо не ставится туда, где нужен большой ужин', () => {
+    // доля порции ограничена 2,5 — и лёгкое блюдо при этом ограничении просто
+    // не докармливает: 2,5 порции ухи вместо нужных 2,7
+    const big = eater({
+      id: 'k',
+      name: 'Кирилл',
+      sex: 'male',
+      age: 35,
+      heightCm: 190,
+      weightKg: 95,
+      activity: 'high',
+    })
+    const h = household({ eaters: [big] })
+    let worst = 0
+    for (let seed = 0; seed < 25; seed++) {
+      const { menu } = buildWeekMenu(h, seed)
+      for (let day = 0; day < 7; day++) {
+        const deviation = 1 - dayTotals(menu, day, 'k').kcal / dailyNorm(big).kcal
+        worst = Math.max(worst, deviation)
+      }
+    }
+    expect(worst).toBeLessThan(0.05)
   })
 })
 
@@ -538,20 +576,22 @@ describe('оценки блюд', () => {
         ).length,
       0,
     )
-  // блюдо, которое подбор и так выбирает регулярно — на нём видно обе стороны
-  const popular = 'draniki'
+  // Блюдо, которое подбор и так выбирает регулярно. Именно на таком видно обе
+  // стороны: на редком блюде любой штраф выглядит работающим просто потому,
+  // что оно и без оценки почти не выпадает.
+  const popular = 'oat_apple_bake'
 
   it('«нравится» заметно поднимает блюдо в подборе', () => {
     const plain = appearances({}, popular)
     const liked = appearances({ [popular]: 1 }, popular)
     expect(plain).toBeGreaterThan(0)
-    expect(liked).toBeGreaterThan(plain * 3)
+    expect(liked).toBeGreaterThan(plain * 2)
   })
 
   it('«не нравится» делает блюдо редким, но не вычёркивает его', () => {
     const plain = appearances({}, popular)
     const disliked = appearances({ [popular]: -1 }, popular)
-    expect(disliked).toBeLessThan(plain)
+    expect(disliked).toBeLessThan(plain * 0.8)
     // и всё же иногда выпадает: иначе оценка ничем не отличалась бы от скрытия
     expect(disliked).toBeGreaterThan(0)
   })

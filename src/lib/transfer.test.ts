@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { withDerivedDetail } from './stepDetail'
 import type { Household, Recipe } from '../types'
 import { decodeProfile, encodeProfile, profileLink } from './transfer'
+import { defaultOils } from './oil'
+import { defaultRepeats } from './menu'
 
 const household: Household = {
   eaters: [
@@ -18,7 +20,7 @@ const household: Household = {
       customAllergens: ['Кинза'],
       dislikes: ['mushrooms'],
       bannedRecipes: [],
-      awayMeals: [],
+      mealPlaces: {},
       ratings: {},
     },
   ],
@@ -37,6 +39,10 @@ const household: Household = {
       hasFreezer: true,
     },
   budgetPerWeek: 5000,
+  drinks: [],
+  oils: defaultOils(),
+  repeats: defaultRepeats(),
+  extras: [],
   weekStart: '2026-09-07',
 }
 

@@ -992,12 +992,18 @@ select {
   color: var(--muted);
 }
 
+/* Заголовок дня — ещё и кнопка «скопировать день на будни», но выглядеть
+   должен подписью: рамка здесь спорит с самой сеткой. */
 .attend__day {
   flex: 1;
   text-align: center;
   font-size: 11px;
   text-transform: uppercase;
   color: var(--muted);
+  background: none;
+  border: none;
+  padding: 2px 0;
+  letter-spacing: 0.04em;
 }
 
 .attend__cell {
@@ -1009,13 +1015,22 @@ select {
   position: relative;
 }
 
-.attend__cell[data-home='true'] {
+.attend__cell[data-place='home'] {
   background: var(--green-soft);
   border-color: var(--green-soft);
+  color: var(--green-dark);
 }
 
-/* «Не дома» — перечёркнутая клетка, чтобы состояние читалось без цвета. */
-.attend__cell[data-home='false']::after {
+/* «С собой» — заливка и стрелка: состояние должно читаться и без цвета. */
+.attend__cell[data-place='takeaway'] {
+  background: var(--green-tint);
+  border-color: var(--green);
+  color: var(--green-dark);
+  font-weight: 700;
+}
+
+/* «Не дома» — перечёркнутая клетка. */
+.attend__cell[data-place='away']::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -1026,6 +1041,300 @@ select {
     var(--line) calc(50% + 1px),
     transparent calc(50% + 1px)
   );
+}
+
+/* ── Сегодня ──────────────────────────────────────────────────────────── */
+.today-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 7px 0;
+  color: var(--green-dark);
+}
+
+.today-row span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--ink);
+}
+
+.today-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* ── Что есть дома ────────────────────────────────────────────────────── */
+.input {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  background: #fff;
+  width: 100%;
+}
+
+.input:focus {
+  outline: 2px solid var(--green-soft);
+  border-color: var(--green);
+}
+
+.stock-row,
+.freezer-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.stock-row:last-child,
+.freezer-row:last-child {
+  border-bottom: none;
+}
+
+.stock-row__name,
+.freezer-row__name {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Срок в морозилке: пока много — спокойно, близко к концу — тревожно. */
+.freezer-row__left {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--green-dark);
+  white-space: nowrap;
+}
+
+.freezer-row__left[data-warn='true'] {
+  color: var(--warn);
+}
+
+/* ── Неделя целиком ───────────────────────────────────────────────────── */
+.week-view {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.week-day {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  box-shadow: var(--shadow);
+}
+
+.week-day__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.week-day__marks {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.week-day__row {
+  display: flex;
+  gap: 10px;
+  padding: 3px 0;
+  font-size: 14px;
+}
+
+.week-day__slot {
+  flex: 0 0 62px;
+  color: var(--muted);
+  font-size: 12px;
+  padding-top: 2px;
+}
+
+.week-day__dishes {
+  flex: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+/* Повтор виден сразу: это не ошибка, но человек должен знать, что он есть. */
+.week-day__dish[data-repeat='true']::before {
+  content: '↻ ';
+  color: var(--green-dark);
+}
+
+.week-day__gap {
+  color: var(--warn);
+}
+
+.week-day__extra {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.week-day__foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.badge--freezer {
+  background: #e6eef4;
+  color: #2f5570;
+}
+
+/* Дополнения к столу: не блюдо, но на столе есть — строка, а не карточка. */
+.extra-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-top: 6px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-md);
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.extra-line span {
+  flex: 1;
+}
+
+.extra-line b {
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+/* ── Привычные напитки ────────────────────────────────────────────────── */
+.drinks__person {
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.drinks__person:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.drink {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+.drink__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--card);
+  border: none;
+  text-align: left;
+}
+
+.drink__head span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.drink__kcal {
+  font-weight: 700;
+  color: var(--green-dark);
+  white-space: nowrap;
+}
+
+.drink__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.drink__body .days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.drink__body .chip {
+  padding: 7px 11px;
+  font-size: 13px;
+}
+
+/* Готовые расклады недели: заполнять 28 клеток руками человек не станет. */
+.templates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.templates .chip {
+  padding: 7px 11px;
+  font-size: 13px;
+}
+
+.legend {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.legend__item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.legend__dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+
+.legend__dot[data-place='home'] {
+  background: var(--green-soft);
+  border-color: var(--green-soft);
+}
+
+.legend__dot[data-place='takeaway'] {
+  background: var(--green-tint);
+  border-color: var(--green);
+}
+
+.meal-head__take {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--green-dark);
 }
 
 /* ── Нижняя навигация ─────────────────────────────────────────────────── */

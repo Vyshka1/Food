@@ -1,17 +1,40 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type {
+  DailyExtra,
   Eater,
   EntryStatus,
   Household,
+  DrinkHabit,
   Kitchen,
+  MealPlace,
   MealSlot,
+  MenuGoal,
+  OilChoice,
+  Pantry,
+  RepeatRules,
   Recipe,
   WeekMenu,
   WeekRecord,
 } from './types'
-import { awayKey, buildWeekMenu, replaceEntryWith } from './lib/menu'
-import { setCustomRecipes } from './data/recipeRegistry'
+import { buildWeekMenu, cookTasks, defaultRepeats, replaceEntryWith, totalPortions } from './lib/menu'
+import { defaultOils } from './lib/oil'
+import {
+  addFreezer,
+  consumeRecipe,
+  emptyPantry,
+  storePurchase,
+  takeFreezer,
+} from './lib/pantry'
+import { buildShoppingList } from './lib/shopping'
+import {
+  ATTENDANCE_TEMPLATES,
+  copyDayToWorkdays,
+  mealKey,
+  mealPlaceOf,
+  nextPlace,
+} from './lib/attendance'
+import { recipeById, setCustomRecipes, setOilChoice } from './data/recipeRegistry'
 import { decodeProfile } from './lib/transfer'
 
 const STORAGE_KEY = 'menu-nedelya.v1'
@@ -23,6 +46,10 @@ export interface AppState {
   menu: WeekMenu | null
   /** Ингредиенты, которые уже есть дома — не считаем в сумму покупок. */
   atHome: string[]
+  /** Что есть дома: постоянные продукты, запасы и морозилка. */
+  pantry: Pantry
+  /** Дублировать ли напоминания системными уведомлениями. */
+  notifications: boolean
   bought: string[]
   warnings: string[]
   /** Рецепты, добавленные вручную. */
@@ -35,6 +62,8 @@ const emptyState: AppState = {
   household: null,
   menu: null,
   atHome: [],
+  pantry: emptyPantry(),
+  notifications: false,
   bought: [],
   warnings: [],
   customRecipes: [],
@@ -62,7 +91,7 @@ export function newEater(partial: Partial<Eater> = {}): Eater {
     customAllergens: [],
     dislikes: [],
     bannedRecipes: [],
-    awayMeals: [],
+    mealPlaces: {},
     ratings: {},
     ...partial,
   }
@@ -86,16 +115,41 @@ export function defaultHousehold(): Household {
       hasFreezer: true,
     },
     budgetPerWeek: 0,
+    drinks: [],
+    oils: defaultOils(),
+    repeats: defaultRepeats(),
+    extras: [],
     weekStart: mondayOf(),
   }
 }
 
+/** Что именно пересобрать и ради чего. */
+export type RegenerateScope =
+  | { kind: 'week' }
+  | { kind: 'day'; day: number }
+  | { kind: 'meal'; day: number; slot: MealSlot }
+
+export interface RegenerateRequest {
+  scope?: RegenerateScope
+  goal?: MenuGoal
+  seed?: number
+}
+
 interface Store extends AppState {
   saveHousehold: (household: Household) => void
-  regenerate: (seed?: number) => void
+  regenerate: (request?: RegenerateRequest) => void
   swapDish: (entryId: string, recipeId: string) => void
   togglePin: (entryId: string) => void
-  toggleAway: (eaterId: string, day: number, slot: MealSlot) => void
+  cycleMealPlace: (eaterId: string, day: number, slot: MealSlot) => void
+  setDrinks: (drinks: DrinkHabit[]) => void
+  setOils: (oils: OilChoice) => void
+  setRepeats: (repeats: RepeatRules) => void
+  setExtras: (extras: DailyExtra[]) => void
+  setPantry: (change: (pantry: Pantry) => Pantry) => void
+  storeBought: () => void
+  setNotifications: (on: boolean) => void
+  applyAttendanceTemplate: (eaterId: string, templateId: string) => void
+  copyAttendanceDay: (eaterId: string, day: number) => void
   setEntryStatus: (entryId: string, status: EntryStatus | null) => void
   rateRecipe: (eaterId: string, recipeId: string, value: 1 | -1 | 0) => void
   archiveWeek: () => void
@@ -117,6 +171,20 @@ const StoreContext = createContext<Store | null>(null)
  * Кухни, сохранённые до появления списка приборов: hasOven превращаем в одну
  * духовку, остального просто не было — считаем, что прибора нет.
  */
+/**
+ * Анкеты, сохранённые до появления трёх мест приёма пищи. Старый список
+ * `awayMeals` — это ровно «не дома»; «с собой» тогда сказать было нельзя,
+ * и придумывать за человека, какие из его отлучек были обедом в контейнере,
+ * мы не станем.
+ */
+function migrateEater(eater: Eater & { awayMeals?: string[] }): Eater {
+  const mealPlaces: Record<string, MealPlace> = { ...(eater.mealPlaces ?? {}) }
+  for (const key of eater.awayMeals ?? []) mealPlaces[key] = 'away'
+  const migrated: Eater = { ...eater, mealPlaces, ratings: eater.ratings ?? {} }
+  delete (migrated as Eater & { awayMeals?: string[] }).awayMeals
+  return migrated
+}
+
 function migrateKitchen(kitchen: Kitchen & { hasOven?: boolean }): Kitchen {
   return {
     burners: kitchen.burners ?? 4,
@@ -156,20 +224,28 @@ function load(): AppState {
     if (!raw) return emptyState
     const parsed = JSON.parse(raw) as Partial<AppState>
     const state = { ...emptyState, ...parsed }
-    // анкеты, сохранённые до появления «ест не дома», читаем как «ест всё дома»
+    // анкеты, сохранённые до появления мест приёма пищи, читаем как «всё дома»;
+    // старый список awayMeals переносим в новую матрицу как «не дома»
     if (state.household) {
       state.household = {
         ...state.household,
         kitchen: migrateKitchen(state.household.kitchen),
-        eaters: state.household.eaters.map((e) => ({
-          ...e,
-          awayMeals: e.awayMeals ?? [],
-          ratings: e.ratings ?? {},
-        })),
+        // напитков в старых анкетах не было — это пустой список, а не «не знаем»
+        drinks: state.household.drinks ?? [],
+        // а масло раньше было тем, что стоит в рецепте: подсолнечное с оливковым
+        oils: state.household.oils ?? defaultOils(),
+        // а повторы раньше были жёстко зашиты: до двух дней подряд из партии
+        repeats: state.household.repeats ?? defaultRepeats(),
+        extras: state.household.extras ?? [],
+        eaters: state.household.eaters.map(migrateEater),
       }
     }
-    // реестр должен знать о своих рецептах до первой сборки меню
+    // реестр должен знать о своих рецептах и о выбранном масле до первой
+    // сборки меню: масло входит в состав, а значит и в калории, и в закупку
+    if (state.household) setOilChoice(state.household.oils)
     setCustomRecipes(state.customRecipes)
+    // кладовой раньше не было: заводим её из базовых продуктов
+    if (!state.pantry) state.pantry = emptyPantry()
     // меню, собранные до появления личных порций, пересобираем на том же seed
     const outdated = state.menu?.entries.some((e) => !Array.isArray(e.portions))
     if (state.household && state.menu && outdated) {
@@ -215,17 +291,121 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [],
   )
 
-  /** Пересборка недели: закреплённые блюда переживают её без изменений. */
-  const regenerate = useCallback((seed?: number) => {
+  const setNotifications = useCallback((notifications: boolean) => {
+    setState((prev) => ({ ...prev, notifications }))
+  }, [])
+
+  /** Правка кладовой: что есть всегда, сколько чего лежит, что в морозилке. */
+  const setPantry = useCallback((change: (pantry: Pantry) => Pantry) => {
+    setState((prev) => ({ ...prev, pantry: change(prev.pantry) }))
+  }, [])
+
+  /**
+   * Разложить покупки: излишек упаковок уходит в запасы. До сих пор
+   * приложение честно писало «останется 225 г» и на этом о них забывало.
+   */
+  const storeBought = useCallback(() => {
+    setState((prev) => {
+      if (!prev.menu) return prev
+      const today = new Date().toISOString().slice(0, 10)
+      const list = buildShoppingList(prev.menu, prev.household ?? undefined, prev.pantry)
+      const lines = list.lines.filter(
+        (l) => !l.staple && prev.bought.includes(l.ingredientId),
+      )
+      return { ...prev, pantry: storePurchase(prev.pantry, lines, today), bought: [] }
+    })
+  }, [])
+
+  /** Ежедневные дополнения: их калории тоже резервируются до раскладки. */
+  const setExtras = useCallback((extras: DailyExtra[]) => {
     setState((prev) => {
       if (!prev.household) return prev
+      const household: Household = { ...prev.household, extras }
+      const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
       const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
+      const { menu, warnings } = buildWeekMenu(household, seed, keep)
+      return { ...prev, household, menu, warnings }
+    })
+  }, [])
+
+  /** Насколько человек готов есть одно и то же. */
+  const setRepeats = useCallback((repeats: RepeatRules) => {
+    setState((prev) => {
+      if (!prev.household) return prev
+      const household: Household = { ...prev.household, repeats }
+      const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
+      const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
+      const { menu, warnings } = buildWeekMenu(household, seed, keep)
+      return { ...prev, household, menu, warnings }
+    })
+  }, [])
+
+  /** На чём готовим. Масло входит в состав блюд, поэтому меню пересобирается. */
+  const setOils = useCallback((oils: OilChoice) => {
+    setState((prev) => {
+      if (!prev.household) return prev
+      const household: Household = { ...prev.household, oils }
+      setOilChoice(oils)
+      const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
+      const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
+      const { menu, warnings } = buildWeekMenu(household, seed, keep)
+      return { ...prev, household, menu, warnings }
+    })
+  }, [])
+
+  /** Привычные напитки: их калории резервируются, поэтому меню пересобирается. */
+  const setDrinks = useCallback((drinks: DrinkHabit[]) => {
+    setState((prev) => {
+      if (!prev.household) return prev
+      const household: Household = { ...prev.household, drinks }
+      const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
+      const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
+      const { menu, warnings } = buildWeekMenu(household, seed, keep)
+      return { ...prev, household, menu, warnings }
+    })
+  }, [])
+
+  /**
+   * Пересборка. Закреплённые блюда переживают её без изменений, а всё
+   * остальное зависит от того, что человек попросил: пересобрать неделю, один
+   * день или один приём пищи — и с какой целью.
+   *
+   * Частичная пересборка устроена через то же закрепление: всё, что человек
+   * не просил менять, на время сборки считается закреплённым. Отдельного
+   * алгоритма «пересобрать день» нет и не нужно — иначе он разошёлся бы с
+   * основным на первом же изменении правил.
+   */
+  const regenerate = useCallback((request: RegenerateRequest = {}) => {
+    setState((prev) => {
+      if (!prev.household) return prev
+      const entries = prev.menu?.entries ?? []
+      const scope = request.scope ?? { kind: 'week' }
+      const keep = entries
+        .filter((e) => {
+          if (e.pinned) return true
+          if (scope.kind === 'day') return e.day !== scope.day
+          if (scope.kind === 'meal') return e.day !== scope.day || e.slot !== scope.slot
+          return false
+        })
+        .map((e) => ({ ...e, pinned: true }))
       const { menu, warnings } = buildWeekMenu(
         prev.household,
-        seed ?? Math.floor(Math.random() * 1e9),
+        request.seed ?? Math.floor(Math.random() * 1e9),
         keep,
+        { goal: request.goal, atHome: prev.atHome },
       )
-      return { ...prev, menu, warnings, atHome: prev.atHome, bought: [] }
+      // Закрепление на время сборки — приём, а не решение человека: возвращаем
+      // отметки такими, какими они были, иначе после пересборки дня вся
+      // неделя оказалась бы закреплённой.
+      const pinned = new Set(entries.filter((e) => e.pinned).map((e) => e.id))
+      const restored = menu.entries.map((e) => ({ ...e, pinned: pinned.has(e.id) || undefined }))
+      return {
+        ...prev,
+        menu: { ...menu, entries: restored },
+        warnings,
+        atHome: prev.atHome,
+        bought: scope.kind === 'week' ? [] : prev.bought,
+      }
     })
   }, [])
 
@@ -257,27 +437,56 @@ export function StoreProvider({ children }: { children: ReactNode }) {
    * «Кирилл обедает в офисе»: меню пересобирается, потому что меняются и
    * порции, и состав закупки.
    */
-  const toggleAway = useCallback((eaterId: string, day: number, slot: MealSlot) => {
+  const withEaters = (
+    prev: AppState,
+    eaterId: string,
+    change: (eater: Eater) => Eater,
+  ): AppState => {
+    if (!prev.household) return prev
+    const household: Household = {
+      ...prev.household,
+      eaters: prev.household.eaters.map((e) => (e.id === eaterId ? change(e) : e)),
+    }
+    const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
+    const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
+    const { menu, warnings } = buildWeekMenu(household, seed, keep)
+    return { ...prev, household, menu, warnings }
+  }
+
+  /** Клик по клетке матрицы: дома → с собой → не дома → дома. */
+  const cycleMealPlace = useCallback((eaterId: string, day: number, slot: MealSlot) => {
+    setState((prev) =>
+      withEaters(prev, eaterId, (eater) => {
+        const key = mealKey(day, slot)
+        const place = nextPlace(mealPlaceOf(eater, day, slot))
+        const mealPlaces = { ...eater.mealPlaces }
+        // «дома» — состояние по умолчанию: храним только отличия от него
+        if (place === 'home') delete mealPlaces[key]
+        else mealPlaces[key] = place
+        return { ...eater, mealPlaces }
+      }),
+    )
+  }, [])
+
+  /** Готовый расклад недели: «рабочая неделя», «все дома», «командировка». */
+  const applyAttendanceTemplate = useCallback((eaterId: string, templateId: string) => {
+    setState((prev) => {
+      const template = ATTENDANCE_TEMPLATES.find((t) => t.id === templateId)
+      if (!template || !prev.household) return prev
+      const meals = prev.household.meals
+      return withEaters(prev, eaterId, (eater) => ({ ...eater, mealPlaces: template.build(meals) }))
+    })
+  }, [])
+
+  /** «Каждый будний день одно и то же» — скопировать день на всю рабочую неделю. */
+  const copyAttendanceDay = useCallback((eaterId: string, day: number) => {
     setState((prev) => {
       if (!prev.household) return prev
-      const key = awayKey(day, slot)
-      const household: Household = {
-        ...prev.household,
-        eaters: prev.household.eaters.map((e) =>
-          e.id === eaterId
-            ? {
-                ...e,
-                awayMeals: e.awayMeals.includes(key)
-                  ? e.awayMeals.filter((k) => k !== key)
-                  : [...e.awayMeals, key],
-              }
-            : e,
-        ),
-      }
-      const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
-      const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
-      const { menu, warnings } = buildWeekMenu(household, seed, keep)
-      return { ...prev, household, menu, warnings }
+      const meals = prev.household.meals
+      return withEaters(prev, eaterId, (eater) => ({
+        ...eater,
+        mealPlaces: copyDayToWorkdays(eater.mealPlaces, meals, day),
+      }))
     })
   }, [])
 
@@ -285,15 +494,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const setEntryStatus = useCallback((entryId: string, status: EntryStatus | null) => {
     setState((prev) => {
       if (!prev.menu) return prev
-      return {
-        ...prev,
-        menu: {
-          ...prev.menu,
-          entries: prev.menu.entries.map((e) =>
-            e.id === entryId ? { ...e, status: status ?? undefined } : e,
-          ),
-        },
+      const entry = prev.menu.entries.find((e) => e.id === entryId)
+      const menu: WeekMenu = {
+        ...prev.menu,
+        entries: prev.menu.entries.map((e) =>
+          e.id === entryId ? { ...e, status: status ?? undefined } : e,
+        ),
       }
+      let pantry = prev.pantry
+      const recipe = entry ? recipeById(entry.recipeId) : undefined
+      const today = new Date().toISOString().slice(0, 10)
+      // Отметки «приготовлено» и «съедено» — это то, что реально произошло на
+      // кухне, и запасы должны за этим следовать. Иначе «700 г риса» лежали бы
+      // в списке вечно и каждую неделю вычитались из закупки заново.
+      if (entry && recipe && status === 'cooked' && entry.status !== 'cooked') {
+        pantry = consumeRecipe(pantry, recipe, totalPortions(entry))
+        const task = cookTasks(menu).find(
+          (t) => t.recipeId === entry.recipeId && t.cookDay === entry.cookDay,
+        )
+        if (task && task.freezerPortions > 0) {
+          pantry = addFreezer(pantry, recipe, 1, task.freezerPortions, today)
+        }
+      }
+      // достали из морозилки и съели — контейнера больше нет
+      if (entry && status === 'eaten' && entry.storage === 'freezer') {
+        pantry = takeFreezer(pantry, entry.recipeId, 1)
+      }
+      return { ...prev, menu, pantry }
     })
   }, [])
 
@@ -366,6 +593,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const importProfile = useCallback((input: string): boolean => {
     const payload = decodeProfile(input)
     if (!payload) return false
+    setOilChoice(payload.household.oils ?? defaultOils())
     setCustomRecipes(payload.customRecipes)
     const { menu, warnings } = buildWeekMenu(payload.household, Math.floor(Math.random() * 1e9))
     setState((prev) => ({
@@ -452,7 +680,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       regenerate,
       swapDish,
       togglePin,
-      toggleAway,
+      cycleMealPlace,
+      setDrinks,
+      setOils,
+      setRepeats,
+      setExtras,
+      setPantry,
+      storeBought,
+      setNotifications,
+      applyAttendanceTemplate,
+      copyAttendanceDay,
       setEntryStatus,
       rateRecipe,
       archiveWeek,
@@ -473,7 +710,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       regenerate,
       swapDish,
       togglePin,
-      toggleAway,
+      cycleMealPlace,
+      setDrinks,
+      setOils,
+      setRepeats,
+      setExtras,
+      setPantry,
+      storeBought,
+      setNotifications,
+      applyAttendanceTemplate,
+      copyAttendanceDay,
       setEntryStatus,
       rateRecipe,
       archiveWeek,

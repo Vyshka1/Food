@@ -2,14 +2,15 @@ import { describe, expect, it } from 'vitest'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import type { Eater, Household } from '../types'
 import { RECIPE_BY_ID } from '../data/recipes'
-import { buildWeekMenu, dayTotals, dislikeHits } from './menu'
+import { buildWeekMenu, dayTotals, dislikeHits, defaultRepeats} from './menu'
 import { dailyNorm } from './nutrition'
 import { buildShoppingList } from './shopping'
+import { defaultOils } from './oil'
 
 const julia: Eater = {
   id: 'e1', name: 'Юлия', sex: 'female', age: 32, heightCm: 168, weightKg: 62,
   activity: 'light', goal: 'lose', allergies: [], customAllergens: [], dislikes: [],
-  bannedRecipes: [], awayMeals: [], ratings: {},
+  bannedRecipes: [], mealPlaces: {}, ratings: {},
 }
 const kirill: Eater = { ...julia, id: 'e2', name: 'Кирилл', sex: 'male', age: 35,
   heightCm: 182, weightKg: 84, activity: 'medium' }
@@ -24,6 +25,10 @@ const household: Household = {
     hasFreezer: true,
   },
   budgetPerWeek: 0,
+  drinks: [],
+  oils: defaultOils(),
+  repeats: defaultRepeats(),
+  extras: [],
   weekStart: '2026-09-07',
 }
 
@@ -62,8 +67,12 @@ describe('излишек упаковок', () => {
   })
 
   it('норма человека важнее экономии', () => {
-    // главный предохранитель: при весе 0.15 и выше один день из 1680 уходил
-    // больше чем на 12% от личной нормы — ради процента излишка это дорого
+    // Главный предохранитель: при весе 0.15 и выше один день из 1680 уходил
+    // больше чем на 12% от личной нормы — ради процента излишка это дорого.
+    //
+    // Порог с тех пор ужесточён с 10% до 4%: после того как подбор перестал
+    // ставить блюда, которые не докармливают самого большого едока, худшее
+    // отклонение на 840 днях упало с 11,9% до 1,6%.
     let worst = 0
     for (const seed of SEEDS) {
       const menu = buildWeekMenu(household, seed).menu
@@ -76,7 +85,7 @@ describe('излишек упаковок', () => {
         }
       }
     }
-    expect(worst).toBeLessThan(0.1)
+    expect(worst).toBeLessThan(0.04)
   })
 
   it('«не люблю» сильнее экономии', () => {
