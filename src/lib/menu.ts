@@ -227,6 +227,51 @@ interface PickState {
   lastDay: Map<string, number>
   /** Что уже набрано в этот день предыдущими приёмами пищи. */
   day: Map<number, DayAcc>
+  /**
+   * Сколько каждого продукта уже требует собранная часть меню. Нужно, чтобы
+   * считать излишек упаковок: продукты продаются пачками, и пятая часть
+   * купленного оказывалась лишней просто потому, что каждый рецепт
+   * подбирался сам по себе.
+   */
+  ingredientNeed: Map<string, number>
+}
+
+/**
+ * Во сколько рублей обойдётся излишек упаковок, если поставить это блюдо.
+ *
+ * Отрицательное значение — блюдо доедает то, что и так придётся купить: если
+ * пачка креветок 400 г, а меню требует 170, второе блюдо с креветками
+ * достаётся почти даром. Положительное — блюдо вскрывает новую пачку ради
+ * малой доли, и остаток ляжет мёртвым грузом.
+ *
+ * Считаем в рублях, а не в граммах: 200 г лишних креветок и 200 г лишней
+ * капусты — очень разные потери.
+ */
+function packWasteCost(recipe: Recipe, scale: number, state: PickState): number {
+  let cost = 0
+  for (const item of recipe.items) {
+    const ing = INGREDIENT_BY_ID[item.ingredientId]
+    if (!ing || ing.staple) continue
+    const pack = ing.pack ?? 0
+    // весовой продукт без фасовки: берём сколько нужно, излишка не возникает
+    if (pack <= 0) continue
+
+    const need = item.qty * scale
+    const before = state.ingredientNeed.get(item.ingredientId) ?? 0
+    const rublesPerUnit = ing.unit === 'pcs' ? ing.price : ing.price / 1000
+    const surplusBefore = before > 0 ? Math.ceil(before / pack) * pack - before : 0
+    const surplusAfter = Math.ceil((before + need) / pack) * pack - (before + need)
+    cost += (surplusAfter - surplusBefore) * rublesPerUnit
+  }
+  return cost
+}
+
+/** Запоминаем, сколько продуктов уже требует собранная часть меню. */
+function addIngredients(state: PickState, recipe: Recipe, scale: number): void {
+  for (const item of recipe.items) {
+    const current = state.ingredientNeed.get(item.ingredientId) ?? 0
+    state.ingredientNeed.set(item.ingredientId, current + item.qty * scale)
+  }
 }
 
 function accOf(state: PickState, day: number): DayAcc {
@@ -302,6 +347,11 @@ function scoreRecipe(
   score += Math.max(0, carbBudget - projCarbs) * 4
   score += Math.max(0, projCarbs - carbBudget) * 1.5
 
+  // Небольшой вклад излишка упаковок в общий счёт. Основная экономия делается
+  // не здесь, а на выборе среди почти равных вариантов (см. buildWeekMenu):
+  // большой вес в общем счёте начинает перевешивать норму человека.
+  score += packWasteCost(recipe, scale, state) * PACK_WASTE_WEIGHT
+
   // и немного — по самому блюду, чтобы не собирать день из крайностей
   const shares = macroShares(stats)
   score +=
@@ -372,6 +422,22 @@ const NEAR_SCORE_MARGIN = 50
 const CUSTOM_RECIPE_BONUS = 100
 
 /**
+ * Во сколько баллов обходится рубль излишка упаковок в общем счёте.
+ * Подобран замером на 120 неделях, то есть 1680 человеко-днях:
+ *
+ *   вариант            остатков  излишек  блюд  цена     КБЖУ   худшее личное
+ *   ничего              20.7      22.9%   12.4  8411 ₽   3.37%    4.79%
+ *   только тай-брейк    18.7      20.9%   11.9  8105 ₽   3.00%    1.76%
+ *   тай-брейк + 0.1     15.3      18.8%   11.2  7821 ₽   3.25%    4.96%
+ *   тай-брейк + 0.15    14.1      17.8%   10.9  7708 ₽   3.14%   12.60%
+ *
+ * Между 0.1 и 0.15 обрыв: экономия начинает перевешивать норму, и один день
+ * из 1680 уходит больше чем на 12% от личной нормы. Обещание «каждому по его
+ * норме» дороже одного процента излишка, поэтому 0.1.
+ */
+const PACK_WASTE_WEIGHT = 0.1
+
+/**
  * Пересобирает меню. `keep` — блюда, которые человек оставил: они занимают
  * свои клетки, а остальное подбирается вокруг них, включая баланс БЖУ.
  */
@@ -385,7 +451,12 @@ export function buildWeekMenu(
   const segments = cookingSegments(household.cookingDays)
   const targetMacros = macroShares(householdNorms(household))
   const entries: MenuEntry[] = []
-  const state: PickState = { usedCount: new Map(), lastDay: new Map(), day: new Map() }
+  const state: PickState = {
+    usedCount: new Map(),
+    lastDay: new Map(),
+    day: new Map(),
+    ingredientNeed: new Map(),
+  }
 
   // закреплённые блюда ставим первыми: они попадают в дневной баланс, и
   // подбор остального идёт уже с оглядкой на них
@@ -407,7 +478,9 @@ export function buildWeekMenu(
     entries.push(fixed)
     state.usedCount.set(recipe.id, (state.usedCount.get(recipe.id) ?? 0) + 1)
     state.lastDay.set(recipe.id, entry.day)
-    addToDay(state, entry.day, recipe, portionScale(recipe, slotTargetOn(household, entry.slot, entry.day)))
+    const pinnedScale = portionScale(recipe, slotTargetOn(household, entry.slot, entry.day))
+    addToDay(state, entry.day, recipe, pinnedScale)
+    addIngredients(state, recipe, pinnedScale)
     if (!storage) {
       warnings.push(
         `${WEEKDAYS_FULL[entry.day]}: «${recipe.title}» оставлено вручную, но столько не хранится — приготовьте в этот день.`,
@@ -460,10 +533,30 @@ export function buildWeekMenu(
           }))
           .sort((a, b) => a.score - b.score)
 
-        // среди почти одинаковых по качеству вариантов выбираем случайный:
-        // иначе каждую неделю выпадают одни и те же «лучшие» блюда
-        const near = ranked.filter((c) => c.score <= ranked[0].score + NEAR_SCORE_MARGIN)
-        const best = near[Math.floor(rnd() * near.length)].recipe
+        // Среди почти одинаковых по качеству вариантов выбор случайный: иначе
+        // каждую неделю выпадают одни и те же «лучшие» блюда. Но случайность
+        // смещена к блюдам, которые доедают уже купленные упаковки.
+        //
+        // Экономия делается именно здесь, а не в общем счёте, и это
+        // принципиально: в общем счёте она начинала перевешивать норму, и один
+        // день из 1680 уходил больше чем на 12% от личной нормы. Внутри
+        // «почти равных» вариантов ухудшать питание нечем — они уже равны.
+        const near = ranked
+          .filter((c) => c.score <= ranked[0].score + NEAR_SCORE_MARGIN)
+          .map((c) => ({
+            recipe: c.recipe,
+            // «не люблю лук» сильнее любой экономии: лук — самый общий продукт
+            // в базе, и без этого ключа экономия начинала подтягивать наверх
+            // именно те блюда, от которых человек отказался
+            dislikes: household.eaters.reduce(
+              (sum, e) => sum + dislikeHits(c.recipe, e).length,
+              0,
+            ),
+            waste: packWasteCost(c.recipe, portionScale(c.recipe, target), state),
+          }))
+          .sort((a, b) => a.dislikes - b.dislikes || a.waste - b.waste)
+        // rnd² смещает выбор к началу списка, не убирая разнообразия совсем
+        const best = near[Math.floor(rnd() ** 2 * near.length)].recipe
         const scale = portionScale(best, target)
         let produced = 0
         for (let k = 0; k < MAX_RUN && cursor + k < segment.days.length; k++) {
@@ -516,12 +609,16 @@ export function buildWeekMenu(
           )
           state.lastDay.set(fallback.recipe.id, day)
           addToDay(state, day, fallback.recipe, fbScale)
+          addIngredients(state, fallback.recipe, fbScale)
           cursor++
           continue
         }
         state.usedCount.set(best.id, (state.usedCount.get(best.id) ?? 0) + 1)
         state.lastDay.set(best.id, segment.days[cursor + produced - 1])
-        for (let k = 0; k < produced; k++) addToDay(state, segment.days[cursor + k], best, scale)
+        for (let k = 0; k < produced; k++) {
+          addToDay(state, segment.days[cursor + k], best, scale)
+          addIngredients(state, best, scale)
+        }
         cursor += produced
       }
     }
@@ -637,7 +734,12 @@ export function replacementOptions(
   const usedToday = new Set(
     menu.entries.filter((e) => e.day === entry.day && e.id !== entryId).map((e) => e.recipeId),
   )
-  const state: PickState = { usedCount: new Map(), lastDay: new Map(), day: new Map() }
+  const state: PickState = {
+    usedCount: new Map(),
+    lastDay: new Map(),
+    day: new Map(),
+    ingredientNeed: new Map(),
+  }
   for (const e of menu.entries) {
     if (e.id === entryId) continue
     state.usedCount.set(e.recipeId, (state.usedCount.get(e.recipeId) ?? 0) + 1)
@@ -697,7 +799,7 @@ export function replacementOptions(
           score -= reuse * 260
           break
         case 'simpler':
-          score += recipe.steps.length * 30 + recipe.items.length * 20 + minutes * 0.8
+          score += recipe.steps.length * 30 + recipe.items.length * 35 + minutes * 0.8
           break
         case 'recent': {
           // приелось — значит нужны другие продукты, а не другое название.
