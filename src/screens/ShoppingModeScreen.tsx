@@ -1,34 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { CATEGORY_LABEL, CATEGORY_ORDER } from '../data/ingredients'
 import type { ShoppingLine } from '../types'
 import { buildShoppingList, formatQty, shoppingListText } from '../lib/shopping'
 import { plural } from '../lib/format'
 import { useStore } from '../store'
 import { Icon } from '../components/icons'
-
-/** В магазине экран не должен гаснуть; где API нет — просто работаем как обычно. */
-function useKeepAwake(): void {
-  useEffect(() => {
-    let sentinel: { release: () => Promise<void> } | null = null
-    let cancelled = false
-    const nav = navigator as Navigator & {
-      wakeLock?: { request: (type: 'screen') => Promise<{ release: () => Promise<void> }> }
-    }
-    nav.wakeLock
-      ?.request('screen')
-      .then((lock) => {
-        if (cancelled) void lock.release()
-        else sentinel = lock
-      })
-      .catch(() => {
-        // отказ в блокировке экрана — не повод ломать экран покупок
-      })
-    return () => {
-      cancelled = true
-      void sentinel?.release().catch(() => {})
-    }
-  }, [])
-}
+import { useKeepAwake } from '../hooks/useKeepAwake'
 
 export function ShoppingModeScreen({ onExit }: { onExit: () => void }) {
   const { menu, atHome, bought, toggleBought } = useStore()

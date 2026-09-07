@@ -7,7 +7,9 @@ import { ProductsScreen } from './screens/ProductsScreen'
 import { ProfileScreen } from './screens/ProfileScreen'
 import { MyRecipesScreen } from './screens/MyRecipesScreen'
 import { ShoppingModeScreen } from './screens/ShoppingModeScreen'
+import { CookNowScreen } from './screens/CookNowScreen'
 import { Icon, type IconName } from './components/icons'
+import type { CookingPlan } from './types'
 
 type Tab = 'menu' | 'plan' | 'products' | 'profile' | 'recipes'
 
@@ -33,6 +35,12 @@ function Shell() {
   const [tab, setTab] = useState<Tab>('menu')
   const [editing, setEditing] = useState(false)
   const [shopping, setShopping] = useState(false)
+  /**
+   * Готовка живёт здесь, а не внутри PlanScreen: иначе случайный тап по
+   * вкладке размонтирует экран и унесёт с собой таймеры и отметки посреди
+   * готовки.
+   */
+  const [cooking, setCooking] = useState<{ plan: CookingPlan; cookNames: string[] } | null>(null)
 
   if (!household || !menu || editing) {
     return (
@@ -49,6 +57,14 @@ function Shell() {
   }
 
   if (shopping) return <ShoppingModeScreen onExit={() => setShopping(false)} />
+  if (cooking)
+    return (
+      <CookNowScreen
+        plan={cooking.plan}
+        cookNames={cooking.cookNames}
+        onExit={() => setCooking(null)}
+      />
+    )
 
   return (
     <>
@@ -69,7 +85,9 @@ function Shell() {
         </div>
       )}
       {tab === 'menu' && <MenuScreen />}
-      {tab === 'plan' && <PlanScreen />}
+      {tab === 'plan' && (
+        <PlanScreen onCookNow={(plan, cookNames) => setCooking({ plan, cookNames })} />
+      )}
       {tab === 'products' && <ProductsScreen onShoppingMode={() => setShopping(true)} />}
       {tab === 'profile' && (
         <ProfileScreen onEdit={() => setEditing(true)} onRecipes={() => setTab('recipes')} />

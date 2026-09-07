@@ -50,7 +50,8 @@ interface Running {
   task: number
   stepIndex: number
   end: number
-  usesCook: boolean
+  /** Индекс повара, занятого этим шагом, либо null. */
+  cook: number | null
   appliance?: Appliance
 }
 
@@ -66,6 +67,13 @@ export interface ScheduleResult {
    * не бывает.
    */
   attentionMinutes: number
+  /**
+   * Занятые минуты каждого повара по отдельности. handsOnMinutes — их сумма,
+   * то есть работа в человеко-минутах: вдвоём её делают за меньшее время, но
+   * меньше её не становится. Инвариант «не больше длительности готовки»
+   * держится для каждого повара, а не для суммы.
+   */
+  perCookMinutes: number[]
   maxParallel: number
   warnings: string[]
 }
@@ -76,13 +84,20 @@ export interface ScheduleResult {
  * духовки, один блендер. Раньше блендер вообще не был ресурсом, и план мог
  * поставить два блендерных шага в одну минуту — красиво и невыполнимо.
  */
-export function scheduleSteps(tasks: SchedTask[], kitchen: Kitchen): ScheduleResult {
+export function scheduleSteps(
+  tasks: SchedTask[],
+  kitchen: Kitchen,
+  cooks = 1,
+): ScheduleResult {
   const planned: PlannedStep[] = []
   const warnings: string[] = []
   const nextStep = tasks.map(() => 0)
   const running: Running[] = []
   let time = 0
-  let cookBusy = false
+  /** Кто из поваров сейчас занят: индекс → занят. Вдвоём готовят вдвое быстрее
+   * только там, где работа ручная; духовка от второй пары рук не ускоряется. */
+  const cookBusy = new Array<boolean>(Math.max(1, cooks)).fill(false)
+  const perCookMinutes = new Array<number>(Math.max(1, cooks)).fill(0)
   const used = new Map<Appliance, number>()
   let handsOnMinutes = 0
   let attentionMinutes = 0
@@ -111,19 +126,27 @@ export function scheduleSteps(tasks: SchedTask[], kitchen: Kitchen): ScheduleRes
     const stepIndex = nextStep[task.index]
     const { step, minutes, activeMinutes } = task.steps[stepIndex]
     const need = needs(task, stepIndex)
+    const freeCook = cookBusy.indexOf(false)
     if (!force) {
-      if (need.cook && cookBusy) return false
+      if (need.cook && freeCook === -1) return false
       if (need.appliance && (used.get(need.appliance) ?? 0) >= capacityOf(need.appliance)) {
         return false
       }
     }
-    if (need.cook) cookBusy = true
+    // при force свободного повара может не быть — тогда шаг всё равно ставим,
+    // но записываем его на первого: расписание уже помечено вынужденным
+    const cookIndex = need.cook ? (freeCook === -1 ? 0 : freeCook) : null
+    if (cookIndex !== null) cookBusy[cookIndex] = true
     if (need.appliance) used.set(need.appliance, (used.get(need.appliance) ?? 0) + 1)
     // повар — исключительный ресурс, поэтому занятые руки считаем только по
     // шагам, которые его держат. «Варить, помешивая» идёт параллельно другим
     // делам и попадает в присмотр
-    if (need.cook) handsOnMinutes += minutes
-    else attentionMinutes += activeMinutes
+    if (cookIndex !== null) {
+      handsOnMinutes += minutes
+      perCookMinutes[cookIndex] += minutes
+    } else {
+      attentionMinutes += activeMinutes
+    }
     planned.push({
       recipeId: task.recipeId,
       title: task.title,
@@ -136,6 +159,7 @@ export function scheduleSteps(tasks: SchedTask[], kitchen: Kitchen): ScheduleRes
       appliance: step.appliance,
       tempC: step.tempC,
       unattended: step.unattended,
+      cook: cookIndex,
       start: time,
       end: time + minutes,
     })
@@ -143,7 +167,7 @@ export function scheduleSteps(tasks: SchedTask[], kitchen: Kitchen): ScheduleRes
       task: task.index,
       stepIndex,
       end: time + minutes,
-      usesCook: need.cook,
+      cook: cookIndex,
       appliance: need.appliance,
     })
     return true
@@ -178,7 +202,7 @@ export function scheduleSteps(tasks: SchedTask[], kitchen: Kitchen): ScheduleRes
     for (let i = running.length - 1; i >= 0; i--) {
       const run = running[i]
       if (run.end > time) continue
-      if (run.usesCook) cookBusy = false
+      if (run.cook !== null) cookBusy[run.cook] = false
       if (run.appliance) used.set(run.appliance, Math.max(0, (used.get(run.appliance) ?? 1) - 1))
       nextStep[run.task] = run.stepIndex + 1
       running.splice(i, 1)
@@ -197,7 +221,15 @@ export function scheduleSteps(tasks: SchedTask[], kitchen: Kitchen): ScheduleRes
     const at = planned.filter((s) => s.start <= step.start && step.start < s.end).length
     return Math.max(max, at)
   }, 0)
-  return { steps: planned, makespan, handsOnMinutes, attentionMinutes, maxParallel, warnings }
+  return {
+    steps: planned,
+    makespan,
+    handsOnMinutes,
+    attentionMinutes,
+    perCookMinutes,
+    maxParallel,
+    warnings,
+  }
 }
 
 function toSchedTask(task: CookTask, index: number): SchedTask | null {
@@ -223,7 +255,11 @@ function toSchedTask(task: CookTask, index: number): SchedTask | null {
   }
 }
 
-export function buildCookingPlans(menu: WeekMenu, household: Household): CookingPlan[] {
+export function buildCookingPlans(
+  menu: WeekMenu,
+  household: Household,
+  cooks = 1,
+): CookingPlan[] {
   const byDay = new Map<number, CookTask[]>()
   for (const task of cookTasks(menu)) {
     const list = byDay.get(task.cookDay) ?? []
@@ -237,7 +273,7 @@ export function buildCookingPlans(menu: WeekMenu, household: Household): Cooking
       const sched = tasks
         .map((task, i) => toSchedTask(task, i))
         .filter((t): t is SchedTask => t !== null)
-      const result = scheduleSteps(sched, household.kitchen)
+      const result = scheduleSteps(sched, household.kitchen, cooks)
 
       const freeze: FreezeTask[] = tasks
         .filter((t) => t.freezerPortions > 0)
@@ -279,6 +315,7 @@ export function buildCookingPlans(menu: WeekMenu, household: Household): Cooking
         makespan: result.makespan,
         handsOnMinutes: result.handsOnMinutes,
         attentionMinutes: result.attentionMinutes,
+        perCookMinutes: result.perCookMinutes,
         maxParallel: result.maxParallel,
         freeze,
         coversDays,
