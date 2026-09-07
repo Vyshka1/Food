@@ -4,6 +4,7 @@ import type { Household, Pantry, Recipe, ShoppingLine, WeekMenu } from '../types
 import { cookTasks } from './menu'
 import { portionWeight } from './nutrition'
 import { planBatch } from './batch'
+import type { BatchPreference } from './batch'
 import { drinkShopping } from './drinks'
 import { extraShopping } from './extras'
 import { freezerRoomGrams, isAlways, stockOf } from './pantry'
@@ -24,11 +25,13 @@ function cookServings(
   demandPortions: number,
   household: Household,
   pantry?: Pantry,
+  prefer?: BatchPreference,
 ): number {
   const plan = planBatch(recipe, {
     neededGrams: portionWeight(recipe, demandPortions),
     hasFreezer: household.kitchen.hasFreezer,
     freezerRoomGrams: freezerRoomGrams(household.kitchen, pantry),
+    prefer,
   })
   return plan ? plan.chosen.servings : demandPortions
 }
@@ -37,6 +40,7 @@ export function buildShoppingList(
   menu: WeekMenu,
   household?: Household,
   pantry?: Pantry,
+  prefer?: BatchPreference,
 ): ShoppingList {
   const needed = new Map<string, number>()
 
@@ -61,7 +65,9 @@ export function buildShoppingList(
      * 1,2 кг», а продуктов покупалось на 1,0 кг: разойтись должно было прямо
      * на кухне.
      */
-    const portions = household ? cookServings(recipe, task.portions, household, pantry) : task.portions
+    const portions = household
+      ? cookServings(recipe, task.portions, household, pantry, prefer)
+      : task.portions
     for (const item of recipe.items) {
       needed.set(item.ingredientId, (needed.get(item.ingredientId) ?? 0) + item.qty * portions)
     }

@@ -126,12 +126,49 @@ function place(
   return { servedGrams, freezeGrams, unplacedGrams: Math.round(rest - freezeGrams) }
 }
 
+/**
+ * Чем руководствоваться при выборе размера партии.
+ *
+ * `cost` — как сейчас: минимальная суммарная цена ошибки (недобор, непристроенное,
+ * сырой остаток, деньги, время). `min` — наименьшая партия, которая закрывает
+ * потребность: меньше заготовок и меньше чек сегодня. `max` — наибольшая, всё
+ * содержимое которой есть куда деть: больше впрок и меньше будущих готовок.
+ */
+export type BatchPreference = 'cost' | 'min' | 'max'
+
 export interface BatchContext {
   /** Сколько готового блюда нужно по меню, г. */
   neededGrams: number
   hasFreezer: boolean
   /** Сколько ещё влезет в морозилку, г. Считаем по числу контейнеров. */
   freezerRoomGrams: number
+  /** Чем руководствоваться при выборе размера. По умолчанию — ценой ошибки. */
+  prefer?: BatchPreference
+}
+
+/**
+ * Порядок вариантов при выбранной стратегии.
+ *
+ * Правила физики стратегия не отменяет: варианты те же самые, меняется только
+ * то, какой из них считается лучшим. «Меньше потратить» никогда не выберет
+ * партию, которой не хватит на стол, а «впрок» — ту, что придётся выбросить.
+ */
+function rank(options: BatchOption[], batch: RecipeBatch, prefer: BatchPreference): BatchOption[] {
+  if (prefer === 'min') {
+    const enough = options.filter((o) => o.shortfallGrams === 0)
+    const pool = enough.length > 0 ? enough : options
+    return [...pool].sort(
+      (a, b) => a.shortfallGrams - b.shortfallGrams || a.yieldGrams - b.yieldGrams,
+    )
+  }
+  if (prefer === 'max') {
+    const placed = options.filter((o) => o.shortfallGrams === 0 && o.unplacedGrams === 0)
+    const pool = placed.length > 0 ? placed : options
+    return [...pool].sort(
+      (a, b) => a.unplacedGrams - b.unplacedGrams || b.yieldGrams - a.yieldGrams,
+    )
+  }
+  return [...options].sort((a, b) => optionCost(a, batch) - optionCost(b, batch))
 }
 
 /** Сколько изделий даст этот вариант. */
@@ -230,9 +267,13 @@ export function planBatch(recipe: Recipe, context: BatchContext): BatchPlan | nu
    */
   const cooking = pieceCookingOf(recipe)
   if (cooking && batch.yieldPieces) {
-    const options = sizeOptions(cooking)
-      .map((pieces) => buildOption(recipe, batch, pieces / batch.yieldPieces!, context))
-      .sort((a, b) => optionCost(a, batch) - optionCost(b, batch))
+    const options = rank(
+      sizeOptions(cooking).map((pieces) =>
+        buildOption(recipe, batch, pieces / batch.yieldPieces!, context),
+      ),
+      batch,
+      context.prefer ?? 'cost',
+    )
     if (options.length > 0) {
       return {
         recipeId: recipe.id,
@@ -258,7 +299,7 @@ export function planBatch(recipe: Recipe, context: BatchContext): BatchPlan | nu
     .map((scale) => buildOption(recipe, batch, scale, context))
   if (options.length === 0) return null
 
-  const ranked = [...options].sort((a, b) => optionCost(a, batch) - optionCost(b, batch))
+  const ranked = rank(options, batch, context.prefer ?? 'cost')
   const chosen = ranked[0]
   return {
     recipeId: recipe.id,
