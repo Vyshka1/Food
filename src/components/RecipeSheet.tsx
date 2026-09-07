@@ -1,14 +1,16 @@
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { recipeById } from '../data/recipeRegistry'
 import type { MenuEntry } from '../types'
-import { pieceLabel, recipeStats } from '../lib/nutrition'
+import { recipeStats } from '../lib/nutrition'
 import { formatQty } from '../lib/shopping'
 import { formatDuration } from '../lib/cookingPlan'
-import { WEEKDAYS_FULL, portionOf, totalPortions } from '../lib/menu'
-import { portionsLabel } from '../lib/format'
+import { WEEKDAYS_FULL } from '../lib/menu'
+import { plural } from '../lib/format'
+import { cookBatch } from '../lib/servings'
 import { useStore } from '../store'
 import { Sheet } from './ui'
-import { Icon, recipeIcon } from './icons'
+import { Icon } from './icons'
+import { DishBanner, DishThumb } from './DishImage'
 
 const STORAGE_LABEL: Record<string, string> = {
   fresh: 'Готовим в этот день',
@@ -31,72 +33,61 @@ export function RecipeSheet({
   const recipe = recipeById(entry.recipeId)
   if (!recipe || !household || !menu) return null
   const stats = recipeStats(recipe)
-  const total = totalPortions(entry)
   const totalMinutes = recipe.steps.reduce((s, st) => s + st.minutes, 0)
-  /** Одна готовка кормит несколько дней — покажем, сколько уйдёт в остаток. */
-  const sameCook = menu.entries.filter(
-    (e) => e.recipeId === entry.recipeId && e.cookDay === entry.cookDay,
-  )
-  const cookedTotal = sameCook.reduce((sum, e) => sum + totalPortions(e), 0)
-  const laterDays = sameCook.filter((e) => e.day > entry.day).map((e) => e.day)
-  const leftover = sameCook
-    .filter((e) => e.day > entry.day)
-    .reduce((sum, e) => sum + totalPortions(e), 0)
+  /**
+   * Всё в карточке считается от одной готовки целиком: и продукты, и КБЖУ,
+   * и распределение. Три разных масштаба на одном экране — это рецепт
+   * приготовить вдвое меньше, чем купил.
+   */
+  const batch = cookBatch(menu, recipe, entry, household.eaters)
+  const scale = batch.totalFactor
 
   return (
     <Sheet onClose={onClose}>
+      <DishBanner recipe={recipe} />
+
       <div className="row" style={{ gap: 14, marginBottom: 12 }}>
-        <div className="dish__emoji" style={{ width: 56, height: 56 }}>
-          <Icon name={recipeIcon(recipe)} size={30} />
-        </div>
+        <DishThumb recipe={recipe} size={56} />
         <div>
           <div style={{ fontSize: 20, fontWeight: 700 }}>{recipe.title}</div>
           <div className="muted small">
-            {formatDuration(totalMinutes)} · {Math.round(stats.price * total)} ₽ на всех ·{' '}
-            {WEEKDAYS_FULL[entry.day]}
+            {formatDuration(totalMinutes)} · ≈ {Math.round(stats.price * scale)} ₽ за всю готовку
           </div>
         </div>
       </div>
 
       <div className="card">
         <div className="section-title">
-          Кому сколько · готовим {pieceLabel(recipe, cookedTotal)}
+          Готовим {batch.containers}{' '}
+          {plural(batch.containers, ['контейнер', 'контейнера', 'контейнеров'])}
         </div>
-        {household.eaters.map((eater) => {
-          const factor = portionOf(entry, eater.id)
-          return (
-            <div className="ing-line" key={eater.id}>
-              <span>{eater.name}</span>
-              {factor === 0 ? (
-                <b className="muted">ест не дома</b>
-              ) : (
-                <b>
-                  {pieceLabel(recipe, factor)} · {Math.round(stats.kcal * factor)} ккал
-                </b>
-              )}
-            </div>
-          )
-        })}
-        {leftover > 0 && (
-          <div className="ing-line">
-            <span className="muted">Остаток</span>
+        <div className="ing-line">
+          <span className="muted">Общий выход</span>
+          <b>примерно {batch.totalGrams} г</b>
+        </div>
+        {batch.rows.map((row, i) => (
+          <div className="ing-line" key={`${row.day}-${row.eaterId}-${i}`}>
+            <span>
+              {WEEKDAYS_FULL[row.day]}
+              {household.eaters.length > 1 ? ` · ${row.eaterName}` : ''}
+            </span>
             <b>
-              {pieceLabel(recipe, leftover)} на{' '}
-              {laterDays.map((d) => WEEKDAYS_FULL[d].toLowerCase()).join(', ')}
+              {row.grams} г · {row.kcal} ккал
             </b>
           </div>
-        )}
+        ))}
         <p className="hint" style={{ marginBottom: 0 }}>
-          Одно блюдо, разные порции: каждому столько, сколько нужно по его норме.
+          Одна готовка — на все эти приёмы пищи сразу. Каждому столько, сколько нужно по его
+          норме.
         </p>
       </div>
 
       <div className="card card--soft">
         <div className="row row--between small">
-          <span className="muted">Белки · жиры · углеводы на всё блюдо</span>
+          <span className="muted">Белки · жиры · углеводы на всю готовку</span>
           <b>
-            {Math.round(stats.protein * total)} · {Math.round(stats.fat * total)} ·{' '}
-            {Math.round(stats.carbs * total)} г
+            {Math.round(stats.protein * scale)} · {Math.round(stats.fat * scale)} ·{' '}
+            {Math.round(stats.carbs * scale)} г
           </b>
         </div>
         <div className="row row--between small" style={{ marginTop: 6 }}>
@@ -106,11 +97,11 @@ export function RecipeSheet({
       </div>
 
       <div className="card">
-        <div className="section-title">Продукты · {portionsLabel(total)}</div>
+        <div className="section-title">Продукты на всю готовку</div>
         {recipe.items.map((item) => {
           const ing = INGREDIENT_BY_ID[item.ingredientId]
           if (!ing) return null
-          const qty = item.qty * total
+          const qty = item.qty * scale
           return (
             <div className="ing-line" key={item.ingredientId}>
               <span>{ing.name}</span>
