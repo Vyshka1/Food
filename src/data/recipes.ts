@@ -1,5 +1,6 @@
 import type { MealSlot, Recipe, Station } from '../types'
 import { deriveRecipeSteps } from '../lib/stepDetail'
+import { freezingOf } from '../lib/freezing'
 
 type ItemTuple = [ingredientId: string, qtyPerServing: number]
 type StepTuple = [text: string, minutes: number, station: Station, handsOn?: boolean]
@@ -20,7 +21,7 @@ function r(
   steps: StepTuple[],
   opts: Opts = {},
 ): Recipe {
-  return {
+  const recipe: Recipe = {
     id,
     title,
     emoji,
@@ -41,6 +42,8 @@ function r(
     fridgeDays: opts.fridgeDays ?? 3,
     needs: opts.needs,
   }
+  // разметка заморозки считается от готового рецепта: ей нужны и шаги, и состав
+  return { ...recipe, freezing: freezingOf(recipe) }
 }
 
 /** Количества в items — на одну порцию. */

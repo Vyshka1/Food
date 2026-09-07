@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react'
-import { WEEKDAYS, WEEKDAYS_FULL } from '../lib/menu'
+import { WEEKDAYS, WEEKDAYS_ACC, WEEKDAYS_FULL } from '../lib/menu'
 import { buildCookingPlans, formatDuration } from '../lib/cookingPlan'
 import { plural } from '../lib/format'
 import { useStore } from '../store'
 import { Card, Warnings } from '../components/ui'
 import { Icon, recipeIcon } from '../components/icons'
 import { recipeById } from '../data/recipeRegistry'
-import { APPLIANCE_LABEL } from '../types'
+import { APPLIANCE_LABEL, THAW_LABEL } from '../types'
 import type { CookingPlan, Kitchen } from '../types'
 
 /** «4 конфорки, духовка и блендер» — перечисляем то, что реально есть. */
@@ -28,6 +28,11 @@ const STATION_LABEL: Record<string, string> = {
   stove: 'плита',
   oven: 'духовка',
   wait: 'ждём',
+}
+
+/** Текст шага, после которого морозят сырым — чтобы этикетка была понятна. */
+function stepText(recipeId: string, index: number): string {
+  return recipeById(recipeId)?.steps[index]?.text.toLowerCase() ?? ''
 }
 
 function clockFrom(startHour: number, offsetMinutes: number): string {
@@ -216,15 +221,48 @@ export function PlanScreen({
             <Icon name="snowflake" size={16} />В морозилку
           </div>
           {current.freeze.map((f) => (
-            <div className="row row--between" key={f.recipeId} style={{ padding: '6px 0' }}>
-              <span>{f.title}</span>
+            <div className="freeze-row" key={f.recipeId}>
+              <div className="freeze-row__label">{f.label}</div>
+              <div className="muted small">
+                {f.stage === 'raw'
+                  ? `морозить сырыми${
+                      f.afterStep !== undefined ? ` — после «${stepText(f.recipeId, f.afterStep)}»` : ''
+                    }`
+                  : 'морозить готовыми, дав остыть'}
+                {' · '}
+                {THAW_LABEL[f.thaw]}
+              </div>
+            </div>
+          ))}
+          <p className="hint" style={{ marginBottom: 0 }}>
+            Надпись на контейнере уже готова — перепишите её на стикер. Срок считается от
+            сегодняшней готовки.
+          </p>
+        </Card>
+      )}
+
+      {current.thaw.length > 0 && (
+        <Card>
+          <div className="section-title">
+            <Icon name="fridge" size={16} />
+            Достать из морозилки
+          </div>
+          {current.thaw.map((r) => (
+            <div className="row row--between" key={`${r.recipeId}-${r.day}`} style={{ padding: '6px 0' }}>
+              <span>
+                {WEEKDAYS_FULL[r.day]}
+                {r.hours >= 8 ? ' вечером' : ' утром'}
+              </span>
               <b>
-                {f.portions} {plural(f.portions, ['порция', 'порции', 'порций'])}
+                {r.title}
+                {r.day !== r.forDay && (
+                  <span className="muted small"> — на {WEEKDAYS_ACC[r.forDay]}</span>
+                )}
               </b>
             </div>
           ))}
           <p className="hint" style={{ marginBottom: 0 }}>
-            Разложи по контейнерам и подпиши дату — эти порции ждут конца недели.
+            Иначе в нужный день блюдо придётся размораживать второпях.
           </p>
         </Card>
       )}

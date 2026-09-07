@@ -257,6 +257,11 @@ export interface Recipe {
   freezable: boolean
   /** Сколько дней живёт в холодильнике. */
   fridgeDays: number
+  /**
+   * Как это блюдо ведёт себя в морозилке. Заполняется правилами из состава и
+   * шагов — см. lib/freezing.
+   */
+  freezing?: FreezingInfo
   /** Требует духовку / блендер. Выводится из приборов в шагах. */
   needs?: ('oven' | 'blender')[]
   /** Добавлен пользователем, а не из встроенной базы. */
@@ -264,6 +269,43 @@ export interface Recipe {
 }
 
 export type Storage = 'fresh' | 'fridge' | 'freezer'
+
+/**
+ * На каком этапе морозить. Котлеты замораживают сырыми — так они после
+ * разморозки не разваливаются и жарятся как свежие; суп морозят готовым.
+ * Разница не косметическая: она меняет и что делать на кухне, и срок.
+ */
+export type FreezeStage = 'raw' | 'cooked'
+
+/**
+ * Как размораживать.
+ * fridge — переложить заранее в холодильник;
+ * direct — греть прямо из морозилки, размораживать не нужно;
+ * counter — оставить при комнатной температуре на час-другой.
+ */
+export type ThawMethod = 'fridge' | 'direct' | 'counter'
+
+export const THAW_LABEL: Record<ThawMethod, string> = {
+  fridge: 'переложить в холодильник заранее',
+  direct: 'греть сразу из морозилки',
+  counter: 'оставить при комнатной температуре',
+}
+
+export interface FreezingInfo {
+  /** Сколько хранится в морозилке, дней. */
+  days: number
+  stage: FreezeStage
+  /**
+   * После какого шага морозить сырым. Есть только у stage: 'raw' — это тот
+   * шаг, на котором блюдо уже сформовано, но ещё не приготовлено.
+   */
+  afterStep?: number
+  thaw: ThawMethod
+  /** За сколько часов до еды достать. Ноль — доставать заранее не нужно. */
+  thawHours: number
+  /** Разметка выведена правилами или проверена вручную. */
+  source: 'derived' | 'checked'
+}
 
 /** Доля одного едока в блюде: 1.0 — «стандартная» порция рецепта. */
 export interface EaterPortion {
@@ -370,6 +412,33 @@ export interface FreezeTask {
   title: string
   portions: number
   eatOnDays: number[]
+  /** Сколько контейнеров подписать. */
+  containers: number
+  stage: FreezeStage
+  /** После какого шага морозить, если морозим сырым. */
+  afterStep?: number
+  thaw: ThawMethod
+  thawHours: number
+  /** Дата, до которой съесть, ISO. */
+  useBy: string
+  /** Готовая надпись на контейнер. */
+  label: string
+}
+
+/**
+ * Когда достать заготовку из морозилки. Раньше приложение говорило «убрать в
+ * морозилку» и замолкало — а вопрос «когда доставать» решался человеком в
+ * тот момент, когда доставать уже поздно.
+ */
+export interface ThawReminder {
+  recipeId: string
+  title: string
+  /** В какой день доставать. */
+  day: number
+  /** На какой день еда. */
+  forDay: number
+  method: ThawMethod
+  hours: number
 }
 
 export interface CookingPlan {
@@ -387,6 +456,8 @@ export interface CookingPlan {
   /** Максимум блюд, идущих одновременно. */
   maxParallel: number
   freeze: FreezeTask[]
+  /** Что и когда доставать из морозилки на этой неделе. */
+  thaw: ThawReminder[]
   /** Дни, которые закрывает эта готовка. */
   coversDays: number[]
   warnings: string[]

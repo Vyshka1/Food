@@ -1475,3 +1475,19 @@ select {
   margin-top: 20px;
   padding-bottom: 20px;
 }
+
+/* ── Заготовки в морозилку ────────────────────────────────────────────── */
+.freeze-row {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.freeze-row:last-of-type {
+  border-bottom: none;
+}
+
+/* Надпись на контейнер — её переписывают на стикер, поэтому моноширинным */
+.freeze-row__label {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}

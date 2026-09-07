@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { decimal, plural, portionsLabel } from './format'
 import { formatQty, shoppingListText } from './shopping'
+import { WEEKDAYS_ACC, WEEKDAYS_FULL } from './menu'
 import { formatDuration } from './cookingPlan'
 
 const dish: [string, string, string] = ['блюдо', 'блюда', 'блюд']
@@ -101,5 +102,26 @@ describe('portionsLabel', () => {
     expect(decimal(1)).toBe('1')
     expect(decimal(1.25)).toBe('1,3')
     expect(portionsLabel(3.0)).toBe('3 порции')
+  })
+})
+
+describe('дни недели в винительном падеже', () => {
+  it('«на среду», а не «на среда»', () => {
+    // на экране разморозки именительный давал «на пятница» — видно сразу,
+    // но только если посмотреть
+    expect(`на ${WEEKDAYS_ACC[2]}`).toBe('на среду')
+    expect(`на ${WEEKDAYS_ACC[4]}`).toBe('на пятницу')
+    expect(`на ${WEEKDAYS_ACC[5]}`).toBe('на субботу')
+  })
+
+  it('дни, которые не меняются, остаются как есть', () => {
+    expect(WEEKDAYS_ACC[0]).toBe('понедельник')
+    expect(WEEKDAYS_ACC[3]).toBe('четверг')
+    expect(WEEKDAYS_ACC[6]).toBe('воскресенье')
+  })
+
+  it('совпадает по длине с остальными списками дней', () => {
+    expect(WEEKDAYS_ACC).toHaveLength(7)
+    expect(WEEKDAYS_FULL).toHaveLength(7)
   })
 })
