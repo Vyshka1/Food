@@ -28,3 +28,13 @@ export function portionsLabel(count: number): string {
   const word = Number.isInteger(rounded) ? plural(rounded, forms) : forms[1]
   return `${decimal(rounded)} ${word}`
 }
+
+/**
+ * «07.10» вместо «10-07»: ISO-дата, обрезанная до месяца и дня, читается как
+ * американская и сбивает с толку — семёрка октября превращается в десятое
+ * июля.
+ */
+export function shortDate(iso: string): string {
+  const [, month, day] = iso.split('-')
+  return month && day ? `${day}.${month}` : iso
+}

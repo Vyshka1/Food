@@ -16,6 +16,7 @@ import { portionWeight, recipeStats } from './nutrition'
 import { planBatch } from './batch'
 import type { BatchPlan } from './batch'
 import { packPlan, purchaseInfo } from './purchase'
+import { freezerRoomGrams } from './pantry'
 import { householdGrams } from './measures'
 import { fryMinutes, loads as loadCount, pieceCookingOf, useTwoPans } from './pieces'
 import { FRY_STEP } from './batch'
@@ -226,7 +227,8 @@ export function cookCard(
   const plan = planBatch(recipe, {
     neededGrams,
     hasFreezer: household.kitchen.hasFreezer,
-    freezerRoomGrams: household.kitchen.containers * 400,
+    // место в морозилке считаем с учётом того, что там уже лежит
+    freezerRoomGrams: freezerRoomGrams(household.kitchen, pantry),
   })
 
   // Сколько реально ставим на плиту. Всё остальное в карточке считается

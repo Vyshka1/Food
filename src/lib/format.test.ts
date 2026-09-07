@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { decimal, plural, portionsLabel } from './format'
+import { decimal, plural, portionsLabel, shortDate} from './format'
 import { formatQty, shoppingListText } from './shopping'
 import { WEEKDAYS_ACC, WEEKDAYS_FULL } from './menu'
 import { formatDuration } from './cookingPlan'
@@ -123,5 +123,13 @@ describe('дни недели в винительном падеже', () => {
   it('совпадает по длине с остальными списками дней', () => {
     expect(WEEKDAYS_ACC).toHaveLength(7)
     expect(WEEKDAYS_FULL).toHaveLength(7)
+  })
+})
+
+describe('shortDate', () => {
+  it('читается по-русски, а не по-американски', () => {
+    // «10-07» из ISO-строки читается как десятое июля, хотя это седьмое октября
+    expect(shortDate('2026-10-07')).toBe('07.10')
+    expect(shortDate('2026-01-31')).toBe('31.01')
   })
 })

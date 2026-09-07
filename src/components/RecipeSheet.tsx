@@ -2,14 +2,17 @@ import { useState } from 'react'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { recipeById } from '../data/recipeRegistry'
 import type { MenuEntry } from '../types'
+import { THAW_LABEL } from '../types'
 import { formatDuration } from '../lib/cookingPlan'
 import { WEEKDAYS_FULL } from '../lib/menu'
-import { plural } from '../lib/format'
+import { plural, shortDate } from '../lib/format'
 import { cookAmountLabel, cookCard, weightLabel } from '../lib/cookCard'
 import type { CardLeftover } from '../lib/cookCard'
 import { householdQty } from '../lib/measures'
 import { batchReasonText } from '../lib/batch'
 import { formatQty } from '../lib/shopping'
+import { daysLeft, useByDate } from '../lib/pantry'
+import { recipeStats } from '../lib/nutrition'
 import { useStore } from '../store'
 import { Sheet } from './ui'
 import { Icon } from './icons'
@@ -69,6 +72,135 @@ function LeftoverLine({ line }: { line: CardLeftover }) {
   )
 }
 
+/**
+ * Блюдо, которое уже приготовлено и лежит в морозилке.
+ *
+ * Здесь нечего считать и нечего покупать. Всё, что нужно человеку, — сколько
+ * контейнеров достать, когда именно и до какого числа это ещё еда.
+ */
+function FreezerMealSheet({
+  entry,
+  onClose,
+  onSwap,
+  onBan,
+}: {
+  entry: MenuEntry
+  onClose: () => void
+  onSwap: () => void
+  onBan: () => void
+}) {
+  const { household, pantry, rateRecipe } = useStore()
+  const recipe = recipeById(entry.recipeId)
+  if (!recipe || !household) return null
+  const today = new Date().toISOString().slice(0, 10)
+  const lots = pantry.freezer.filter((f) => f.recipeId === recipe.id)
+  const need = entry.portions.reduce((sum, p) => sum + p.factor, 0)
+  const perContainer = lots[0]?.portionsEach ?? 1
+  const containers = Math.max(1, Math.ceil(need / Math.max(0.1, perContainer)))
+  const soonest = lots.slice().sort((a, b) => daysLeft(a, today) - daysLeft(b, today))[0]
+  const info = recipe.freezing
+
+  return (
+    <Sheet onClose={onClose}>
+      <DishBanner recipe={recipe} />
+
+      <div className="row" style={{ gap: 14, marginBottom: 12 }}>
+        <DishThumb recipe={recipe} size={56} />
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 700 }}>{recipe.title}</div>
+          <div className="muted small">готово — лежит в морозилке</div>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="section-title">Ничего не готовим</div>
+        <div className="ing-line">
+          <span className="muted">Достать</span>
+          <b>
+            {containers} {plural(containers, ['контейнер', 'контейнера', 'контейнеров'])}
+          </b>
+        </div>
+        {info && (
+          <div className="ing-line">
+            <span className="muted">Как разморозить</span>
+            <b>
+              {THAW_LABEL[info.thaw]}
+              {info.thawHours >= 8 ? ' — с вечера' : ''}
+            </b>
+          </div>
+        )}
+        {soonest && (
+          <div className="ing-line">
+            <span className="muted">Годно до</span>
+            <b>{shortDate(useByDate(soonest))}</b>
+          </div>
+        )}
+        <p className="hint" style={{ marginBottom: 0 }}>
+          Это заготовка с прошлых недель. Продуктов на неё покупать не нужно — они уже куплены
+          и потрачены тогда.
+        </p>
+      </div>
+
+      <div className="card">
+        <div className="section-title">Кому и когда</div>
+        {entry.portions
+          .filter((p) => p.factor > 0)
+          .map((p) => {
+            const eater = household.eaters.find((e) => e.id === p.eaterId)
+            return (
+              <div className="ing-line" key={p.eaterId}>
+                <span>
+                  {WEEKDAYS_FULL[entry.day]}
+                  {household.eaters.length > 1 && eater ? ` · ${eater.name}` : ''}
+                </span>
+                <b>{Math.round(recipeStats(recipe).kcal * p.factor)} ккал</b>
+              </div>
+            )
+          })}
+      </div>
+
+      <div className="card">
+        <div className="section-title">Как вам блюдо</div>
+        {household.eaters.map((eater) => {
+          const value = eater.ratings?.[recipe.id] ?? 0
+          return (
+            <div className="rate-line" key={eater.id}>
+              <span>{eater.name}</span>
+              <div className="rate">
+                <button
+                  data-on={value === 1}
+                  onClick={() => rateRecipe(eater.id, recipe.id, value === 1 ? 0 : 1)}
+                  aria-label={`${eater.name}: нравится`}
+                  aria-pressed={value === 1}
+                >
+                  <Icon name="thumbUp" size={16} /> нравится
+                </button>
+                <button
+                  data-on={value === -1}
+                  onClick={() => rateRecipe(eater.id, recipe.id, value === -1 ? 0 : -1)}
+                  aria-label={`${eater.name}: не нравится`}
+                  aria-pressed={value === -1}
+                >
+                  <Icon name="thumbDown" size={16} /> не нравится
+                </button>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="row" style={{ gap: 10 }}>
+        <button className="btn btn--soft" onClick={onSwap}>
+          Приготовить другое
+        </button>
+        <button className="btn btn--ghost" onClick={onBan}>
+          Больше не показывать
+        </button>
+      </div>
+    </Sheet>
+  )
+}
+
 export function RecipeSheet({
   entry,
   onClose,
@@ -84,6 +216,20 @@ export function RecipeSheet({
   const [showOther, setShowOther] = useState(false)
   const recipe = recipeById(entry.recipeId)
   if (!recipe || !household || !menu) return null
+  // Заготовку не готовят: её достают. Карточка «сколько приготовить, из чего
+  // и по каким шагам» здесь была бы не просто лишней, а вредной — человек
+  // пошёл бы покупать продукты на блюдо, которое уже лежит в морозилке.
+  if (entry.fromFreezer) {
+    return (
+      <FreezerMealSheet
+        entry={entry}
+        onClose={onClose}
+        onSwap={onSwap}
+        onBan={onBan}
+      />
+    )
+  }
+
   const card = cookCard(menu, household, entry, pantry)
   if (!card) return null
   // время этой готовки, а не время рецепта на одну долю

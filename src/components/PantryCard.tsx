@@ -12,7 +12,7 @@ import {
   takeFreezer,
   useByDate,
 } from '../lib/pantry'
-import { plural } from '../lib/format'
+import { plural, shortDate } from '../lib/format'
 import { useStore } from '../store'
 import { Card } from './ui'
 import { Icon } from './icons'
@@ -165,7 +165,7 @@ export function PantryCard() {
                     <span className="muted small">
                       {item.containers}{' '}
                       {plural(item.containers, ['контейнер', 'контейнера', 'контейнеров'])} ·
-                      приготовлено {item.cookedAt.slice(5)} · до {useByDate(item).slice(5)}
+                      приготовлено {shortDate(item.cookedAt)} · до {shortDate(useByDate(item))}
                       {planned ? ' · есть в меню' : ''}
                     </span>
                   </span>

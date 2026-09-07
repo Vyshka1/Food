@@ -9,6 +9,7 @@ import type {
   Kitchen,
   MealPlace,
   MealSlot,
+  MenuEntry,
   MenuGoal,
   OilChoice,
   Pantry,
@@ -18,6 +19,7 @@ import type {
   WeekRecord,
 } from './types'
 import { buildWeekMenu, cookTasks, defaultRepeats, replaceEntryWith, totalPortions } from './lib/menu'
+import type { BuildOptions } from './lib/menu'
 import { defaultOils } from './lib/oil'
 import {
   addFreezer,
@@ -135,6 +137,25 @@ export interface RegenerateRequest {
   seed?: number
 }
 
+/**
+ * Меню всегда собирается с оглядкой на морозилку: то, что там лежит, — тоже
+ * еда, и планировать неделю, не заглянув туда, значит покупать второй раз то,
+ * что уже куплено и приготовлено.
+ */
+function menuFor(
+  household: Household,
+  seed: number,
+  keep: MenuEntry[],
+  pantry: Pantry,
+  options: BuildOptions = {},
+): ReturnType<typeof buildWeekMenu> {
+  return buildWeekMenu(household, seed, keep, {
+    ...options,
+    freezer: pantry.freezer,
+    today: new Date().toISOString().slice(0, 10),
+  })
+}
+
 interface Store extends AppState {
   saveHousehold: (household: Household) => void
   regenerate: (request?: RegenerateRequest) => void
@@ -249,7 +270,7 @@ function load(): AppState {
     // меню, собранные до появления личных порций, пересобираем на том же seed
     const outdated = state.menu?.entries.some((e) => !Array.isArray(e.portions))
     if (state.household && state.menu && outdated) {
-      const { menu, warnings } = buildWeekMenu(state.household, state.menu.seed)
+      const { menu, warnings } = menuFor(state.household, state.menu.seed, [], state.pantry)
       return { ...state, menu, warnings }
     }
     // наступила новая неделя: прошлую убираем в историю вместе с отметками
@@ -257,7 +278,7 @@ function load(): AppState {
     const monday = mondayOf()
     if (state.household && state.menu && state.menu.weekStart !== monday) {
       const household = { ...state.household, weekStart: monday }
-      const { menu, warnings } = buildWeekMenu(household, Math.floor(Math.random() * 1e9))
+      const { menu, warnings } = menuFor(household, Math.floor(Math.random() * 1e9), [], state.pantry)
       const history = [makeRecord(state.menu), ...state.history]
         .filter((r, i, all) => all.findIndex((x) => x.id === r.id) === i)
         .slice(0, MAX_HISTORY)
@@ -284,7 +305,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     (household: Household) => {
       setState((prev) => {
         const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
-        const { menu, warnings } = buildWeekMenu(household, seed)
+        const { menu, warnings } = menuFor(household, seed, [], prev.pantry)
         return { ...prev, household, menu, warnings }
       })
     },
@@ -323,7 +344,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const household: Household = { ...prev.household, extras }
       const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
       const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
-      const { menu, warnings } = buildWeekMenu(household, seed, keep)
+      const { menu, warnings } = menuFor(household, seed, keep, prev.pantry)
       return { ...prev, household, menu, warnings }
     })
   }, [])
@@ -335,7 +356,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const household: Household = { ...prev.household, repeats }
       const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
       const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
-      const { menu, warnings } = buildWeekMenu(household, seed, keep)
+      const { menu, warnings } = menuFor(household, seed, keep, prev.pantry)
       return { ...prev, household, menu, warnings }
     })
   }, [])
@@ -348,7 +369,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setOilChoice(oils)
       const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
       const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
-      const { menu, warnings } = buildWeekMenu(household, seed, keep)
+      const { menu, warnings } = menuFor(household, seed, keep, prev.pantry)
       return { ...prev, household, menu, warnings }
     })
   }, [])
@@ -360,7 +381,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const household: Household = { ...prev.household, drinks }
       const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
       const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
-      const { menu, warnings } = buildWeekMenu(household, seed, keep)
+      const { menu, warnings } = menuFor(household, seed, keep, prev.pantry)
       return { ...prev, household, menu, warnings }
     })
   }, [])
@@ -388,10 +409,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           return false
         })
         .map((e) => ({ ...e, pinned: true }))
-      const { menu, warnings } = buildWeekMenu(
+      const { menu, warnings } = menuFor(
         prev.household,
         request.seed ?? Math.floor(Math.random() * 1e9),
         keep,
+        prev.pantry,
         { goal: request.goal, atHome: prev.atHome },
       )
       // Закрепление на время сборки — приём, а не решение человека: возвращаем
@@ -449,7 +471,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }
     const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
     const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
-    const { menu, warnings } = buildWeekMenu(household, seed, keep)
+    const { menu, warnings } = menuFor(household, seed, keep, prev.pantry)
     return { ...prev, household, menu, warnings }
   }
 
@@ -516,8 +538,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           pantry = addFreezer(pantry, recipe, 1, task.freezerPortions, today)
         }
       }
-      // достали из морозилки и съели — контейнера больше нет
-      if (entry && status === 'eaten' && entry.storage === 'freezer') {
+      // Достали заготовку и съели — контейнера больше нет. Именно заготовку с
+      // прошлых недель: блюдо, которое приготовили в понедельник и доедают в
+      // среду, тоже помечено морозилкой, но в кладовой его никогда не было.
+      if (entry && status === 'eaten' && entry.fromFreezer) {
         pantry = takeFreezer(pantry, entry.recipeId, 1)
       }
       return { ...prev, menu, pantry }
@@ -595,7 +619,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!payload) return false
     setOilChoice(payload.household.oils ?? defaultOils())
     setCustomRecipes(payload.customRecipes)
-    const { menu, warnings } = buildWeekMenu(payload.household, Math.floor(Math.random() * 1e9))
+    const { menu, warnings } = buildWeekMenu(payload.household, Math.floor(Math.random() * 1e9), [], {
+      freezer: [],
+      today: new Date().toISOString().slice(0, 10),
+    })
     setState((prev) => ({
       ...prev,
       household: payload.household,
@@ -617,7 +644,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         : [...prev.customRecipes, recipe]
       setCustomRecipes(customRecipes)
       if (!prev.household || !prev.menu) return { ...prev, customRecipes }
-      const { menu, warnings } = buildWeekMenu(prev.household, prev.menu.seed)
+      const { menu, warnings } = menuFor(prev.household, prev.menu.seed, [], prev.pantry)
       return { ...prev, customRecipes, menu, warnings }
     })
   }, [])
@@ -627,7 +654,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const customRecipes = prev.customRecipes.filter((r) => r.id !== recipeId)
       setCustomRecipes(customRecipes)
       if (!prev.household || !prev.menu) return { ...prev, customRecipes }
-      const { menu, warnings } = buildWeekMenu(prev.household, prev.menu.seed)
+      const { menu, warnings } = menuFor(prev.household, prev.menu.seed, [], prev.pantry)
       return { ...prev, customRecipes, menu, warnings }
     })
   }, [])
@@ -649,7 +676,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const record = prev.history.find((r) => r.id === recordId)
       if (!record || !prev.household) return prev
       const kept = record.menu.entries.map((e) => ({ ...e, pinned: true, status: undefined }))
-      const { menu, warnings } = buildWeekMenu(prev.household, record.menu.seed, kept)
+      const { menu, warnings } = menuFor(prev.household, record.menu.seed, kept, prev.pantry)
       return {
         ...prev,
         menu: { ...menu, weekStart: prev.household.weekStart },
