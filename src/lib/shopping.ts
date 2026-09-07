@@ -6,7 +6,7 @@ import { portionWeight } from './nutrition'
 import { planBatch } from './batch'
 import { drinkShopping } from './drinks'
 import { extraShopping } from './extras'
-import { isAlways, stockOf } from './pantry'
+import { freezerRoomGrams, isAlways, stockOf } from './pantry'
 
 function roundUpTo(value: number, step: number): number {
   return Math.ceil(value / step) * step
@@ -19,11 +19,16 @@ export interface ShoppingList {
 }
 
 /** Сколько долей рецепта реально ставится на плиту — с учётом партии. */
-function cookServings(recipe: Recipe, demandPortions: number, household: Household): number {
+function cookServings(
+  recipe: Recipe,
+  demandPortions: number,
+  household: Household,
+  pantry?: Pantry,
+): number {
   const plan = planBatch(recipe, {
     neededGrams: portionWeight(recipe, demandPortions),
     hasFreezer: household.kitchen.hasFreezer,
-    freezerRoomGrams: household.kitchen.containers * 400,
+    freezerRoomGrams: freezerRoomGrams(household.kitchen, pantry),
   })
   return plan ? plan.chosen.servings : demandPortions
 }
@@ -56,7 +61,7 @@ export function buildShoppingList(
      * 1,2 кг», а продуктов покупалось на 1,0 кг: разойтись должно было прямо
      * на кухне.
      */
-    const portions = household ? cookServings(recipe, task.portions, household) : task.portions
+    const portions = household ? cookServings(recipe, task.portions, household, pantry) : task.portions
     for (const item of recipe.items) {
       needed.set(item.ingredientId, (needed.get(item.ingredientId) ?? 0) + item.qty * portions)
     }
@@ -139,7 +144,7 @@ export function weekSpending(
   for (const task of cookTasks(menu)) {
     const recipe = recipeById(task.recipeId)
     if (!recipe) continue
-    const portions = cookServings(recipe, task.portions, household)
+    const portions = cookServings(recipe, task.portions, household, pantry)
     for (const item of recipe.items) add(item.ingredientId, item.qty * portions)
   }
   for (const source of [drinkShopping(household), extraShopping(household)]) {

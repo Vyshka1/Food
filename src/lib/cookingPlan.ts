@@ -17,6 +17,7 @@ import { containerLabel, thawReminders, useByDate } from './freezing'
 import { FRY_STEP, optionPieces, planBatch } from './batch'
 import { fryMinutes, pieceCookingOf, useTwoPans } from './pieces'
 import { portionWeight } from './nutrition'
+import { freezerRoomGrams } from './pantry'
 
 /**
  * Длительность шага с поправкой на количество порций: ручная работа растёт
@@ -243,7 +244,7 @@ function piecesForTask(recipe: Recipe, task: CookTask, household: Household): nu
   const plan = planBatch(recipe, {
     neededGrams: portionWeight(recipe, task.portions),
     hasFreezer: household.kitchen.hasFreezer,
-    freezerRoomGrams: household.kitchen.containers * 400,
+    freezerRoomGrams: freezerRoomGrams(household.kitchen),
   })
   return plan ? optionPieces(plan.batch, plan.chosen.scale) : undefined
 }

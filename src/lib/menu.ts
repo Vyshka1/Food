@@ -9,6 +9,7 @@ import type {
   MenuEntry,
   MenuGoal,
   Norms,
+  FreezerItem,
   Recipe,
   RepeatRules,
   Storage,
@@ -655,6 +656,24 @@ export interface BuildOptions {
   goal?: MenuGoal
   /** Что уже лежит дома — для цели «из запасов». */
   atHome?: string[]
+  /**
+   * Что лежит в морозилке с прошлых недель. Меню обязано это учитывать:
+   * заготовка, которую никто не планирует съесть, — это выброшенные деньги.
+   * Замер на двенадцати неделях: без этого в морозилке скапливалось 4750 ₽ и
+   * ещё 3630 ₽ пропадало по сроку.
+   */
+  freezer?: FreezerItem[]
+  /** Сегодняшняя дата, ISO. Нужна, чтобы не планировать просроченное. */
+  today?: string
+}
+
+/** Сколько дней осталось контейнеру к тому дню, когда его собираются съесть. */
+function freezerDaysLeft(item: FreezerItem, today: string, day: number): number {
+  const cooked = new Date(item.cookedAt)
+  const eat = new Date(today)
+  eat.setDate(eat.getDate() + day)
+  const age = Math.round((eat.getTime() - cooked.getTime()) / 86400000)
+  return item.keepDays - age
 }
 
 export function buildWeekMenu(
@@ -704,6 +723,88 @@ export function buildWeekMenu(
       warnings.push(
         `${WEEKDAYS_FULL[entry.day]}: «${recipe.title}» оставлено вручную, но столько не хранится — приготовьте в этот день.`,
       )
+    }
+  }
+
+  /*
+   * Достаём из морозилки то, что там уже лежит.
+   *
+   * Порядок — по сроку: первым в меню попадает то, что раньше испортится.
+   * Это и есть главный смысл: заготовка, о которой никто не вспомнил, через
+   * месяц становится мусором, и на двенадцати неделях таких набиралось на
+   * 3630 ₽.
+   *
+   * Такая запись не готовится и не покупается — её нужно только достать
+   * накануне, поэтому она ставится до общего подбора и занимает клетку так же,
+   * как закреплённое блюдо.
+   */
+  /*
+   * Контейнеры одного блюда складываем вместе.
+   *
+   * По отдельности они почти всегда бесполезны: в контейнере полторы порции, а
+   * на семейный обед нужно две с лишним. Пока лоты жили порознь, морозилка
+   * росла при формально работающем правиле — заготовки были, но ни одна не
+   * набирала на приём пищи.
+   */
+  const freezerStock = new Map<string, { portions: number; left: number }>()
+  for (const item of options.freezer ?? []) {
+    const existing = freezerStock.get(item.recipeId)
+    const portions = item.containers * item.portionsEach
+    const left = freezerDaysLeft(item, options.today ?? household.weekStart, 0)
+    if (existing) {
+      existing.portions += portions
+      existing.left = Math.min(existing.left, left)
+    } else {
+      freezerStock.set(item.recipeId, { portions, left })
+    }
+  }
+  // первым в меню попадает то, что раньше испортится: заготовка, о которой
+  // никто не вспомнил, через месяц становится мусором
+  const freezerOrder = [...freezerStock.entries()].sort((a, b) => a[1].left - b[1].left)
+
+  for (const slot of household.meals) {
+    for (let day = 0; day < 7; day++) {
+      if (pinnedAt.has(`${slot}:${day}`)) continue
+      const present = fedEaters(household, day, slot)
+      if (present.length === 0) continue
+      const takeaway = takeawayEaters(household, day, slot).length > 0
+
+      for (const [recipeId, stock] of freezerOrder) {
+        if (stock.portions <= 0.2) continue
+        const recipe = recipeById(recipeId)
+        if (!recipe || !recipe.slots.includes(slot)) continue
+        if (!isRecipeAllowed(recipe, household)) continue
+        // не доедет в контейнер — не ставим, ровно как и свежеприготовленное
+        if (takeaway && !travels(recipe)) continue
+        // испортится до того дня, когда его собирались съесть
+        if (stock.left - day < 0) continue
+        if (!repeatAllowed(recipe, slot, day, state, repeats, likedBonus(recipe, household))) {
+          continue
+        }
+        // порций должно хватить на всех, кто за столом: половину обеда из
+        // морозилки не достают
+        const portions = portionsFor(recipe, household, slot, day)
+        const need = portions.reduce((sum, p) => sum + p.factor, 0)
+        if (stock.portions + 0.2 < need) continue
+
+        const entry: MenuEntry = {
+          id: `${slot}-${day}-${recipe.id}-freezer`,
+          recipeId: recipe.id,
+          slot,
+          day,
+          cookDay: day,
+          portions,
+          storage: 'freezer',
+          fromFreezer: true,
+        }
+        pinnedAt.set(`${slot}:${day}`, entry)
+        entries.push(entry)
+        stock.portions -= need
+        state.usedCount.set(recipe.id, (state.usedCount.get(recipe.id) ?? 0) + 1)
+        state.lastDay.set(recipe.id, day)
+        addToDay(state, day, recipe, portionScale(recipe, slotTargetOn(household, slot, day)))
+        break
+      }
     }
   }
 
@@ -1223,6 +1324,8 @@ export interface CookTask {
 export function cookTasks(menu: WeekMenu): CookTask[] {
   const map = new Map<string, CookTask>()
   for (const entry of menu.entries) {
+    // заготовку из морозилки не готовят и не покупают — её достают
+    if (entry.fromFreezer) continue
     const key = `${entry.recipeId}|${entry.cookDay}`
     const task = map.get(key)
     const portions = totalPortions(entry)

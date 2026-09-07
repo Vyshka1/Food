@@ -172,6 +172,23 @@ export function useByDate(item: FreezerItem): string {
   return d.toISOString().slice(0, 10)
 }
 
+/**
+ * Сколько места в морозилке ещё есть, г.
+ *
+ * Пока это число считалось «сколько контейнеров у вас всего», приложение
+ * планировало заготовки в морозилку, забитую доверху: место было занято
+ * прошлыми неделями, а расчёт этого не видел.
+ */
+export function freezerRoomGrams(kitchen: { containers: number; hasFreezer: boolean }, pantry?: Pantry): number {
+  if (!kitchen.hasFreezer) return 0
+  const total = Math.max(0, kitchen.containers) * CONTAINER_GRAMS
+  const busy = (pantry?.freezer ?? []).reduce((sum, f) => sum + f.containers * CONTAINER_GRAMS, 0)
+  return Math.max(0, total - busy)
+}
+
+/** Сколько еды помещается в один контейнер. Бытовая мера, не физика. */
+export const CONTAINER_GRAMS = 400
+
 /** Что в морозилке пора съесть — по этому и предупреждаем. */
 export function expiring(pantry: Pantry, today: string, withinDays = 14): FreezerItem[] {
   return pantry.freezer

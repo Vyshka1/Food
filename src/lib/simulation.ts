@@ -1,4 +1,4 @@
-import type { Household, Pantry, Recipe, WeekMenu } from '../types'
+import type { FreezerItem, Household, Pantry, Recipe, WeekMenu } from '../types'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { recipeById } from '../data/recipeRegistry'
 import { buildWeekMenu, cookTasks } from './menu'
@@ -7,7 +7,7 @@ import { portionWeight } from './nutrition'
 import { planBatch } from './batch'
 import { drinkShopping } from './drinks'
 import { extraShopping } from './extras'
-import { emptyPantry } from './pantry'
+import { CONTAINER_GRAMS, emptyPantry } from './pantry'
 import { freezerDaysOf } from './freezing'
 import { purchaseInfo } from './purchase'
 
@@ -41,6 +41,9 @@ interface FrozenLot {
   value: number
   cookedWeek: number
   keepDays: number
+  /** Контейнеры и порции в них — в этом виде морозилку видит подбор меню. */
+  containers: number
+  portionsEach: number
 }
 
 export interface WeekReport {
@@ -127,10 +130,10 @@ export interface SimulationOptions {
   /** Готовить и покупать партией. false — ровно по потребности меню. */
   batch?: boolean
   /**
-   * Брать ли готовое из морозилки вместо новой готовки. Сейчас подбор меню
-   * этого не делает — вариант нужен, чтобы увидеть цену этого пробела.
+   * Сделать вид, что подбор меню не знает про морозилку. Так приложение вело
+   * себя раньше; вариант оставлен, чтобы видеть цену этого пробела.
    */
-  useFreezer?: boolean
+  blindToFreezer?: boolean
 }
 
 export interface SimulationResult {
@@ -148,13 +151,24 @@ export interface SimulationResult {
   topWaste: [string, number][]
 }
 
+/** Дата понедельника нужной недели — от неё считаются сроки. */
+function weekDate(start: Date, week: number): string {
+  const d = new Date(start)
+  d.setDate(d.getDate() + week * 7)
+  return d.toISOString().slice(0, 10)
+}
+
 export function simulate(household: Household, options: SimulationOptions): SimulationResult {
   const weeks: WeekReport[] = []
   let lots: Lot[] = []
   let frozen: FrozenLot[] = []
   const always = new Set(emptyPantry().always)
 
+  const start = new Date(household.weekStart)
   for (let week = 0; week < options.weeks; week++) {
+    const today = new Date(start)
+    today.setDate(today.getDate() + week * 7)
+    const todayIso = today.toISOString().slice(0, 10)
     if (options.independent) {
       lots = []
       frozen = []
@@ -168,44 +182,44 @@ export function simulate(household: Household, options: SimulationOptions): Simu
       freezer: [],
     }
 
-    const { menu } = buildWeekMenu(household, week + 1)
     const batch = options.batch !== false
 
-    /*
-     * Достаём из морозилки то, что там уже лежит: блюдо, которого хватает на
-     * весь приём пищи, готовить второй раз незачем. Подбор меню сейчас так не
-     * умеет, поэтому это отдельный вариант расчёта, а не поведение приложения.
-     */
+    // морозилка в том виде, в каком её видит подбор меню
+    const freezerView: FreezerItem[] = frozen.map((lot, i) => ({
+      id: `f${i}`,
+      recipeId: lot.recipeId,
+      containers: lot.containers,
+      portionsEach: lot.portionsEach,
+      cookedAt: weekDate(start, lot.cookedWeek),
+      keepDays: lot.keepDays,
+    }))
+
+    const { menu } = buildWeekMenu(household, week + 1, [], {
+      freezer: options.blindToFreezer ? [] : freezerView,
+      today: todayIso,
+    })
+
+    // то, что достали из морозилки, оттуда и исчезает
     const takenFromFreezer: string[] = []
-    let cooked = menu
-    if (options.useFreezer) {
-      const skip = new Set<string>()
-      for (const task of cookTasks(menu)) {
-        const recipe = recipeById(task.recipeId)
-        if (!recipe) continue
-        const demand = portionWeight(recipe, task.portions)
-        const have = frozen.filter((f) => f.recipeId === recipe.id)
-        const grams = have.reduce((s, f) => s + f.grams, 0)
-        if (grams < demand) continue
-        let left = demand
-        for (const lot of have) {
-          const take = Math.min(lot.grams, left)
-          lot.grams -= take
-          lot.value -= (lot.value * take) / Math.max(1, lot.grams + take)
-          left -= take
-        }
-        frozen = frozen.filter((f) => f.grams > 1)
-        skip.add(`${task.recipeId}:${task.cookDay}`)
-        takenFromFreezer.push(recipe.title)
+    for (const entry of menu.entries) {
+      if (!entry.fromFreezer) continue
+      const recipe = recipeById(entry.recipeId)
+      if (!recipe) continue
+      let left = portionWeight(recipe, entry.portions.reduce((s, p) => s + p.factor, 0))
+      takenFromFreezer.push(recipe.title)
+      for (const lot of frozen) {
+        if (lot.recipeId !== recipe.id || left <= 0) continue
+        const take = Math.min(lot.grams, left)
+        const share = take / Math.max(1, lot.grams)
+        lot.value -= lot.value * share
+        lot.containers = Math.max(0, lot.containers - Math.round(lot.containers * share))
+        lot.grams -= take
+        left -= take
       }
-      if (skip.size > 0) {
-        cooked = {
-          ...menu,
-          entries: menu.entries.filter((e) => !skip.has(`${e.recipeId}:${e.cookDay}`)),
-        }
-      }
+      frozen = frozen.filter((f) => f.grams > 1)
     }
 
+    const cooked = menu
     const list = buildShoppingList(cooked, batch ? household : undefined, pantry)
 
     // 1. покупка: то, что не закрыто запасом, приезжает домой целыми упаковками
@@ -263,12 +277,15 @@ export function simulate(household: Household, options: SimulationOptions): Simu
           (sum, i) => sum + i.qty * servings * unitPrice(i.ingredientId),
           0,
         )
+        const containers = Math.max(1, Math.round(surplus / CONTAINER_GRAMS))
         frozen.push({
           recipeId: recipe.id,
           grams: surplus,
           value: (dishValue * surplus) / Math.max(1, yieldGrams),
           cookedWeek: week,
           keepDays: freezerDaysOf(recipe, 'cooked'),
+          containers,
+          portionsEach: surplus / containers / Math.max(1, portionWeight(recipe, 1)),
         })
       }
     }

@@ -279,7 +279,11 @@ export function MenuScreen() {
               if (!recipe) return null
               const stats = recipeStats(recipe)
               const factor = eater ? portionOf(entry, eater.id) : totalPortions(entry)
-              const badge = STORAGE_BADGE[entry.storage]
+              // заготовка с прошлых недель — это не «доедаем приготовленное»,
+              // а «сегодня не готовим вовсе»
+              const badge = entry.fromFreezer
+                ? { label: 'готово, из морозилки', cls: 'badge badge--freezer' }
+                : STORAGE_BADGE[entry.storage]
               return (
                 <div
                   className="dish dish--row"
