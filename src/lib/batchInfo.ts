@@ -30,6 +30,23 @@ const ANCHOR_MAX_OPENED_DAYS = 7
 /** Сколько долей помещается в кастрюлю, когда якорного продукта нет. */
 const POT_BATCH = 4
 
+/**
+ * Сколько сырья влезает в обычную форму или противень, г.
+ *
+ * У запеканок и пирогов партию задаёт не упаковка, а посуда. Без этого
+ * правила овсяная запеканка получала закладку ×6.75 — три килограмма теста,
+ * потому что овсяное молоко продаётся литром. В форму столько не входит.
+ */
+const FORM_CAPACITY_G = 1400
+
+/** Блюдо готовится в форме: духовка или прямое название выпечки. */
+function bakedInForm(recipe: Recipe): boolean {
+  return (
+    Boolean(recipe.needs?.includes('oven')) ||
+    /запеканк|маффин|пирог|кекс/i.test(recipe.title)
+  )
+}
+
 /** Блюдо, которое не доживёт до второго дня, готовят свежим — партии нет. */
 function keepsWell(recipe: Recipe): boolean {
   return recipe.freezable || recipe.fridgeDays >= 3
@@ -117,19 +134,35 @@ export function batchInfoOf(recipe: Recipe): RecipeBatch {
   const anchorScale = baseScaleOf(recipe, anchorIngredientId)
   // якоря нет, но блюдо хранится — значит, его готовят кастрюлей
   const usesAnchor = anchorScale > 1
-  const baseScale = usesAnchor ? anchorScale : POT_BATCH
+  const perServing = rawGramsPerServing(recipe)
+  let baseScale = usesAnchor ? anchorScale : POT_BATCH
+  let reason: RecipeBatch['reason'] = usesAnchor ? 'anchor-pack' : 'pot'
+  // Форма ограничивает сильнее любой упаковки: больше в неё просто не влезет.
+  // И называть партию запеканки «кастрюлей» неверно, даже когда число совпало.
+  if (bakedInForm(recipe)) {
+    const fits = Math.max(1, Math.round((FORM_CAPACITY_G / Math.max(1, perServing)) * 4) / 4)
+    if (fits < baseScale) {
+      baseScale = fits
+      reason = 'form'
+    } else if (reason === 'pot') {
+      reason = 'form'
+    }
+  }
   const yieldGrams = Math.round(rawGramsPerServing(recipe) * baseScale * (1 - COOK_LOSS))
   return {
     source: 'derived',
     baseScale,
-    anchorIngredientId: usesAnchor ? anchorIngredientId : undefined,
-    reason: usesAnchor ? 'anchor-pack' : 'pot',
+    anchorIngredientId: reason === 'anchor-pack' ? anchorIngredientId : undefined,
+    reason,
     // Половина закладки практична только там, где упаковку можно вскрыть.
     // Для кастрюли половины нет вовсе: если причина партии в том, что меньше
     // кастрюли готовить непрактично, предлагать полкастрюли — противоречие
     // самому себе.
-    scales: !usesAnchor || anchorInfo?.partialUse === false ? [1, 1.5, 2] : [0.5, 1, 1.5, 2],
-    minScale: !usesAnchor || anchorInfo?.partialUse === false ? 1 : 0.5,
+    scales:
+      reason !== 'anchor-pack' || anchorInfo?.partialUse === false
+        ? [1, 1.5, 2]
+        : [0.5, 1, 1.5, 2],
+    minScale: reason !== 'anchor-pack' || anchorInfo?.partialUse === false ? 1 : 0.5,
     yieldGrams,
     // число изделий у derived не выставляем: выдумывать «8 голубцов» нельзя
     yieldPieces: undefined,

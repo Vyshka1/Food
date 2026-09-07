@@ -26,9 +26,153 @@ const PIECE = {
   meatball: 40,
   cabbageRoll: 120,
   fishCake: 90,
+  dranik: 65,
+  pancake: 55,
+  ball: 25,
+  muffin: 80,
 } as const
 
+/** Мясная и рыбная партия под упаковку: одинаковая для целой группы блюд. */
+function meatBatch(
+  anchorIngredientId: string,
+  baseScale: number,
+  yieldGrams: number,
+): RecipeBatch {
+  return {
+    source: 'verified',
+    baseScale,
+    anchorIngredientId,
+    scales: [0.5, 1, 1.5, 2],
+    minScale: 0.5,
+    yieldGrams,
+    freezeCooked: true,
+    freezeRawAnchor: true,
+    reason: 'anchor-pack',
+  }
+}
+
+/** Кастрюля: суп и рагу варят объёмом, а не порциями. */
+function potBatch(yieldGrams: number): RecipeBatch {
+  return {
+    source: 'verified',
+    baseScale: 4,
+    scales: [1, 1.5, 2],
+    minScale: 1,
+    yieldGrams,
+    freezeCooked: true,
+    freezeRawAnchor: false,
+    reason: 'pot',
+  }
+}
+
+/** Форма или противень: больше просто не помещается. */
+function formBatch(baseScale: number, yieldGrams: number): RecipeBatch {
+  return {
+    source: 'verified',
+    baseScale,
+    scales: [1, 1.5, 2],
+    minScale: 1,
+    yieldGrams,
+    freezeCooked: true,
+    freezeRawAnchor: false,
+    reason: 'form',
+  }
+}
+
 export const VERIFIED_BATCHES: Record<string, RecipeBatch> = {
+  // ── Мясное и рыбное: партия равна упаковке ──────────────────────────────
+  // Везде одно и то же рассуждение: пачка делится на доли рецепта, выход —
+  // сырьё минус ужарка. Числа сверены с составом каждого рецепта.
+  chicken_noodle_soup: meatBatch('chicken_thigh', 4.25, 1223),
+  borsch: meatBatch('beef', 5, 2235),
+  chicken_rice_broccoli: meatBatch('chicken_fillet', 3.5, 1164),
+  turkey_bulgur: meatBatch('turkey_fillet', 3.5, 1137),
+  beef_stew: meatBatch('beef', 3.75, 1337),
+  turkey_cabbage: meatBatch('turkey_fillet', 3.75, 1627),
+  chicken_potato_oven: meatBatch('chicken_thigh', 3.25, 1250),
+  chicken_quinoa_bowl: meatBatch('chicken_fillet', 3.75, 1257),
+  chicken_rice_soup: meatBatch('chicken_thigh', 4.25, 1216),
+  beef_goulash_buckwheat: meatBatch('beef', 3.75, 1013),
+  chicken_sweet_potato: meatBatch('chicken_thigh', 3.25, 1084),
+  zucchini_mince_bake: meatBatch('minced_chicken', 2.75, 1241),
+
+  // ── Кастрюля: варят объёмом ─────────────────────────────────────────────
+  lentil_soup: potBatch(898),
+  chickpea_curry: potBatch(1271),
+  bean_veg_stew: potBatch(1584),
+  pumpkin_soup: potBatch(1489),
+  eggplant_lentil_stew: potBatch(1228),
+  tofu_veg_curry: potBatch(1577),
+
+  // ── Форма ───────────────────────────────────────────────────────────────
+  // Овсяная запеканка: 456 г сырья на долю, в форму влезает около 1400 г —
+  // отсюда три доли. Правило по упаковке давало ×6,75, то есть три килограмма
+  // теста, потому что овсяное молоко продаётся литром.
+  oat_apple_bake: formBatch(3, 1204),
+  cottage_casserole: formBatch(4, 1031),
+  lentils_roasted_veg: formBatch(4, 1204),
+
+  // ── Штучное, которое жарят или катают партиями ──────────────────────────
+  // Драники: 344 г теста на долю, драник около 65 г.
+  draniki: {
+    source: 'verified',
+    baseScale: 3,
+    scales: [1, 1.5, 2],
+    minScale: 1,
+    yieldGrams: 908,
+    yieldPieces: Math.round((344 * 3) / PIECE.dranik),
+    pieceName: ['драник', 'драника', 'драников'],
+    freezeCooked: true,
+    freezeRawAnchor: false,
+    reason: 'pan',
+  },
+
+  // Гречневые оладьи: 246 г теста на долю, оладья около 55 г.
+  buckwheat_pancakes: {
+    source: 'verified',
+    baseScale: 3,
+    scales: [1, 1.5, 2],
+    minScale: 1,
+    yieldGrams: 650,
+    yieldPieces: Math.round((246 * 3) / PIECE.pancake),
+    pieceName: ['оладья', 'оладьи', 'оладий'],
+    freezeCooked: true,
+    freezeRawAnchor: false,
+    reason: 'pan',
+  },
+
+  // Яичные маффины: 240 г на долю, форма на 12 ячеек по 80 г. Двенадцать
+  // ячеек — это четыре доли, а не три: первая версия писала «ровно три доли»
+  // и давала девять маффинов, то есть неполную форму.
+  egg_muffins: {
+    source: 'verified',
+    baseScale: 4,
+    scales: [1, 2],
+    minScale: 1,
+    yieldGrams: 845,
+    yieldPieces: Math.round((240 * 4) / PIECE.muffin),
+    pieceName: ['маффин', 'маффина', 'маффинов'],
+    freezeCooked: true,
+    freezeRawAnchor: false,
+    reason: 'form',
+  },
+
+  // Овсяно-финиковые шарики: 90 г массы на долю, шарик около 25 г.
+  // Ни кастрюли, ни формы здесь нет — их просто катают впрок, благо хранятся
+  // они неделю.
+  oat_cocoa_balls: {
+    source: 'verified',
+    baseScale: 4,
+    scales: [1, 1.5, 2],
+    minScale: 1,
+    yieldGrams: 317,
+    yieldPieces: Math.round((90 * 4) / PIECE.ball),
+    pieceName: ['шарик', 'шарика', 'шариков'],
+    freezeCooked: true,
+    freezeRawAnchor: false,
+    reason: 'keeps',
+  },
+
   // Творог 200 г на пачку, 150 г на долю → закладка чуть меньше полутора долей.
   // Сырники лепят по 70 г: из закладки выходит примерно шесть штук.
   cottage_pancakes: {

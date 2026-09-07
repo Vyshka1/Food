@@ -209,3 +209,53 @@ describe('свежие блюда', () => {
     }
   })
 })
+
+describe('проверенные вручную партии', () => {
+  const verified = RECIPES.filter((r) => r.batch?.source === 'verified')
+
+  it('покрывают все морозящиеся блюда', () => {
+    const unchecked = RECIPES.filter((r) => r.freezable && r.batch?.source !== 'verified')
+    expect(unchecked.map((r) => r.title)).toEqual([])
+  })
+
+  it('выставленный вручную выход действительно используется', () => {
+    // выверенные числа молча игнорировались: buildOption пересчитывал выход
+    // по составу и выставленное значение никуда не шло
+    for (const recipe of verified) {
+      const option = buildOption(recipe, recipe.batch!, 1, CONTEXT)
+      expect(option.yieldGrams, recipe.title).toBe(recipe.batch!.yieldGrams)
+    }
+  })
+
+  it('число изделий не противоречит выходу в граммах', () => {
+    for (const recipe of verified) {
+      const batch = recipe.batch!
+      if (!batch.yieldPieces) continue
+      const perPiece = batch.yieldGrams / batch.yieldPieces
+      // изделие бытового размера: от куска в 20 г до крупного в 200 г
+      expect(perPiece, `${recipe.title}: ${Math.round(perPiece)} г на штуку`).toBeGreaterThan(18)
+      expect(perPiece, `${recipe.title}: ${Math.round(perPiece)} г на штуку`).toBeLessThan(220)
+    }
+  })
+
+  it('масштаб закладки остаётся правдоподобным', () => {
+    for (const recipe of verified) {
+      const batch = recipe.batch!
+      // ×6,75 у овсяной запеканки означало три килограмма теста в форме
+      expect(batch.baseScale, recipe.title).toBeLessThanOrEqual(5)
+      expect(batch.yieldGrams, recipe.title).toBeLessThan(2400)
+    }
+  })
+
+  it('причина партии соответствует блюду', () => {
+    for (const recipe of verified) {
+      const batch = recipe.batch!
+      // у выпечки не бывает кастрюли, у супа — сковороды
+      if (recipe.needs?.includes('oven')) expect(batch.reason, recipe.title).not.toBe('pan')
+      if (/суп|борщ/i.test(recipe.title)) {
+        expect(['pot', 'anchor-pack'], recipe.title).toContain(batch.reason)
+      }
+      if (batch.reason === 'anchor-pack') expect(batch.anchorIngredientId, recipe.title).toBeTruthy()
+    }
+  })
+})
