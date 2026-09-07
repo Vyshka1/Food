@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type {
+  DailyExtra,
   Eater,
   EntryStatus,
   Household,
@@ -101,6 +102,7 @@ export function defaultHousehold(): Household {
     drinks: [],
     oils: defaultOils(),
     repeats: defaultRepeats(),
+    extras: [],
     weekStart: mondayOf(),
   }
 }
@@ -114,6 +116,7 @@ interface Store extends AppState {
   setDrinks: (drinks: DrinkHabit[]) => void
   setOils: (oils: OilChoice) => void
   setRepeats: (repeats: RepeatRules) => void
+  setExtras: (extras: DailyExtra[]) => void
   applyAttendanceTemplate: (eaterId: string, templateId: string) => void
   copyAttendanceDay: (eaterId: string, day: number) => void
   setEntryStatus: (entryId: string, status: EntryStatus | null) => void
@@ -202,6 +205,7 @@ function load(): AppState {
         oils: state.household.oils ?? defaultOils(),
         // а повторы раньше были жёстко зашиты: до двух дней подряд из партии
         repeats: state.household.repeats ?? defaultRepeats(),
+        extras: state.household.extras ?? [],
         eaters: state.household.eaters.map(migrateEater),
       }
     }
@@ -253,6 +257,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     },
     [],
   )
+
+  /** Ежедневные дополнения: их калории тоже резервируются до раскладки. */
+  const setExtras = useCallback((extras: DailyExtra[]) => {
+    setState((prev) => {
+      if (!prev.household) return prev
+      const household: Household = { ...prev.household, extras }
+      const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
+      const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
+      const { menu, warnings } = buildWeekMenu(household, seed, keep)
+      return { ...prev, household, menu, warnings }
+    })
+  }, [])
 
   /** Насколько человек готов есть одно и то же. */
   const setRepeats = useCallback((repeats: RepeatRules) => {
@@ -562,6 +578,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setDrinks,
       setOils,
       setRepeats,
+      setExtras,
       applyAttendanceTemplate,
       copyAttendanceDay,
       setEntryStatus,
@@ -588,6 +605,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setDrinks,
       setOils,
       setRepeats,
+      setExtras,
       applyAttendanceTemplate,
       copyAttendanceDay,
       setEntryStatus,

@@ -118,7 +118,8 @@ describe('когда доставать из морозилки', () => {
     budgetPerWeek: 0,
     drinks: [],
     oils: defaultOils(),
-    repeats: defaultRepeats(), weekStart: '2026-09-07',
+    repeats: defaultRepeats(),
+    extras: [], weekStart: '2026-09-07',
   }
 
   it('накануне, если размораживать в холодильнике', () => {

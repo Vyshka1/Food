@@ -156,6 +156,28 @@ export interface RepeatRules {
   gapDays: number
 }
 
+/**
+ * Ежедневные дополнения к столу: овощная тарелка, фрукт, хлеб, орехи.
+ *
+ * Это не блюда и рецептом им быть незачем — резать огурец по рецепту никто
+ * не станет. Но 200 г овощей каждый день это и калории, и клетчатка, и
+ * пакет огурцов в закупке, поэтому считаются они наравне с едой.
+ */
+export type ExtraKind = 'veg_plate' | 'fruit' | 'bread' | 'nuts' | 'yogurt' | 'cheese'
+
+export interface DailyExtra {
+  id: string
+  /** Чьё дополнение: у каждого своё. */
+  eaterId: string
+  kind: ExtraKind
+  /** Сколько граммов или штук — смотря чем меряется набор. */
+  amount: number
+  /** К какому приёму пищи. */
+  slot: MealSlot
+  /** В какие дни недели: 0 — понедельник. */
+  days: number[]
+}
+
 export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'snack'
 
 export const MEAL_SLOTS: { id: MealSlot; label: string; icon: 'sun' | 'leaf' | 'moon' | 'apple' }[] =
@@ -241,6 +263,8 @@ export interface Household {
   oils: OilChoice
   /** Насколько человек готов есть одно и то же. */
   repeats: RepeatRules
+  /** Ежедневные дополнения к столу: овощи, фрукт, хлеб. */
+  extras: DailyExtra[]
   /** Дата понедельника недели, ISO yyyy-mm-dd. */
   weekStart: string
 }

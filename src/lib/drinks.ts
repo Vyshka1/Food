@@ -1,6 +1,7 @@
 import type { DrinkHabit, DrinkKind, Eater, Household, Norms } from '../types'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { dailyNorm } from './nutrition'
+import { extraNorms } from './extras'
 
 /**
  * Привычные напитки.
@@ -188,13 +189,19 @@ export function drinkNorms(household: Household, eaterId: string, day: number): 
  */
 export const MIN_FOOD_SHARE = 0.6
 
-/** Личная норма за вычетом напитков — по ней и собирается меню. */
+/**
+ * Личная норма за вычетом того, что и так будет съедено и выпито: напитков и
+ * ежедневных дополнений. По ней и собирается меню — блюдо должно быть меньше,
+ * если рядом с ним каждый день стоит тарелка овощей и лежит ломоть хлеба.
+ */
 export function foodNorm(eater: Eater, household: Household, day: number): Norms {
   const full = dailyNorm(eater)
   const drinks = drinkNorms(household, eater.id, day)
-  if (drinks.kcal <= 0) return full
+  const extras = extraNorms(household, eater.id, day)
+  const reserved = drinks.kcal + extras.kcal
+  if (reserved <= 0) return full
   const floor = full.kcal * MIN_FOOD_SHARE
-  const kcal = Math.max(floor, full.kcal - drinks.kcal)
+  const kcal = Math.max(floor, full.kcal - reserved)
   // БЖУ уменьшаем в той же пропорции, что и калории: делить макросы напитка
   // по отдельности бессмысленно — в капучино нет углеводов ужина
   const share = kcal / (full.kcal || 1)
@@ -203,15 +210,18 @@ export function foodNorm(eater: Eater, household: Household, day: number): Norms
     protein: Math.round(full.protein * share),
     fat: Math.round(full.fat * share),
     carbs: Math.round(full.carbs * share),
-    // клетчатку не ужимаем: капучино её не заменяет
-    fiber: full.fiber,
+    // Клетчатку ужимаем только на то, что дополнения уже дают: тарелка
+    // овощей действительно закрывает часть нормы, а капучино — нет.
+    fiber: Math.max(0, full.fiber - extras.fiber),
   }
 }
 
-/** Напитки съедают слишком много нормы — это стоит сказать вслух. */
+/** Напитки и дополнения съедают слишком много нормы — это стоит сказать вслух. */
 export function drinksOvershoot(eater: Eater, household: Household, day: number): boolean {
   const full = dailyNorm(eater)
-  return drinkNorms(household, eater.id, day).kcal > full.kcal * (1 - MIN_FOOD_SHARE)
+  const reserved =
+    drinkNorms(household, eater.id, day).kcal + extraNorms(household, eater.id, day).kcal
+  return reserved > full.kcal * (1 - MIN_FOOD_SHARE)
 }
 
 /** Что купить на напитки за неделю: те же продукты, что и для блюд. */

@@ -63,6 +63,7 @@ function household(patch: Partial<Household> = {}): Household {
     drinks: [],
     oils: defaultOils(),
     repeats: defaultRepeats(),
+    extras: [],
     weekStart: '2026-01-05',
     ...patch,
   }

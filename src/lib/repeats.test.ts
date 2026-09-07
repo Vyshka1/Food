@@ -47,6 +47,7 @@ function household(repeats: RepeatRules, patch: Partial<Household> = {}): Househ
     drinks: [],
     oils: defaultOils(),
     repeats,
+    extras: [],
     weekStart: '2026-01-05',
     ...patch,
   }

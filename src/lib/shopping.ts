@@ -3,6 +3,7 @@ import { recipeById } from '../data/recipeRegistry'
 import type { Household, ShoppingLine, WeekMenu } from '../types'
 import { cookTasks } from './menu'
 import { drinkShopping } from './drinks'
+import { extraShopping } from './extras'
 
 function roundUpTo(value: number, step: number): number {
   return Math.ceil(value / step) * step
@@ -21,8 +22,10 @@ export function buildShoppingList(menu: WeekMenu, household?: Household): Shoppi
   // покупает его тот же список. Без этого две пачки молока в неделю уходили
   // мимо закупки.
   if (household) {
-    for (const [ingredientId, qty] of drinkShopping(household)) {
-      needed.set(ingredientId, (needed.get(ingredientId) ?? 0) + qty)
+    for (const source of [drinkShopping(household), extraShopping(household)]) {
+      for (const [ingredientId, qty] of source) {
+        needed.set(ingredientId, (needed.get(ingredientId) ?? 0) + qty)
+      }
     }
   }
 

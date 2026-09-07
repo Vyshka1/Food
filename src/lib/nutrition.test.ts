@@ -72,6 +72,7 @@ describe('меню и норма', () => {
     drinks: [],
     oils: defaultOils(),
     repeats: defaultRepeats(),
+    extras: [],
     weekStart: '2026-09-07',
   }
 
@@ -133,6 +134,7 @@ describe('buildShoppingList', () => {
     drinks: [],
     oils: defaultOils(),
     repeats: defaultRepeats(),
+    extras: [],
     weekStart: '2026-09-07',
   }
 
@@ -188,6 +190,7 @@ describe('баланс БЖУ по дню', () => {
     drinks: [],
     oils: defaultOils(),
     repeats: defaultRepeats(),
+    extras: [],
     weekStart: '2026-09-07',
   }
 

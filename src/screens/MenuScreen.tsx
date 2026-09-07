@@ -4,6 +4,7 @@ import { ENTRY_STATUS, MEAL_SLOTS } from '../types'
 import type { MenuEntry } from '../types'
 import { WEEKDAYS, dayNorms, dayTotals, fedEaters, portionOf, takeawayEaters, totalPortions } from '../lib/menu'
 import { drinkNorms } from '../lib/drinks'
+import { extraNorms, extraStats, extraSummary, extrasAt } from '../lib/extras'
 import { portionWeight, recipeStats } from '../lib/nutrition'
 import { useStore } from '../store'
 import { CalorieRing, Card, Warnings } from '../components/ui'
@@ -51,6 +52,25 @@ export function MenuScreen() {
    * должен видеть, что 140 ккал ушли в капучино, а не гадать, почему обед
    * стал меньше.
    */
+  /** Дополнения к столу — их человек тоже съест, и они тоже считаются. */
+  const extras = useMemo(() => {
+    if (!household) return { kcal: 0, protein: 0, fat: 0, carbs: 0, fiber: 0 }
+    const who = eater ? [eater] : household.eaters
+    return who.reduce(
+      (acc, e) => {
+        const x = extraNorms(household, e.id, day)
+        return {
+          kcal: acc.kcal + x.kcal,
+          protein: acc.protein + x.protein,
+          fat: acc.fat + x.fat,
+          carbs: acc.carbs + x.carbs,
+          fiber: acc.fiber + x.fiber,
+        }
+      },
+      { kcal: 0, protein: 0, fat: 0, carbs: 0, fiber: 0 },
+    )
+  }, [household, day, eater])
+
   const drinks = useMemo(() => {
     if (!household) return { kcal: 0, protein: 0, fat: 0, carbs: 0 }
     const who = eater ? [eater] : household.eaters
@@ -174,12 +194,25 @@ export function MenuScreen() {
                 <span>всего {totals.kcal + drinks.kcal}</span>
               </div>
             )}
+            {extras.kcal > 0 && (
+              <div className="macro muted small">
+                <span>дополнения {extras.kcal} ккал</span>
+                <span>всего {totals.kcal + drinks.kcal + extras.kcal}</span>
+              </div>
+            )}
             {/* Клетчатка без четвёртого кольца: она важна, но не настолько,
                 чтобы спорить за место с калориями. */}
             <div className="macro muted small">
               <span>клетчатка</span>
-              <span style={totals.fiber < norms.fiber ? { color: 'var(--warn)' } : undefined}>
-                {totals.fiber} из {norms.fiber} г
+              <span
+                style={
+                  totals.fiber + extras.fiber < norms.fiber + extras.fiber
+                    ? { color: 'var(--warn)' }
+                    : undefined
+                }
+              >
+                {Math.round(totals.fiber + extras.fiber)} из{' '}
+                {Math.round(norms.fiber + extras.fiber)} г
               </span>
             </div>
           </div>
@@ -280,6 +313,23 @@ export function MenuScreen() {
                 </div>
               )
             })}
+            {/* Дополнения к этому приёму: не блюда, но на столе они есть, и
+                человек должен видеть их там же, где еду. */}
+            {extrasAt(household, day, meal.id)
+              .filter((x) => !eater || x.eaterId === eater.id)
+              .map((extra) => {
+                const owner = household.eaters.find((e) => e.id === extra.eaterId)
+                return (
+                  <div className="extra-line" key={extra.id}>
+                    <Icon name="salad" size={16} />
+                    <span>
+                      {extraSummary(extra)}
+                      {household.eaters.length > 1 && owner ? ` · ${owner.name}` : ''}
+                    </span>
+                    <b>{extraStats(extra).kcal} ккал</b>
+                  </div>
+                )
+              })}
           </div>
         )
       })}

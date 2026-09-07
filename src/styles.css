@@ -1043,6 +1043,28 @@ select {
   );
 }
 
+/* Дополнения к столу: не блюдо, но на столе есть — строка, а не карточка. */
+.extra-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-top: 6px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-md);
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.extra-line span {
+  flex: 1;
+}
+
+.extra-line b {
+  color: var(--ink);
+  white-space: nowrap;
+}
+
 /* ── Привычные напитки ────────────────────────────────────────────────── */
 .drinks__person {
   padding-bottom: 12px;

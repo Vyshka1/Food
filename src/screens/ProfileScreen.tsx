@@ -13,6 +13,7 @@ import { AttendanceGrid } from '../components/AttendanceGrid'
 import { DrinksEditor } from '../components/DrinksEditor'
 import { OilEditor } from '../components/OilEditor'
 import { RepeatsEditor } from '../components/RepeatsEditor'
+import { ExtrasEditor } from '../components/ExtrasEditor'
 import { WeekHistory } from '../components/WeekHistory'
 import { KitchenEditor } from '../components/KitchenEditor'
 import { MACRO_COLOR } from '../lib/palette'
@@ -115,6 +116,10 @@ export function ProfileScreen({
 
       <Section title="Повторы" icon="history">
         <RepeatsEditor />
+      </Section>
+
+      <Section title="Каждый день к столу" icon="salad">
+        <ExtrasEditor />
       </Section>
 
       <Section title="Состав семьи" icon="people">

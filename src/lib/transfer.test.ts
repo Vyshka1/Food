@@ -42,6 +42,7 @@ const household: Household = {
   drinks: [],
   oils: defaultOils(),
   repeats: defaultRepeats(),
+  extras: [],
   weekStart: '2026-09-07',
 }
 
