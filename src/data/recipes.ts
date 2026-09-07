@@ -1,12 +1,16 @@
-import type { MealSlot, Recipe, Station } from '../types'
+import type { MealSlot, Recipe, RecipeBatch, Station } from '../types'
 import { deriveRecipeSteps } from '../lib/stepDetail'
 import { freezingOf } from '../lib/freezing'
+import { batchInfoOf } from '../lib/batchInfo'
+import { VERIFIED_BATCHES } from './verifiedBatches'
 
 type ItemTuple = [ingredientId: string, qtyPerServing: number]
 type StepTuple = [text: string, minutes: number, station: Station, handsOn?: boolean]
 
 interface Opts {
   tags?: string[]
+  /** Проверенная вручную партия. Без неё считается правилами. */
+  batch?: RecipeBatch
   freezable?: boolean
   fridgeDays?: number
   needs?: ('oven' | 'blender')[]
@@ -42,8 +46,14 @@ function r(
     fridgeDays: opts.fridgeDays ?? 3,
     needs: opts.needs,
   }
-  // разметка заморозки считается от готового рецепта: ей нужны и шаги, и состав
-  return { ...recipe, freezing: freezingOf(recipe) }
+  // разметка заморозки и партии считается от готового рецепта: ей нужны и
+  // шаги, и состав
+  const withFreezing = { ...recipe, freezing: freezingOf(recipe) }
+  // проверенная вручную партия сильнее любых правил
+  return {
+    ...withFreezing,
+    batch: opts.batch ?? VERIFIED_BATCHES[id] ?? batchInfoOf(withFreezing),
+  }
 }
 
 /** Количества в items — на одну порцию. */
