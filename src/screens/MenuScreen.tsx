@@ -174,6 +174,14 @@ export function MenuScreen() {
                 <span>всего {totals.kcal + drinks.kcal}</span>
               </div>
             )}
+            {/* Клетчатка без четвёртого кольца: она важна, но не настолько,
+                чтобы спорить за место с калориями. */}
+            <div className="macro muted small">
+              <span>клетчатка</span>
+              <span style={totals.fiber < norms.fiber ? { color: 'var(--warn)' } : undefined}>
+                {totals.fiber} из {norms.fiber} г
+              </span>
+            </div>
           </div>
         </div>
       </Card>

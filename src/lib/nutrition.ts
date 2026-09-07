@@ -43,7 +43,16 @@ export function dailyNorm(e: Eater): Norms {
   protein = Math.min(protein, Math.round((kcal * 0.35) / 4))
   const fat = Math.max(Math.round(0.8 * weight), Math.round((kcal * 0.25) / 9))
   const carbs = Math.max(0, Math.round((kcal - protein * 4 - fat * 9) / 4))
-  return { kcal, protein, fat, carbs }
+  return { kcal, protein, fat, carbs, fiber: fiberNorm(kcal) }
+}
+
+/**
+ * Норма клетчатки: 14 г на каждую тысячу килокалорий — обычная рекомендация,
+ * которая заодно масштабируется вместе с нормой человека. Взрослому меньше
+ * двадцати граммов не ставим: ниже этого рацион уже не работает как надо.
+ */
+export function fiberNorm(kcal: number): number {
+  return Math.max(20, Math.round((kcal * 14) / 1000))
 }
 
 export function sumNorms(list: Norms[]): Norms {
@@ -53,8 +62,9 @@ export function sumNorms(list: Norms[]): Norms {
       protein: acc.protein + n.protein,
       fat: acc.fat + n.fat,
       carbs: acc.carbs + n.carbs,
+      fiber: acc.fiber + n.fiber,
     }),
-    { kcal: 0, protein: 0, fat: 0, carbs: 0 },
+    { kcal: 0, protein: 0, fat: 0, carbs: 0, fiber: 0 },
   )
 }
 
@@ -106,6 +116,7 @@ export function recipeStats(recipe: Recipe): RecipeStats {
   let protein = 0
   let fat = 0
   let carbs = 0
+  let fiber = 0
   let price = 0
   for (const item of recipe.items) {
     const ing = INGREDIENT_BY_ID[item.ingredientId]
@@ -115,6 +126,7 @@ export function recipeStats(recipe: Recipe): RecipeStats {
     protein += ing.protein * factor
     fat += ing.fat * factor
     carbs += ing.carbs * factor
+    fiber += ing.fiber * factor
     price += ing.unit === 'pcs' ? ing.price * item.qty : (ing.price * item.qty) / 1000
   }
   const stats: RecipeStats = {
@@ -122,6 +134,7 @@ export function recipeStats(recipe: Recipe): RecipeStats {
     protein: Math.round(protein),
     fat: Math.round(fat),
     carbs: Math.round(carbs),
+    fiber: Math.round(fiber * 10) / 10,
     price: Math.round(price),
   }
   statsCache.set(recipe, stats)

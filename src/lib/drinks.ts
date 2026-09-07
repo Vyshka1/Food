@@ -127,6 +127,7 @@ export function cupStats(habit: DrinkHabit): DrinkStats {
   let protein = 0
   let fat = 0
   let carbs = 0
+  let fiber = 0
   let price = 0
   for (const { ingredientId, qty } of cupIngredients(habit)) {
     const ing = INGREDIENT_BY_ID[ingredientId]
@@ -136,6 +137,7 @@ export function cupStats(habit: DrinkHabit): DrinkStats {
     protein += ing.protein * factor
     fat += ing.fat * factor
     carbs += ing.carbs * factor
+    fiber += ing.fiber * factor
     price += ing.unit === 'pcs' ? ing.price * qty : (ing.price * qty) / 1000
   }
   return {
@@ -143,6 +145,7 @@ export function cupStats(habit: DrinkHabit): DrinkStats {
     protein: Math.round(protein),
     fat: Math.round(fat),
     carbs: Math.round(carbs),
+    fiber: Math.round(fiber * 10) / 10,
     price: Math.round(price),
   }
 }
@@ -159,7 +162,7 @@ export function drinksOf(household: Household, eaterId: string, day: number): Dr
 
 /** Сколько калорий и БЖУ уходит в напитки за день. */
 export function drinkNorms(household: Household, eaterId: string, day: number): Norms {
-  const acc: Norms = { kcal: 0, protein: 0, fat: 0, carbs: 0 }
+  const acc: Norms = { kcal: 0, protein: 0, fat: 0, carbs: 0, fiber: 0 }
   for (const habit of drinksOf(household, eaterId, day)) {
     const stats = cupStats(habit)
     const times = Math.max(0, habit.perDay)
@@ -167,12 +170,14 @@ export function drinkNorms(household: Household, eaterId: string, day: number): 
     acc.protein += stats.protein * times
     acc.fat += stats.fat * times
     acc.carbs += stats.carbs * times
+    acc.fiber += stats.fiber * times
   }
   return {
     kcal: Math.round(acc.kcal),
     protein: Math.round(acc.protein),
     fat: Math.round(acc.fat),
     carbs: Math.round(acc.carbs),
+    fiber: Math.round(acc.fiber * 10) / 10,
   }
 }
 
@@ -198,6 +203,8 @@ export function foodNorm(eater: Eater, household: Household, day: number): Norms
     protein: Math.round(full.protein * share),
     fat: Math.round(full.fat * share),
     carbs: Math.round(full.carbs * share),
+    // клетчатку не ужимаем: капучино её не заменяет
+    fiber: full.fiber,
   }
 }
 

@@ -251,6 +251,8 @@ export interface Ingredient {
   protein: number
   fat: number
   carbs: number
+  /** Клетчатка на те же 100 г / 100 мл / 1 шт. */
+  fiber: number
   /** ₽ за 1000 г / 1000 мл / 1 шт. */
   price: number
   allergens: Allergen[]
@@ -523,6 +525,12 @@ export interface Norms {
   protein: number
   fat: number
   carbs: number
+  /**
+   * Клетчатка, г. Формально это углевод, но считать её отдельно приходится:
+   * рацион может попадать в калории и БЖУ и при этом состоять из творога,
+   * фарша и круп. Клетчатка — то, чем это отличается от нормального питания.
+   */
+  fiber: number
 }
 
 export interface ShoppingLine {

@@ -109,6 +109,8 @@ export function dayNorms(household: Household, day: number, eaterId?: string): N
       protein: Math.round(full.protein * share),
       fat: Math.round(full.fat * share),
       carbs: Math.round(full.carbs * share),
+      // клетчатка делится вместе с приёмами пищи так же, как калории
+      fiber: Math.round(full.fiber * share),
     }
   })
   return sumNorms(parts)
@@ -270,6 +272,7 @@ interface DayAcc {
   fat: number
   protein: number
   carbs: number
+  fiber: number
 }
 
 interface PickState {
@@ -325,7 +328,7 @@ function addIngredients(state: PickState, recipe: Recipe, scale: number): void {
 }
 
 function accOf(state: PickState, day: number): DayAcc {
-  return state.day.get(day) ?? { kcal: 0, fat: 0, protein: 0, carbs: 0 }
+  return state.day.get(day) ?? { kcal: 0, fat: 0, protein: 0, carbs: 0, fiber: 0 }
 }
 
 function addToDay(state: PickState, day: number, recipe: Recipe, scale: number): void {
@@ -336,6 +339,7 @@ function addToDay(state: PickState, day: number, recipe: Recipe, scale: number):
     fat: acc.fat + stats.fat * scale,
     protein: acc.protein + stats.protein * scale,
     carbs: acc.carbs + stats.carbs * scale,
+    fiber: acc.fiber + stats.fiber * scale,
   })
 }
 
@@ -398,6 +402,13 @@ function scoreRecipe(
   // углеводы раньше не отслеживались вовсе — отсюда провалы до 75% нормы
   score += Math.max(0, carbBudget - projCarbs) * 4
   score += Math.max(0, projCarbs - carbBudget) * 1.5
+
+  // Клетчатка. Рацион может попадать в калории и БЖУ и при этом состоять из
+  // творога, фарша и круп — клетчатка ровно то, чем нормальное питание от
+  // такого отличается. Штрафуем только недобор: перебор клетчатки бытовым
+  // меню недостижим.
+  const fiberBudget = (projectedKcal * FIBER_PER_1000) / 1000
+  score += Math.max(0, fiberBudget - (acc.fiber + stats.fiber * scale)) * FIBER_WEIGHT
 
   // Небольшой вклад излишка упаковок в общий счёт. Основная экономия делается
   // не здесь, а на выборе среди почти равных вариантов (см. buildWeekMenu):
@@ -497,6 +508,23 @@ const NEAR_SCORE_MARGIN = 50
  * в пользу повтора.
  */
 const TAKEAWAY_MIN_FRIDGE_DAYS = 2
+
+/**
+ * Норма клетчатки на тысячу килокалорий и вес её недобора в счёте.
+ *
+ * Вес подобран замером на 280 днях (дней ниже нормы / худший день, при норме
+ * 26 г):
+ *
+ *   вес       0     2     6    12    20
+ *   дней     50    46    33    16     8
+ *   худший   11    13    20    20    24
+ *
+ * Двенадцать — там, где кривая ещё падает вдвое, а разнообразие не страдает
+ * (27 разных блюд за 40 недель против 24 при шестёрке). Двадцать даёт ещё
+ * немного, но начинает подтягивать одни и те же бобовые.
+ */
+const FIBER_PER_1000 = 14
+const FIBER_WEIGHT = 12
 
 /** Доедет ли блюдо до обеда в контейнере. */
 function travels(recipe: Recipe): boolean {
@@ -1020,7 +1048,7 @@ export interface DayTotals extends Norms {
  * полную норму.
  */
 export function dayTotals(menu: WeekMenu, day: number, eaterId?: string): DayTotals {
-  const acc: DayTotals = { kcal: 0, protein: 0, fat: 0, carbs: 0, price: 0 }
+  const acc: DayTotals = { kcal: 0, protein: 0, fat: 0, carbs: 0, fiber: 0, price: 0 }
   for (const entry of menu.entries) {
     if (entry.day !== day) continue
     // пропущенное блюдо в тарелку не попало — считать его в норму дня нечестно
@@ -1033,6 +1061,7 @@ export function dayTotals(menu: WeekMenu, day: number, eaterId?: string): DayTot
     acc.protein += s.protein * factor
     acc.fat += s.fat * factor
     acc.carbs += s.carbs * factor
+    acc.fiber += s.fiber * factor
     acc.price += s.price * factor
   }
   return {
@@ -1040,6 +1069,7 @@ export function dayTotals(menu: WeekMenu, day: number, eaterId?: string): DayTot
     protein: Math.round(acc.protein),
     fat: Math.round(acc.fat),
     carbs: Math.round(acc.carbs),
+    fiber: Math.round(acc.fiber),
     price: Math.round(acc.price),
   }
 }
