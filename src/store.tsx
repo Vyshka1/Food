@@ -5,12 +5,20 @@ import type {
   EntryStatus,
   Household,
   Kitchen,
+  MealPlace,
   MealSlot,
   Recipe,
   WeekMenu,
   WeekRecord,
 } from './types'
-import { awayKey, buildWeekMenu, replaceEntryWith } from './lib/menu'
+import { buildWeekMenu, replaceEntryWith } from './lib/menu'
+import {
+  ATTENDANCE_TEMPLATES,
+  copyDayToWorkdays,
+  mealKey,
+  mealPlaceOf,
+  nextPlace,
+} from './lib/attendance'
 import { setCustomRecipes } from './data/recipeRegistry'
 import { decodeProfile } from './lib/transfer'
 
@@ -62,7 +70,7 @@ export function newEater(partial: Partial<Eater> = {}): Eater {
     customAllergens: [],
     dislikes: [],
     bannedRecipes: [],
-    awayMeals: [],
+    mealPlaces: {},
     ratings: {},
     ...partial,
   }
@@ -95,7 +103,9 @@ interface Store extends AppState {
   regenerate: (seed?: number) => void
   swapDish: (entryId: string, recipeId: string) => void
   togglePin: (entryId: string) => void
-  toggleAway: (eaterId: string, day: number, slot: MealSlot) => void
+  cycleMealPlace: (eaterId: string, day: number, slot: MealSlot) => void
+  applyAttendanceTemplate: (eaterId: string, templateId: string) => void
+  copyAttendanceDay: (eaterId: string, day: number) => void
   setEntryStatus: (entryId: string, status: EntryStatus | null) => void
   rateRecipe: (eaterId: string, recipeId: string, value: 1 | -1 | 0) => void
   archiveWeek: () => void
@@ -117,6 +127,20 @@ const StoreContext = createContext<Store | null>(null)
  * Кухни, сохранённые до появления списка приборов: hasOven превращаем в одну
  * духовку, остального просто не было — считаем, что прибора нет.
  */
+/**
+ * Анкеты, сохранённые до появления трёх мест приёма пищи. Старый список
+ * `awayMeals` — это ровно «не дома»; «с собой» тогда сказать было нельзя,
+ * и придумывать за человека, какие из его отлучек были обедом в контейнере,
+ * мы не станем.
+ */
+function migrateEater(eater: Eater & { awayMeals?: string[] }): Eater {
+  const mealPlaces: Record<string, MealPlace> = { ...(eater.mealPlaces ?? {}) }
+  for (const key of eater.awayMeals ?? []) mealPlaces[key] = 'away'
+  const migrated: Eater = { ...eater, mealPlaces, ratings: eater.ratings ?? {} }
+  delete (migrated as Eater & { awayMeals?: string[] }).awayMeals
+  return migrated
+}
+
 function migrateKitchen(kitchen: Kitchen & { hasOven?: boolean }): Kitchen {
   return {
     burners: kitchen.burners ?? 4,
@@ -156,16 +180,13 @@ function load(): AppState {
     if (!raw) return emptyState
     const parsed = JSON.parse(raw) as Partial<AppState>
     const state = { ...emptyState, ...parsed }
-    // анкеты, сохранённые до появления «ест не дома», читаем как «ест всё дома»
+    // анкеты, сохранённые до появления мест приёма пищи, читаем как «всё дома»;
+    // старый список awayMeals переносим в новую матрицу как «не дома»
     if (state.household) {
       state.household = {
         ...state.household,
         kitchen: migrateKitchen(state.household.kitchen),
-        eaters: state.household.eaters.map((e) => ({
-          ...e,
-          awayMeals: e.awayMeals ?? [],
-          ratings: e.ratings ?? {},
-        })),
+        eaters: state.household.eaters.map(migrateEater),
       }
     }
     // реестр должен знать о своих рецептах до первой сборки меню
@@ -257,27 +278,56 @@ export function StoreProvider({ children }: { children: ReactNode }) {
    * «Кирилл обедает в офисе»: меню пересобирается, потому что меняются и
    * порции, и состав закупки.
    */
-  const toggleAway = useCallback((eaterId: string, day: number, slot: MealSlot) => {
+  const withEaters = (
+    prev: AppState,
+    eaterId: string,
+    change: (eater: Eater) => Eater,
+  ): AppState => {
+    if (!prev.household) return prev
+    const household: Household = {
+      ...prev.household,
+      eaters: prev.household.eaters.map((e) => (e.id === eaterId ? change(e) : e)),
+    }
+    const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
+    const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
+    const { menu, warnings } = buildWeekMenu(household, seed, keep)
+    return { ...prev, household, menu, warnings }
+  }
+
+  /** Клик по клетке матрицы: дома → с собой → не дома → дома. */
+  const cycleMealPlace = useCallback((eaterId: string, day: number, slot: MealSlot) => {
+    setState((prev) =>
+      withEaters(prev, eaterId, (eater) => {
+        const key = mealKey(day, slot)
+        const place = nextPlace(mealPlaceOf(eater, day, slot))
+        const mealPlaces = { ...eater.mealPlaces }
+        // «дома» — состояние по умолчанию: храним только отличия от него
+        if (place === 'home') delete mealPlaces[key]
+        else mealPlaces[key] = place
+        return { ...eater, mealPlaces }
+      }),
+    )
+  }, [])
+
+  /** Готовый расклад недели: «рабочая неделя», «все дома», «командировка». */
+  const applyAttendanceTemplate = useCallback((eaterId: string, templateId: string) => {
+    setState((prev) => {
+      const template = ATTENDANCE_TEMPLATES.find((t) => t.id === templateId)
+      if (!template || !prev.household) return prev
+      const meals = prev.household.meals
+      return withEaters(prev, eaterId, (eater) => ({ ...eater, mealPlaces: template.build(meals) }))
+    })
+  }, [])
+
+  /** «Каждый будний день одно и то же» — скопировать день на всю рабочую неделю. */
+  const copyAttendanceDay = useCallback((eaterId: string, day: number) => {
     setState((prev) => {
       if (!prev.household) return prev
-      const key = awayKey(day, slot)
-      const household: Household = {
-        ...prev.household,
-        eaters: prev.household.eaters.map((e) =>
-          e.id === eaterId
-            ? {
-                ...e,
-                awayMeals: e.awayMeals.includes(key)
-                  ? e.awayMeals.filter((k) => k !== key)
-                  : [...e.awayMeals, key],
-              }
-            : e,
-        ),
-      }
-      const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
-      const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
-      const { menu, warnings } = buildWeekMenu(household, seed, keep)
-      return { ...prev, household, menu, warnings }
+      const meals = prev.household.meals
+      return withEaters(prev, eaterId, (eater) => ({
+        ...eater,
+        mealPlaces: copyDayToWorkdays(eater.mealPlaces, meals, day),
+      }))
     })
   }, [])
 
@@ -452,7 +502,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       regenerate,
       swapDish,
       togglePin,
-      toggleAway,
+      cycleMealPlace,
+      applyAttendanceTemplate,
+      copyAttendanceDay,
       setEntryStatus,
       rateRecipe,
       archiveWeek,
@@ -473,7 +525,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       regenerate,
       swapDish,
       togglePin,
-      toggleAway,
+      cycleMealPlace,
+      applyAttendanceTemplate,
+      copyAttendanceDay,
       setEntryStatus,
       rateRecipe,
       archiveWeek,

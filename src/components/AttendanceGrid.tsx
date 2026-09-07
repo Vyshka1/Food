@@ -1,23 +1,30 @@
 import { useState } from 'react'
-import { MEAL_SLOTS } from '../types'
-import { WEEKDAYS, eatsAtHome } from '../lib/menu'
+import { MEAL_PLACE, MEAL_PLACE_LABEL, MEAL_SLOTS } from '../types'
+import { WEEKDAYS } from '../lib/menu'
+import {
+  ATTENDANCE_TEMPLATES,
+  attendanceSummary,
+  containersOn,
+  mealPlaceOf,
+} from '../lib/attendance'
 import { useStore } from '../store'
 import { plural } from '../lib/format'
 
 /**
- * Кто где ест. Без этого семейный расчёт покупает лишнее: Кирилл обедает в
- * офисе пять дней в неделю, а закупка всё равно считает пять обедов.
+ * Кто где ест. Три состояния, а не два: обед, взятый с собой, нужно
+ * приготовить и купить — но не поставить на стол и не забыть контейнер.
+ * Пока «с собой» и «не дома» были одним состоянием, закупка ошибалась в
+ * обе стороны сразу.
  */
 export function AttendanceGrid() {
-  const { household, toggleAway } = useStore()
+  const { household, cycleMealPlace, applyAttendanceTemplate, copyAttendanceDay } = useStore()
   const [who, setWho] = useState(0)
   if (!household) return null
 
   const eater = household.eaters[Math.min(who, household.eaters.length - 1)]
   const slots = MEAL_SLOTS.filter((m) => household.meals.includes(m.id))
-  const awayCount = eater.awayMeals.filter((key) =>
-    slots.some((s) => key.endsWith(`:${s.id}`)),
-  ).length
+  const containers = Array.from({ length: 7 }, (_, day) => containersOn(household, day))
+  const maxContainers = Math.max(...containers)
 
   return (
     <>
@@ -36,39 +43,67 @@ export function AttendanceGrid() {
         </div>
       )}
 
+      <div className="templates">
+        {ATTENDANCE_TEMPLATES.map((t) => (
+          <button
+            key={t.id}
+            className="chip"
+            onClick={() => applyAttendanceTemplate(eater.id, t.id)}
+            title={t.hint}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
       <div className="attend">
         <div className="attend__row attend__row--head">
           <span className="attend__label" />
-          {WEEKDAYS.map((label) => (
-            <span key={label} className="attend__day">
+          {WEEKDAYS.map((label, day) => (
+            <button
+              key={label}
+              className="attend__day"
+              onClick={() => copyAttendanceDay(eater.id, day)}
+              title="Скопировать этот день на все будни"
+            >
               {label}
-            </span>
+            </button>
           ))}
         </div>
         {slots.map((slot) => (
           <div className="attend__row" key={slot.id}>
             <span className="attend__label">{slot.label}</span>
             {WEEKDAYS.map((label, day) => {
-              const home = eatsAtHome(eater, day, slot.id)
+              const place = mealPlaceOf(eater, day, slot.id)
               return (
                 <button
                   key={label}
                   className="attend__cell"
-                  data-home={home}
-                  onClick={() => toggleAway(eater.id, day, slot.id)}
-                  aria-label={`${label}, ${slot.label.toLowerCase()}: ${home ? 'дома' : 'не дома'}`}
-                  aria-pressed={home}
-                />
+                  data-place={place}
+                  onClick={() => cycleMealPlace(eater.id, day, slot.id)}
+                  aria-label={`${label}, ${slot.label.toLowerCase()}: ${MEAL_PLACE_LABEL[place]}`}
+                >
+                  {place === 'takeaway' ? '↑' : place === 'away' ? '' : '·'}
+                </button>
               )
             })}
           </div>
         ))}
       </div>
 
+      <div className="legend">
+        {MEAL_PLACE.map((p) => (
+          <span key={p.id} className="legend__item">
+            <i className="legend__dot" data-place={p.id} />
+            {p.label} — {p.hint}
+          </span>
+        ))}
+      </div>
+
       <p className="hint" style={{ marginBottom: 0 }}>
-        {awayCount === 0
-          ? `${eater.name} ест дома всю неделю. Нажмите на клетку, если приём пищи будет вне дома.`
-          : `${awayCount} ${plural(awayCount, ['приём', 'приёма', 'приёмов'])} вне дома — эти порции не готовим и не покупаем.`}
+        {eater.name}: {attendanceSummary(eater, household.meals)}.
+        {maxContainers > 0 &&
+          ` Нужно до ${maxContainers} ${plural(maxContainers, ['контейнера', 'контейнеров', 'контейнеров'])} в день, на кухне их ${household.kitchen.containers}.`}
       </p>
     </>
   )

@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { recipeById } from '../data/recipeRegistry'
 import { ENTRY_STATUS, MEAL_SLOTS } from '../types'
 import type { MenuEntry } from '../types'
-import { WEEKDAYS, dayNorms, dayTotals, eatersAtHome, portionOf, totalPortions } from '../lib/menu'
+import { WEEKDAYS, dayNorms, dayTotals, fedEaters, portionOf, takeawayEaters, totalPortions } from '../lib/menu'
 import { portionWeight, recipeStats } from '../lib/nutrition'
 import { useStore } from '../store'
 import { CalorieRing, Card, Warnings } from '../components/ui'
@@ -152,23 +152,29 @@ export function MenuScreen() {
 
       {MEAL_SLOTS.filter((m) => household.meals.includes(m.id)).map((meal) => {
         const entries = menu.entries.filter((e) => e.day === day && e.slot === meal.id)
-        const home = eatersAtHome(household, day, meal.id)
-        const away = household.eaters.filter((e) => !home.some((h) => h.id === e.id))
+        const fed = fedEaters(household, day, meal.id)
+        const away = household.eaters.filter((e) => !fed.some((h) => h.id === e.id))
+        const withMe = takeawayEaters(household, day, meal.id)
         return (
           <div key={meal.id}>
             <div className="meal-head">
               <Icon name={meal.icon} size={18} />
               {meal.label}
+              {withMe.length > 0 && (
+                <span className="meal-head__take">
+                  {withMe.map((e) => e.name).join(', ')} — с собой
+                </span>
+              )}
               {away.length > 0 && (
                 <span className="meal-head__away">
                   {away.map((e) => e.name).join(', ')} не дома
                 </span>
               )}
             </div>
-            {home.length === 0 && (
+            {fed.length === 0 && (
               <p className="hint">Все едят не дома — на этот приём ничего не готовим.</p>
             )}
-            {home.length > 0 && entries.length === 0 && (
+            {fed.length > 0 && entries.length === 0 && (
               <p className="hint">Ничего не запланировано.</p>
             )}
             {entries.map((entry) => {

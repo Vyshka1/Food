@@ -10,7 +10,7 @@ function eater(patch: Partial<Eater> = {}): Eater {
   return {
     id: 'j', name: 'Юлия', sex: 'female', age: 32, heightCm: 168, weightKg: 62,
     activity: 'light', goal: 'keep', allergies: [], customAllergens: [], dislikes: [],
-    bannedRecipes: [], awayMeals: [], ratings: {},
+    bannedRecipes: [], mealPlaces: {}, ratings: {},
     ...patch,
   }
 }
@@ -111,8 +111,13 @@ describe('кухонные величины вместо коэффициент�
       ...household,
       eaters: [
         eater(),
-        eater({ id: 'k', name: 'Кирилл', awayMeals: ['0:lunch', '1:lunch', '2:lunch',
-          '3:lunch', '4:lunch', '5:lunch', '6:lunch'] }),
+        eater({
+          id: 'k',
+          name: 'Кирилл',
+          mealPlaces: Object.fromEntries(
+            [0, 1, 2, 3, 4, 5, 6].map((d) => [`${d}:lunch`, 'away' as const]),
+          ),
+        }),
       ],
     }
     const awayMenu = buildWeekMenu(away, 4).menu

@@ -58,16 +58,32 @@ export interface Eater {
   /** Блюда, которые не показываем в меню (recipe id). */
   bannedRecipes: string[]
   /**
-   * Приёмы пищи вне дома: ключи вида `2:lunch` — среда, обед. Пусто, значит
-   * человек ест дома всё. Без этого семейный расчёт покупает лишнее: Кирилл
-   * обедает в офисе, а закупка всё равно считает его обед.
+   * Где человек ест каждый приём пищи: ключи вида `2:lunch` — среда, обед.
+   * Отсутствие ключа значит «дома». Двух состояний не хватало: обед, взятый
+   * с собой, нужно приготовить и купить, но не поставить на стол, — раньше
+   * он был либо лишней порцией дома, либо не покупался вовсе.
    */
-  awayMeals: string[]
+  mealPlaces: Record<string, MealPlace>
   /**
    * Оценки блюд: 1 — нравится, −1 — не нравится. Мягкая настройка подбора, в
    * отличие от bannedRecipes, который убирает блюдо совсем.
    */
   ratings: Record<string, 1 | -1>
+}
+
+/** Где человек ест этот приём пищи. Последствия у трёх состояний разные. */
+export type MealPlace = 'home' | 'takeaway' | 'away'
+
+export const MEAL_PLACE: { id: MealPlace; label: string; short: string; hint: string }[] = [
+  { id: 'home', label: 'дома', short: 'дом', hint: 'готовим и ставим на стол' },
+  { id: 'takeaway', label: 'с собой', short: 'с/с', hint: 'готовим, нужен контейнер' },
+  { id: 'away', label: 'не дома', short: '—', hint: 'не готовим и не покупаем' },
+]
+
+export const MEAL_PLACE_LABEL: Record<MealPlace, string> = {
+  home: 'дома',
+  takeaway: 'с собой',
+  away: 'не дома',
 }
 
 export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'snack'

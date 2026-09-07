@@ -108,7 +108,7 @@ describe('когда доставать из морозилки', () => {
   const eater: Eater = {
     id: 'e1', name: 'Юлия', sex: 'female', age: 32, heightCm: 168, weightKg: 62,
     activity: 'light', goal: 'keep', allergies: [], customAllergens: [], dislikes: [],
-    bannedRecipes: [], awayMeals: [], ratings: {},
+    bannedRecipes: [], mealPlaces: {}, ratings: {},
   }
   const household: Household = {
     eaters: [eater], cookingDays: [0], meals: ['breakfast', 'lunch', 'dinner'],

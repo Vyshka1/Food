@@ -18,7 +18,7 @@ const household: Household = {
       customAllergens: ['Кинза'],
       dislikes: ['mushrooms'],
       bannedRecipes: [],
-      awayMeals: [],
+      mealPlaces: {},
       ratings: {},
     },
   ],

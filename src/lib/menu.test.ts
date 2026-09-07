@@ -5,14 +5,14 @@ import { setCustomRecipes } from '../data/recipeRegistry'
 import { withDerivedDetail } from './stepDetail'
 import type { Eater, Household, Kitchen, Recipe } from '../types'
 import {
-  awayKey,
+  mealKey,
   buildWeekMenu,
   cookTasks,
   cookingSegments,
   dayNorms,
   dayTotals,
   dislikeHits,
-  eatersAtHome,
+  fedEaters,
   isRecipeAllowed,
   portionOf,
   replaceEntryWith,
@@ -36,7 +36,7 @@ function eater(patch: Partial<Eater> = {}): Eater {
     customAllergens: [],
     dislikes: [],
     bannedRecipes: [],
-    awayMeals: [],
+    mealPlaces: {},
     ratings: {},
     ...patch,
   }
@@ -325,7 +325,7 @@ describe('еда вне дома', () => {
 
   it('не даёт порцию тому, кто ест не дома', () => {
     const h = household({
-      eaters: [julia, { ...kirill, awayMeals: [awayKey(0, 'lunch'), awayKey(1, 'lunch')] }],
+      eaters: [julia, { ...kirill, mealPlaces: { [mealKey(0, 'lunch')]: 'away', [mealKey(1, 'lunch')]: 'away' } }],
     })
     const { menu } = buildWeekMenu(h, 7)
     const lunches = menu.entries.filter((e) => e.slot === 'lunch')
@@ -345,7 +345,12 @@ describe('еда вне дома', () => {
     const away = household({
       eaters: [
         julia,
-        { ...kirill, awayMeals: [0, 1, 2, 3, 4].map((d) => awayKey(d, 'lunch')) },
+        {
+          ...kirill,
+          mealPlaces: Object.fromEntries(
+            [0, 1, 2, 3, 4].map((d) => [mealKey(d, 'lunch'), 'away' as const]),
+          ),
+        },
       ],
     })
     const total = (h: Household) =>
@@ -356,17 +361,17 @@ describe('еда вне дома', () => {
   it('не планирует приём пищи, если дома никого', () => {
     const h = household({
       eaters: [
-        { ...julia, awayMeals: [awayKey(3, 'dinner')] },
-        { ...kirill, awayMeals: [awayKey(3, 'dinner')] },
+        { ...julia, mealPlaces: { [mealKey(3, 'dinner')]: 'away' as const } },
+        { ...kirill, mealPlaces: { [mealKey(3, 'dinner')]: 'away' as const } },
       ],
     })
     const { menu } = buildWeekMenu(h, 5)
     expect(menu.entries.filter((e) => e.day === 3 && e.slot === 'dinner')).toHaveLength(0)
-    expect(eatersAtHome(h, 3, 'dinner')).toHaveLength(0)
+    expect(fedEaters(h, 3, 'dinner')).toHaveLength(0)
   })
 
   it('снижает норму дня ровно на долю пропущенного приёма', () => {
-    const h = household({ eaters: [{ ...kirill, awayMeals: [awayKey(2, 'lunch')] }] })
+    const h = household({ eaters: [{ ...kirill, mealPlaces: { [mealKey(2, 'lunch')]: 'away' as const } }] })
     const full = dayNorms(h, 1, 'k')
     const partial = dayNorms(h, 2, 'k')
     expect(partial.kcal).toBeLessThan(full.kcal)

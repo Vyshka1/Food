@@ -18,7 +18,7 @@ const base: Eater = {
   customAllergens: [],
   dislikes: [],
   bannedRecipes: [],
-  awayMeals: [],
+  mealPlaces: {},
   ratings: {},
 }
 

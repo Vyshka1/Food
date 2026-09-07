@@ -9,7 +9,7 @@ import { buildShoppingList } from './shopping'
 const julia: Eater = {
   id: 'e1', name: 'Юлия', sex: 'female', age: 32, heightCm: 168, weightKg: 62,
   activity: 'light', goal: 'lose', allergies: [], customAllergens: [], dislikes: [],
-  bannedRecipes: [], awayMeals: [], ratings: {},
+  bannedRecipes: [], mealPlaces: {}, ratings: {},
 }
 const kirill: Eater = { ...julia, id: 'e2', name: 'Кирилл', sex: 'male', age: 35,
   heightCm: 182, weightKg: 84, activity: 'medium' }

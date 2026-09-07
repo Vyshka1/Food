@@ -14,6 +14,8 @@ import type {
 } from '../types'
 import { dailyNorm, recipeStats, slotShares, sumNorms } from './nutrition'
 import { mulberry32 } from './random'
+import { plural } from './format'
+import { containersOn, fedEaters, isFed, slotLabel, takeawayEaters } from './attendance'
 
 export const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 /**
@@ -75,20 +77,17 @@ export function householdNorms(household: Household): Norms {
   return sumNorms(household.eaters.map(dailyNorm))
 }
 
-/** Ключ приёма пищи вне дома: день недели плюс приём. */
-export function awayKey(day: number, slot: MealSlot): string {
-  return `${day}:${slot}`
-}
-
-/** Ест ли человек этот приём пищи дома. */
-export function eatsAtHome(eater: Eater, day: number, slot: MealSlot): boolean {
-  return !eater.awayMeals?.includes(awayKey(day, slot))
-}
-
-/** Кто из семьи за столом в этот приём пищи. */
-export function eatersAtHome(household: Household, day: number, slot: MealSlot): Eater[] {
-  return household.eaters.filter((e) => eatsAtHome(e, day, slot))
-}
+// Кто где ест — в lib/attendance: там же три состояния и готовые расклады.
+export {
+  containersOn,
+  containersPerWeek,
+  fedEaters,
+  isFed,
+  isTakeaway,
+  mealKey,
+  mealPlaceOf,
+  takeawayEaters,
+} from './attendance'
 
 /**
  * Личная норма на день с поправкой на еду вне дома: если Кирилл обедает в
@@ -101,7 +100,7 @@ export function dayNorms(household: Household, day: number, eaterId?: string): N
   const parts = eaters.map((eater) => {
     const full = dailyNorm(eater)
     const share = household.meals
-      .filter((slot) => eatsAtHome(eater, day, slot))
+      .filter((slot) => isFed(eater, day, slot))
       .reduce((sum, slot) => sum + (shares[slot] ?? 0), 0)
     return {
       kcal: Math.round(full.kcal * share),
@@ -127,7 +126,7 @@ export function slotTargets(household: Household): Record<string, number> {
  * по семье.
  */
 export function slotTargetOn(household: Household, slot: MealSlot, day: number): number {
-  const present = eatersAtHome(household, day, slot)
+  const present = fedEaters(household, day, slot)
   if (present.length === 0) return 0
   const share = slotShares(household.meals)[slot] ?? 0.3
   const sum = present.reduce((acc, e) => acc + dailyNorm(e).kcal * share, 0)
@@ -209,7 +208,7 @@ export function portionsFor(
   const perServing = recipeStats(recipe).kcal || 1
   return household.eaters.map((eater) => {
     // ест не дома — порции нет, значит и в закупку она не попадёт
-    if (!eatsAtHome(eater, day, slot)) return { eaterId: eater.id, factor: 0 }
+    if (!isFed(eater, day, slot)) return { eaterId: eater.id, factor: 0 }
     const target = dailyNorm(eater).kcal * (shares[slot] ?? 0.3)
     const raw = target / perServing
     return {
@@ -432,6 +431,24 @@ const MAX_RUN = 2
 /** Насколько кандидат может уступать лучшему, чтобы всё ещё попасть в жеребьёвку. */
 const NEAR_SCORE_MARGIN = 50
 
+/**
+ * Блюдо, которое едут есть в контейнере, должно продержаться хотя бы до
+ * обеда. Порог в днях холодильника — самый близкий признак: у смузи-боула и
+ * тоста с авокадо он равен одному дню, и это ровно те блюда, которые в сумке
+ * портятся.
+ *
+ * Это фильтр, а не штраф. Штрафом это и было сначала — и разнообразие его
+ * перевешивало: раз в неделю в контейнер всё равно попадал салат, который к
+ * полудню развалится. Выбор «повторить блюдо или взять несъедобное» решается
+ * в пользу повтора.
+ */
+const TAKEAWAY_MIN_FRIDGE_DAYS = 2
+
+/** Доедет ли блюдо до обеда в контейнере. */
+function travels(recipe: Recipe): boolean {
+  return recipe.fridgeDays >= TAKEAWAY_MIN_FRIDGE_DAYS
+}
+
 /** Свои рецепты добавляют не просто так — при прочих равных они идут первыми. */
 const CUSTOM_RECIPE_BONUS = 100
 
@@ -528,12 +545,20 @@ export function buildWeekMenu(
           continue
         }
         // этот приём пищи вся семья ест не дома — готовить нечего
-        if (eatersAtHome(household, day, slot).length === 0) {
+        if (fedEaters(household, day, slot).length === 0) {
           cursor++
           continue
         }
         const target = slotTargetOn(household, slot, day) || 500
-        const ranked = slotPool
+        // Кто-то берёт этот приём пищи с собой — значит, блюдо должно доехать.
+        // Это не вопрос предпочтения, а вопрос того, что человек откроет в
+        // обед: штрафа мало, разнообразие его перевешивало и раз в неделю
+        // ставило в контейнер салат, который к полудню развалится.
+        const takeaway = takeawayEaters(household, day, slot).length
+        const travelPool = takeaway > 0 ? slotPool.filter(travels) : slotPool
+        // выбора нет — блюдо всё равно нужно поставить, но об этом предупредим
+        const dayPool = travelPool.length > 0 ? travelPool : slotPool
+        const ranked = dayPool
           .map((recipe) => ({
             recipe,
             score: scoreRecipe(recipe, {
@@ -576,7 +601,10 @@ export function buildWeekMenu(
         for (let k = 0; k < MAX_RUN && cursor + k < segment.days.length; k++) {
           const eatDay = segment.days[cursor + k]
           if (pinnedAt.has(`${slot}:${eatDay}`)) break
-          if (eatersAtHome(household, eatDay, slot).length === 0) break
+          if (fedEaters(household, eatDay, slot).length === 0) break
+          // блюдо готовится на несколько дней — но в контейнер поедет только
+          // то, что дорогу переносит
+          if (takeawayEaters(household, eatDay, slot).length > 0 && !travels(best)) break
           const storage = storageFor(best, eatDay - segment.cookDay, household.kitchen.hasFreezer)
           if (!storage) break
           entries.push({
@@ -642,6 +670,31 @@ export function buildWeekMenu(
     (a, b) =>
       a.day - b.day || household.meals.indexOf(a.slot) - household.meals.indexOf(b.slot),
   )
+
+  // Контейнеры: их число ограничено, и «собрать три обеда с собой» при двух
+  // контейнерах — не план, а сюрприз утром вторника.
+  for (let day = 0; day < 7; day++) {
+    const need = containersOn(household, day)
+    if (need > household.kitchen.containers) {
+      warnings.push(
+        `${WEEKDAYS_FULL[day]}: с собой нужно ${need} ${plural(need, ['контейнер', 'контейнера', 'контейнеров'])}, а на кухне их ${household.kitchen.containers}.`,
+      )
+    }
+  }
+
+  // И отдельно — блюда, которые до обеда в сумке не доедут. Штраф в подборе
+  // мягкий: если выбора нет, блюдо всё равно встанет в меню, и тогда об этом
+  // нужно сказать, а не промолчать.
+  for (const entry of entries) {
+    const takeaway = takeawayEaters(household, entry.day, entry.slot)
+    if (takeaway.length === 0) continue
+    const recipe = recipeById(entry.recipeId)
+    if (!recipe || recipe.fridgeDays >= TAKEAWAY_MIN_FRIDGE_DAYS) continue
+    warnings.push(
+      `${WEEKDAYS_FULL[entry.day]}: «${recipe.title}» плохо переносит дорогу — на ${slotLabel(entry.slot)} с собой лучше взять что-то другое.`,
+    )
+  }
+
   return { menu: { weekStart: household.weekStart, seed, entries }, warnings }
 }
 
@@ -765,6 +818,9 @@ export function replacementOptions(
   const curScale = current ? portionScale(current, target) : 1
   const curMinutes = current ? totalMinutes(current) : 0
   const curHandsOn = current ? handsOnMinutes(current) : 0
+  // тот же фильтр, что и при сборке меню: в контейнер предлагаем только то,
+  // что доедет — иначе замена подсовывает салат на офисный обед
+  const mustTravel = takeawayEaters(household, entry.day, entry.slot).length > 0
 
   return allRecipes()
     .filter(
@@ -772,6 +828,7 @@ export function replacementOptions(
         r.slots.includes(entry.slot) &&
         isRecipeAllowed(r, household) &&
         r.id !== entry.recipeId &&
+        (!mustTravel || travels(r)) &&
         !usedToday.has(r.id) &&
         storageFor(r, entry.day - entry.cookDay, household.kitchen.hasFreezer) !== null,
     )

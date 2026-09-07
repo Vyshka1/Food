@@ -35,7 +35,7 @@ function household(patch: Partial<Household> = {}): Household {
     customAllergens: [],
     dislikes: [],
     bannedRecipes: [],
-    awayMeals: [],
+    mealPlaces: {},
     ratings: {},
   }
   return {
