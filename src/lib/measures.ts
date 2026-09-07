@@ -56,6 +56,19 @@ function pieceNoun(count: number, names: [string, string, string]): string {
   return plural(rounded, names)
 }
 
+/**
+ * То же округление, что и в подписи, но числом.
+ *
+ * Нужно там, где рядом стоят две записи об одном и том же количестве: состав
+ * блюда («320 г») и разбор упаковки («315 г сюда»). Разные округления одного
+ * числа человек читает как ошибку — и он прав.
+ */
+export function householdGrams(ing: Ingredient, qty: number): number {
+  if (qty <= 0) return 0
+  if (ing.unit === 'pcs') return Math.max(1, Math.ceil(qty - 0.001))
+  return roundTo(qty, qty < 100 ? GRAIN_STEP : 10)
+}
+
 export interface Measure {
   /** Как это назвать человеку: «½ луковицы», «1 ст. л.», «220 г». */
   text: string

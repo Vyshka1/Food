@@ -1043,6 +1043,27 @@ select {
   );
 }
 
+/* Что стало с упаковкой: три числа в столбик, а не совет одной строкой. */
+.leftover {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.leftover:last-child {
+  border-bottom: none;
+}
+
+.leftover__name {
+  font-weight: 600;
+}
+
+.leftover__rest {
+  color: var(--green-dark);
+}
+
 /* ── Сегодня ──────────────────────────────────────────────────────────── */
 .today-row {
   display: flex;

@@ -1,7 +1,9 @@
 import { CATEGORY_LABEL, CATEGORY_ORDER, INGREDIENT_BY_ID } from '../data/ingredients'
 import { recipeById } from '../data/recipeRegistry'
-import type { Household, Pantry, ShoppingLine, WeekMenu } from '../types'
+import type { Household, Pantry, Recipe, ShoppingLine, WeekMenu } from '../types'
 import { cookTasks } from './menu'
+import { portionWeight } from './nutrition'
+import { planBatch } from './batch'
 import { drinkShopping } from './drinks'
 import { extraShopping } from './extras'
 import { isAlways, stockOf } from './pantry'
@@ -14,6 +16,16 @@ export interface ShoppingList {
   lines: ShoppingLine[]
   /** Сумма без «уже есть дома». */
   total: number
+}
+
+/** Сколько долей рецепта реально ставится на плиту — с учётом партии. */
+function cookServings(recipe: Recipe, demandPortions: number, household: Household): number {
+  const plan = planBatch(recipe, {
+    neededGrams: portionWeight(recipe, demandPortions),
+    hasFreezer: household.kitchen.hasFreezer,
+    freezerRoomGrams: household.kitchen.containers * 400,
+  })
+  return plan ? plan.chosen.servings : demandPortions
 }
 
 export function buildShoppingList(
@@ -37,7 +49,14 @@ export function buildShoppingList(
   for (const task of cookTasks(menu)) {
     const recipe = recipeById(task.recipeId)
     if (!recipe) continue
-    const portions = task.portions
+    /*
+     * Покупаем на ту готовку, которую и советуем: партия часто больше
+     * потребности по меню — пачка фарша, полная форма, сковорода оладий.
+     * Пока список считался по потребности, карточка говорила «приготовим
+     * 1,2 кг», а продуктов покупалось на 1,0 кг: разойтись должно было прямо
+     * на кухне.
+     */
+    const portions = household ? cookServings(recipe, task.portions, household) : task.portions
     for (const item of recipe.items) {
       needed.set(item.ingredientId, (needed.get(item.ingredientId) ?? 0) + item.qty * portions)
     }
@@ -111,6 +130,10 @@ export function shoppingListText(
 
 export function formatQty(qty: number, unit: 'g' | 'ml' | 'pcs'): string {
   if (unit === 'pcs') return `${qty} шт`
-  if (qty >= 1000) return `${(qty / 1000).toFixed(qty % 1000 === 0 ? 0 : 1)} ${unit === 'g' ? 'кг' : 'л'}`
+  // «1,4 л», а не «1.4 л»: десятичная точка в русском тексте выглядит опечаткой
+  if (qty >= 1000) {
+    const big = (qty / 1000).toFixed(qty % 1000 === 0 ? 0 : 1).replace('.', ',')
+    return `${big} ${unit === 'g' ? 'кг' : 'л'}`
+  }
   return `${Math.round(qty)} ${unit === 'g' ? 'г' : 'мл'}`
 }

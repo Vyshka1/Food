@@ -1,14 +1,15 @@
+import { useState } from 'react'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { recipeById } from '../data/recipeRegistry'
 import type { MenuEntry } from '../types'
-import { recipeStats } from '../lib/nutrition'
 import { formatDuration } from '../lib/cookingPlan'
 import { WEEKDAYS_FULL } from '../lib/menu'
 import { plural } from '../lib/format'
-import { cookBatch } from '../lib/servings'
+import { cookAmountLabel, cookCard, weightLabel } from '../lib/cookCard'
+import type { CardLeftover } from '../lib/cookCard'
 import { householdQty } from '../lib/measures'
-import { batchReasonText, planBatch, yieldLabel } from '../lib/batch'
-import { leftoverAdvice, purchaseInfo } from '../lib/purchase'
+import { batchReasonText } from '../lib/batch'
+import { formatQty } from '../lib/shopping'
 import { useStore } from '../store'
 import { Sheet } from './ui'
 import { Icon } from './icons'
@@ -21,23 +22,51 @@ const STORAGE_LABEL: Record<string, string> = {
 }
 
 /**
- * Остаток, с которым надо что-то решать. Мешок риса и банка мёда лежат
- * месяцами и решения не требуют — писать про них «останется в запасе» значит
- * топить важное в шуме.
+ * Сколько раз это едят. Считаем приёмы пищи, а не тарелки: обед на двоих —
+ * это один приём, и «едим дважды» про него было бы неправдой.
  */
-function needsDecision(ingredientId: string): boolean {
-  const ing = INGREDIENT_BY_ID[ingredientId]
-  if (!ing) return false
-  return purchaseInfo(ing).openedFridgeDays <= 7
+function mealsLabel(meals: number, plates: number): string {
+  const head =
+    meals <= 1
+      ? 'Готовим один раз — на один приём пищи'
+      : meals === 2
+        ? 'Готовим один раз — едим дважды'
+        : `Готовим один раз — на ${meals} ${plural(meals, ['приём', 'приёма', 'приёмов'])} пищи`
+  return plates > meals ? `${head}, ${plates} ${plural(plates, ['порция', 'порции', 'порций'])}` : head
 }
 
-/** «1 закладку», «полторы закладки» — как это назвать человеку. */
-function scaleLabel(scale: number): string {
-  if (scale === 0.5) return 'ползакладки'
-  if (scale === 1) return '1 закладку'
-  if (scale === 1.5) return 'полторы закладки'
-  if (scale === 2) return '2 закладки'
-  return `${String(scale).replace('.', ',')} закладки`
+/**
+ * Что стало с упаковкой. Три числа вместо одного совета: сколько ушло сюда,
+ * сколько в другие блюда недели и сколько осталось на самом деле. Пристроенным
+ * остаток считается только тогда, когда для него есть конкретное блюдо или
+ * конкретное действие.
+ */
+function LeftoverLine({ line }: { line: CardLeftover }) {
+  const parts = [`${formatQty(line.usedHere, line.unit)} сюда`]
+  if (line.usedElsewhere > 0) parts.push(`${formatQty(line.usedElsewhere, line.unit)} в другие блюда`)
+  const source =
+    line.fromStock > 0
+      ? `дома ${formatQty(line.fromStock, line.unit)}${line.bought > 0 ? `, купить ${formatQty(line.bought, line.unit)}` : ''}`
+      : `куплено ${formatQty(line.bought, line.unit)}`
+  const placed =
+    line.placed?.kind === 'absorbed'
+      ? 'без остатка — хвост упаковки ушёл в это блюдо'
+      : line.placed?.kind === 'freeze'
+        ? `${formatQty(line.left, line.unit)} — заморозить сырым`
+        : line.left > 0
+          ? line.days > 30
+            ? `${formatQty(line.left, line.unit)} останется в запасе`
+            : `${formatQty(line.left, line.unit)} останется · использовать за ${line.days} дн`
+          : ''
+  return (
+    <div className="leftover">
+      <span className="leftover__name">{line.name}</span>
+      <span className="muted small">
+        {source}: {parts.join(', ')}
+      </span>
+      {placed && <span className="leftover__rest small">{placed}</span>}
+    </div>
+  )
 }
 
 export function RecipeSheet({
@@ -51,24 +80,17 @@ export function RecipeSheet({
   onSwap: () => void
   onBan: () => void
 }) {
-  const { household, menu, rateRecipe } = useStore()
+  const { household, menu, pantry, rateRecipe } = useStore()
+  const [showOther, setShowOther] = useState(false)
   const recipe = recipeById(entry.recipeId)
   if (!recipe || !household || !menu) return null
-  const stats = recipeStats(recipe)
+  const card = cookCard(menu, household, entry, pantry)
+  if (!card) return null
   const totalMinutes = recipe.steps.reduce((s, st) => s + st.minutes, 0)
-  /**
-   * Всё в карточке считается от одной готовки целиком: и продукты, и КБЖУ,
-   * и распределение. Три разных масштаба на одном экране — это рецепт
-   * приготовить вдвое меньше, чем купил.
-   */
-  const batch = cookBatch(menu, recipe, entry, household.eaters)
-  const scale = batch.totalFactor
-  /** Сколько удобно приготовить за раз — это не то же самое, сколько съедят. */
-  const plan = planBatch(recipe, {
-    neededGrams: batch.totalGrams,
-    hasFreezer: household.kitchen.hasFreezer,
-    freezerRoomGrams: household.kitchen.containers * 400,
-  })
+  const pieceName = recipe.batch?.pieceName
+  const amount = cookAmountLabel(card, pieceName)
+  /** Насколько раздача разошлась с нормой — это стоит сказать вслух. */
+  const offRows = card.rows.filter((r) => Math.abs(r.kcal - r.targetKcal) > r.targetKcal * 0.12)
 
   return (
     <Sheet onClose={onClose}>
@@ -79,103 +101,108 @@ export function RecipeSheet({
         <div>
           <div style={{ fontSize: 20, fontWeight: 700 }}>{recipe.title}</div>
           <div className="muted small">
-            {formatDuration(totalMinutes)} · ≈ {Math.round(stats.price * scale)} ₽ за всю готовку
+            {formatDuration(totalMinutes)} · продукты в блюде — примерно {card.usedPrice} ₽
           </div>
         </div>
       </div>
 
       <div className="card">
-        <div className="section-title">
-          Готовим {batch.containers}{' '}
-          {plural(batch.containers, ['контейнер', 'контейнера', 'контейнеров'])}
+        <div className="section-title">{mealsLabel(card.meals, card.rows.length)}</div>
+
+        <div className="ing-line">
+          <span className="muted">Приготовим</span>
+          <b>{amount}</b>
         </div>
         <div className="ing-line">
-          <span className="muted">Общий выход</span>
-          <b>примерно {batch.totalGrams} г</b>
+          <span className="muted">Нужно по меню</span>
+          <b>{card.neededGrams} г</b>
         </div>
-        {batch.rows.map((row, i) => (
+        {card.freezeGrams > 0 && (
+          <div className="ing-line">
+            <span className="muted">В морозилку</span>
+            <b>
+              {card.freezePieces
+                ? `${card.freezePieces} ${plural(card.freezePieces, pieceName ?? ['шт', 'шт', 'шт'])} · примерно ${card.freezeGrams} г`
+                : `примерно ${card.freezeGrams} г`}
+            </b>
+          </div>
+        )}
+        {card.unplacedGrams > 0 && (
+          <div className="ing-line">
+            <span className="muted">Останется</span>
+            <b>{card.unplacedGrams} г — доесть в ближайшие дни</b>
+          </div>
+        )}
+
+        {card.plan && card.reason !== 'fresh' && (
+          <p className="hint" style={{ marginTop: 4, marginBottom: 8 }}>
+            Потому что {batchReasonText(card.plan.batch)}.
+          </p>
+        )}
+
+        {card.alternatives.length > 0 && (
+          <>
+            <button className="btn btn--ghost btn--small" onClick={() => setShowOther((v) => !v)}>
+              {showOther ? 'Скрыть' : 'Изменить количество'}
+            </button>
+            {showOther &&
+              card.alternatives.map((option) => (
+                <div className="ing-line" key={option.scale}>
+                  <span>
+                    {option.pieces
+                      ? `${option.pieces} ${plural(option.pieces, pieceName ?? ['шт', 'шт', 'шт'])} · примерно ${weightLabel(option.grams)}`
+                      : `примерно ${weightLabel(option.grams)}`}
+                  </span>
+                  <b className="small">{option.note}</b>
+                </div>
+              ))}
+          </>
+        )}
+
+        {card.plan?.batch.source === 'derived' && (
+          <p className="hint" style={{ marginBottom: 0 }}>
+            Выход прикинут по составу и не проверен на кухне — поэтому только вес, без числа
+            изделий.
+          </p>
+        )}
+      </div>
+
+      <div className="card">
+        <div className="section-title">Кому и когда</div>
+        {card.rows.map((row, i) => (
           <div className="ing-line" key={`${row.day}-${row.eaterId}-${i}`}>
             <span>
               {WEEKDAYS_FULL[row.day]}
               {household.eaters.length > 1 ? ` · ${row.eaterName}` : ''}
             </span>
             <b>
-              {row.grams} г · {row.kcal} ккал
+              {row.pieces
+                ? `${row.pieces} ${plural(row.pieces, pieceName ?? ['шт', 'шт', 'шт'])} · ${row.kcal} ккал`
+                : `${row.grams} г · ${row.kcal} ккал`}
             </b>
           </div>
         ))}
         <p className="hint" style={{ marginBottom: 0 }}>
-          Одна готовка — на все эти приёмы пищи сразу. Каждому столько, сколько нужно по его
-          норме.
+          {offRows.length === 0
+            ? 'Каждому столько, сколько нужно по его норме.'
+            : `Изделия целые, поэтому ровно в норму не попасть: ${offRows
+                .map((r) => {
+                  const diff = r.kcal - r.targetKcal
+                  return `${r.eaterName} — ${diff > 0 ? '+' : '−'}${Math.abs(diff)} ккал`
+                })
+                .join(', ')}. Недобор проще закрыть овощами или фруктом, чем резать изделие пополам.`}
         </p>
       </div>
 
-      {plan && plan.batch.reason !== 'fresh' && (
-        <div className="card">
-          <div className="section-title">Сколько готовить</div>
-          <div className="ing-line">
-            <span className="muted">Нужно по меню</span>
-            <b>{batch.totalGrams} г</b>
-          </div>
-          <div className="ing-line">
-            <span className="muted">Рекомендуем приготовить</span>
-            <b>
-              {scaleLabel(plan.chosen.scale)} · {yieldLabel(plan.batch, plan.chosen)}
-            </b>
-          </div>
-          <p className="hint" style={{ marginTop: 4, marginBottom: 8 }}>
-            Потому что {batchReasonText(plan.batch)}.
-          </p>
-          {plan.chosen.freezeGrams > 0 && (
-            <div className="ing-line">
-              <span className="muted">В морозилку</span>
-              <b>примерно {plan.chosen.freezeGrams} г</b>
-            </div>
-          )}
-          {plan.chosen.packs
-            .filter((line) => line.leftover > 0 && needsDecision(line.ingredientId))
-            .map((line) => {
-              const advice = leftoverAdvice(INGREDIENT_BY_ID[line.ingredientId], line.leftover)
-              return advice ? (
-                <div className="ing-line" key={line.ingredientId}>
-                  <span className="muted">Остаток: {line.name.toLowerCase()}</span>
-                  <b className="small">{advice}</b>
-                </div>
-              ) : null
-            })}
-          {plan.alternatives.length > 0 && (
-            <>
-              <div className="section-title" style={{ marginTop: 12, marginBottom: 6 }}>
-                Можно иначе
-              </div>
-              {plan.alternatives.map((option) => (
-                <div className="ing-line" key={option.scale}>
-                  <span>{scaleLabel(option.scale)}</span>
-                  <b className="small">
-                    {yieldLabel(plan.batch, option)}
-                    {option.unplacedGrams > 0 && ` · ${option.unplacedGrams} г некуда`}
-                    {option.anchorLeftover > 40 &&
-                      ` · ${option.anchorLeftover} г сырого остатка`}
-                  </b>
-                </div>
-              ))}
-            </>
-          )}
-          {plan.batch.source === 'derived' && (
-            <p className="hint" style={{ marginBottom: 0 }}>
-              Выход прикинут по составу и не проверен на кухне — поэтому только вес, без числа
-              изделий.
-            </p>
-          )}
-        </div>
-      )}
-
       <div className="card card--soft">
         <div className="row row--between small">
-          <span className="muted">Белки · жиры · углеводы на всю готовку</span>
+          <span className="muted">Калории всей готовки</span>
+          <b>{card.stats.kcal} ккал</b>
+        </div>
+        <div className="row row--between small" style={{ marginTop: 6 }}>
+          <span className="muted">Белки · жиры · углеводы</span>
           <b>
-            {Math.round(stats.protein * scale)} · {Math.round(stats.fat * scale)} ·{' '}
-            {Math.round(stats.carbs * scale)} г
+            {card.stats.protein} · {card.stats.fat} · {card.stats.carbs} г
           </b>
         </div>
         <div className="row row--between small" style={{ marginTop: 6 }}>
@@ -186,10 +213,10 @@ export function RecipeSheet({
 
       <div className="card">
         <div className="section-title">Продукты на всю готовку</div>
-        {recipe.items.map((item) => {
+        {card.items.map((item) => {
           const ing = INGREDIENT_BY_ID[item.ingredientId]
           if (!ing) return null
-          const measure = householdQty(ing, item.qty * scale)
+          const measure = householdQty(ing, item.qty)
           return (
             <div className="ing-line" key={item.ingredientId}>
               <span>{ing.name}</span>
@@ -200,7 +227,20 @@ export function RecipeSheet({
             </div>
           )
         })}
+        <p className="hint" style={{ marginBottom: 0 }}>
+          Продукты в блюде — примерно {card.usedPrice} ₽. Эти же упаковки в магазине стоят около{' '}
+          {card.purchasePrice} ₽: они целые, и часть уйдёт в другие блюда недели и в запас.
+        </p>
       </div>
+
+      {card.leftovers.length > 0 && (
+        <div className="card">
+          <div className="section-title">Что станет с упаковками</div>
+          {card.leftovers.map((line) => (
+            <LeftoverLine line={line} key={line.ingredientId} />
+          ))}
+        </div>
+      )}
 
       <div className="card">
         <div className="section-title">Шаги</div>

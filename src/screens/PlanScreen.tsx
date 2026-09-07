@@ -215,6 +215,28 @@ export function PlanScreen({
         ))}
       </div>
 
+      {current.pack.length > 0 && (
+        <Card>
+          <div className="section-title">
+            <Icon name="fridge" size={16} />
+            Разложить по контейнерам
+          </div>
+          {current.pack.map((task) => (
+            <div className="ing-line" key={task.recipeId}>
+              <span>{task.title}</span>
+              <b>
+                {task.containers}{' '}
+                {plural(task.containers, ['контейнер', 'контейнера', 'контейнеров'])} ·{' '}
+                {task.forDays.map((d) => WEEKDAYS[d]).join(', ')}
+              </b>
+            </div>
+          ))}
+          <p className="hint" style={{ marginBottom: 0 }}>
+            Сегодняшнюю порцию раскладывать незачем — её едят с тарелки.
+          </p>
+        </Card>
+      )}
+
       {current.freeze.length > 0 && (
         <Card>
           <div className="section-title">
