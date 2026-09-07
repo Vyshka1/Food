@@ -1,10 +1,24 @@
 import { useMemo } from 'react'
 import { CATEGORY_LABEL, CATEGORY_ORDER } from '../data/ingredients'
-import type { IngredientCategory } from '../types'
+import type { IngredientCategory, ShoppingLine } from '../types'
 import { buildShoppingList, formatQty } from '../lib/shopping'
 import { useStore } from '../store'
 import { Card } from '../components/ui'
 import { Icon } from '../components/icons'
+
+/**
+ * Сколько останется от вскрытой упаковки. Пачка фарша 500 г при нужных 275 г
+ * — это не «купить 500», а «275 в дело и 225 куда-то деть». Молчать об этом
+ * значит перекладывать на человека вопрос, который создало приложение.
+ */
+function leftover(line: ShoppingLine): string | null {
+  const rest = line.buy - line.needed
+  if (line.staple || rest <= 0) return null
+  // мелочь в пределах округления остатком не считается
+  const share = rest / Math.max(1, line.buy)
+  if (share < 0.15 || (line.unit !== 'pcs' && rest < 40)) return null
+  return formatQty(rest, line.unit)
+}
 
 export function ProductsScreen({ onShoppingMode }: { onShoppingMode: () => void }) {
   const { menu, household, atHome, bought, toggleAtHome, toggleBought } = useStore()
@@ -97,6 +111,12 @@ export function ProductsScreen({ onShoppingMode }: { onShoppingMode: () => void 
                   <span className="muted small">
                     нужно {formatQty(line.needed, line.unit)}
                     {line.buy !== line.needed && ` · купить ${formatQty(line.buy, line.unit)}`}
+                    {leftover(line) && (
+                      <>
+                        {' · '}
+                        <span className="product__left">останется {leftover(line)}</span>
+                      </>
+                    )}
                   </span>
                 </span>
                 <button

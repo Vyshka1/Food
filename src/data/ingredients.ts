@@ -6,6 +6,8 @@ interface Opts {
   pack?: number
   staple?: boolean
   pieceGrams?: number
+  tbspGrams?: number
+  pieceName?: [string, string, string]
 }
 
 /** Ккал/БЖУ — на 100 г, 100 мл или 1 шт. Цена — за 1000 г, 1000 мл или 1 шт. */
@@ -34,23 +36,25 @@ function ing(
     pack: opts.pack,
     staple: opts.staple,
     pieceGrams: opts.pieceGrams,
+    tbspGrams: opts.tbspGrams,
+    pieceName: opts.pieceName,
   }
 }
 
 export const INGREDIENTS: Ingredient[] = [
   // Овощи и зелень
-  ing('onion', 'Лук', 'g', 'veg', [41, 1.4, 0.2, 8.2], 48, { tags: ['onion'] }),
-  ing('garlic', 'Чеснок', 'g', 'veg', [143, 6.5, 0.5, 26], 300, { tags: ['garlic'] }),
-  ing('carrot', 'Морковь', 'g', 'veg', [35, 1.3, 0.1, 6.9], 31),
-  ing('potato', 'Картофель', 'g', 'veg', [77, 2, 0.4, 16.3], 50),
-  ing('tomato', 'Помидор', 'g', 'veg', [20, 1.1, 0.2, 3.7], 119),
-  ing('cucumber', 'Огурец', 'g', 'veg', [14, 0.8, 0.1, 2.5], 140),
-  ing('bell_pepper', 'Болгарский перец', 'g', 'veg', [27, 1.3, 0.1, 5.3], 275),
-  ing('zucchini', 'Кабачок', 'g', 'veg', [24, 0.6, 0.3, 4.6], 100),
+  ing('onion', 'Лук', 'g', 'veg', [41, 1.4, 0.2, 8.2], 48, { tags: ['onion'], pieceGrams: 90, pieceName: ['луковица', 'луковицы', 'луковиц'] }),
+  ing('garlic', 'Чеснок', 'g', 'veg', [143, 6.5, 0.5, 26], 300, { tags: ['garlic'], pieceGrams: 4, pieceName: ['зубчик', 'зубчика', 'зубчиков'] }),
+  ing('carrot', 'Морковь', 'g', 'veg', [35, 1.3, 0.1, 6.9], 31, { pieceGrams: 85, pieceName: ['морковка', 'морковки', 'морковок'] }),
+  ing('potato', 'Картофель', 'g', 'veg', [77, 2, 0.4, 16.3], 50, { pieceGrams: 110, pieceName: ['картофелина', 'картофелины', 'картофелин'] }),
+  ing('tomato', 'Помидор', 'g', 'veg', [20, 1.1, 0.2, 3.7], 119, { pieceGrams: 110, pieceName: ['помидор', 'помидора', 'помидоров'] }),
+  ing('cucumber', 'Огурец', 'g', 'veg', [14, 0.8, 0.1, 2.5], 140, { pieceGrams: 120, pieceName: ['огурец', 'огурца', 'огурцов'] }),
+  ing('bell_pepper', 'Болгарский перец', 'g', 'veg', [27, 1.3, 0.1, 5.3], 275, { pieceGrams: 150, pieceName: ['перец', 'перца', 'перцев'] }),
+  ing('zucchini', 'Кабачок', 'g', 'veg', [24, 0.6, 0.3, 4.6], 100, { pieceGrams: 300, pieceName: ['кабачок', 'кабачка', 'кабачков'] }),
   ing('cabbage', 'Белокочанная капуста', 'g', 'veg', [28, 1.8, 0.1, 4.7], 28),
   ing('broccoli', 'Брокколи', 'g', 'veg', [34, 3, 0.4, 4.2], 350),
   ing('cauliflower', 'Цветная капуста', 'g', 'veg', [30, 2.5, 0.3, 4.2], 220),
-  ing('beet', 'Свёкла', 'g', 'veg', [43, 1.6, 0.2, 8.8], 45),
+  ing('beet', 'Свёкла', 'g', 'veg', [43, 1.6, 0.2, 8.8], 45, { pieceGrams: 150, pieceName: ['свёкла', 'свёклы', 'свёкол'] }),
   ing('pumpkin', 'Тыква', 'g', 'veg', [26, 1, 0.1, 4.4], 90),
   ing('spinach', 'Шпинат', 'g', 'veg', [23, 2.9, 0.4, 2], 600, { pack: 200 }),
   ing('greens', 'Укроп и петрушка', 'g', 'veg', [38, 2.5, 0.5, 6.3], 900, { pack: 50 }),
@@ -62,17 +66,17 @@ export const INGREDIENTS: Ingredient[] = [
   ing('corn', 'Кукуруза консервированная', 'g', 'veg', [58, 2.2, 0.4, 11.2], 300, { pack: 340 }),
   ing('avocado', 'Авокадо', 'pcs', 'veg', [230, 2.8, 21, 3], 130, { pieceGrams: 200 }),
   ing('cherry_tomato', 'Черри', 'g', 'veg', [20, 1.1, 0.2, 3.7], 500, { pack: 250 }),
-  ing('eggplant', 'Баклажан', 'g', 'veg', [24, 1.2, 0.2, 4.5], 200, { tags: ['eggplant'] }),
+  ing('eggplant', 'Баклажан', 'g', 'veg', [24, 1.2, 0.2, 4.5], 200, { tags: ['eggplant'], pieceGrams: 250, pieceName: ['баклажан', 'баклажана', 'баклажанов'] }),
   ing('olives', 'Оливки', 'g', 'veg', [115, 0.8, 10.7, 6.3], 900, { tags: ['olives'], pack: 300 }),
   ing('cilantro', 'Кинза', 'g', 'veg', [23, 2.1, 0.5, 3.7], 900, { tags: ['cilantro'], pack: 50 }),
   ing('green_onion', 'Зелёный лук', 'g', 'veg', [32, 1.8, 0.1, 6.5], 700, { tags: ['onion'], pack: 100 }),
   ing('ginger', 'Имбирь', 'g', 'veg', [80, 1.8, 0.8, 15.8], 600, { pack: 100 }),
-  ing('chili', 'Перец чили', 'g', 'veg', [40, 2, 0.2, 9.5], 800, { tags: ['spicy'], pack: 50 }),
+  ing('chili', 'Перец чили', 'g', 'veg', [40, 2, 0.2, 9.5], 800, { tags: ['spicy'], pack: 50, pieceGrams: 15, pieceName: ['стручок', 'стручка', 'стручков'] }),
 
   // Фрукты и ягоды
   ing('apple', 'Яблоко', 'pcs', 'fruit', [72, 0.4, 0.2, 17], 25, { pieceGrams: 180 }),
   ing('banana', 'Банан', 'pcs', 'fruit', [105, 1.3, 0.4, 27], 25, { pieceGrams: 120 }),
-  ing('lemon', 'Лимон', 'g', 'fruit', [29, 1.1, 0.3, 9.3], 250),
+  ing('lemon', 'Лимон', 'g', 'fruit', [29, 1.1, 0.3, 9.3], 250, { pieceGrams: 100, pieceName: ['лимон', 'лимона', 'лимонов'] }),
   ing('orange', 'Апельсин', 'pcs', 'fruit', [62, 1.2, 0.2, 15.4], 40, { pieceGrams: 150 }),
   ing('pear', 'Груша', 'pcs', 'fruit', [101, 0.6, 0.2, 27], 45, { pieceGrams: 180 }),
   ing('berries', 'Ягоды замороженные', 'g', 'fruit', [50, 0.8, 0.4, 10], 450, { pack: 300 }),
@@ -111,10 +115,12 @@ export const INGREDIENTS: Ingredient[] = [
   ing('sour_cream', 'Сметана 15%', 'g', 'dairy', [162, 2.6, 15, 3.6], 350, {
     allergens: ['lactose'],
     pack: 300,
+    tbspGrams: 25,
   }),
   ing('butter', 'Масло сливочное', 'g', 'dairy', [748, 0.5, 82.5, 0.8], 1100, {
     allergens: ['lactose'],
     pack: 180,
+    tbspGrams: 20,
   }),
   ing('cheese', 'Сыр твёрдый', 'g', 'dairy', [364, 24, 29, 0.3], 900, { allergens: ['lactose'], pack: 200 }),
   ing('cream_10', 'Сливки 10%', 'ml', 'dairy', [118, 3, 10, 4], 300, { allergens: ['lactose'], pack: 500 }),
@@ -131,7 +137,7 @@ export const INGREDIENTS: Ingredient[] = [
   ing('pasta', 'Паста', 'g', 'grain', [344, 10.4, 1.1, 71.5], 180, { allergens: ['gluten'], pack: 400 }),
   ing('bulgur', 'Булгур', 'g', 'grain', [342, 12.3, 1.3, 63.4], 200, { allergens: ['gluten'], pack: 500 }),
   ing('quinoa', 'Киноа', 'g', 'grain', [368, 14.1, 6.1, 57.2], 700, { pack: 400 }),
-  ing('flour', 'Мука', 'g', 'grain', [342, 10.3, 1.1, 70.6], 70, { allergens: ['gluten'], pack: 1000 }),
+  ing('flour', 'Мука', 'g', 'grain', [342, 10.3, 1.1, 70.6], 70, { allergens: ['gluten'], pack: 1000, tbspGrams: 30 }),
   ing('bread', 'Хлеб цельнозерновой', 'g', 'bakery', [229, 8.5, 3.3, 40], 200, {
     allergens: ['gluten'],
     pack: 400,
@@ -140,6 +146,7 @@ export const INGREDIENTS: Ingredient[] = [
   ing('breadcrumbs', 'Панировочные сухари', 'g', 'grain', [347, 11, 2, 72], 200, {
     allergens: ['gluten'],
     pack: 200,
+    tbspGrams: 15,
   }),
 
   // Бобовые
@@ -158,42 +165,43 @@ export const INGREDIENTS: Ingredient[] = [
     allergens: ['peanut'],
     pack: 300,
   }),
-  ing('sesame', 'Кунжут', 'g', 'nuts', [573, 17.7, 49.7, 23.4], 700, { pack: 100 }),
+  ing('sesame', 'Кунжут', 'g', 'nuts', [573, 17.7, 49.7, 23.4], 700, { pack: 100, tbspGrams: 10 }),
   ing('pumpkin_seeds', 'Тыквенные семечки', 'g', 'nuts', [559, 30.2, 49, 10.7], 900, { pack: 150 }),
 
   // Бакалея
-  ing('olive_oil', 'Оливковое масло', 'ml', 'pantry', [884, 0, 100, 0], 900, { staple: true, pack: 500 }),
+  ing('olive_oil', 'Оливковое масло', 'ml', 'pantry', [884, 0, 100, 0], 900, { staple: true, pack: 500, tbspGrams: 17 }),
   ing('sunflower_oil', 'Подсолнечное масло', 'ml', 'pantry', [899, 0, 99.9, 0], 150, {
     staple: true,
     pack: 1000,
+    tbspGrams: 17,
   }),
   ing('salt', 'Соль', 'g', 'pantry', [0, 0, 0, 0], 30, { staple: true, pack: 1000 }),
   ing('pepper', 'Чёрный перец', 'g', 'pantry', [251, 10, 3.3, 38.3], 2000, { staple: true, pack: 50 }),
   ing('paprika', 'Паприка', 'g', 'pantry', [282, 14.1, 12.9, 34], 1500, { staple: true, pack: 50 }),
   ing('curry', 'Карри', 'g', 'pantry', [325, 12.7, 13.8, 58.2], 2000, { staple: true, pack: 50 }),
   ing('dried_herbs', 'Прованские травы', 'g', 'pantry', [265, 9, 7, 40], 2000, { staple: true, pack: 20 }),
-  ing('vinegar', 'Уксус', 'ml', 'pantry', [18, 0, 0, 0.4], 200, { staple: true, pack: 500 }),
+  ing('vinegar', 'Уксус', 'ml', 'pantry', [18, 0, 0, 0.4], 200, { staple: true, pack: 500, tbspGrams: 15 }),
   ing('baking_powder', 'Разрыхлитель', 'g', 'pantry', [80, 0, 0, 20], 1500, { staple: true, pack: 10 }),
-  ing('sugar', 'Сахар', 'g', 'pantry', [399, 0, 0, 99.8], 80, { staple: true, tags: ['sugar'], pack: 900 }),
-  ing('honey', 'Мёд', 'g', 'pantry', [304, 0.3, 0, 82.4], 900, { tags: ['sugar'], pack: 250 }),
+  ing('sugar', 'Сахар', 'g', 'pantry', [399, 0, 0, 99.8], 80, { staple: true, tags: ['sugar'], pack: 900, tbspGrams: 25 }),
+  ing('honey', 'Мёд', 'g', 'pantry', [304, 0.3, 0, 82.4], 900, { tags: ['sugar'], pack: 250, tbspGrams: 30 }),
   ing('soy_sauce', 'Соевый соус', 'ml', 'pantry', [53, 8.1, 0.6, 4.1], 400, {
     allergens: ['soy'],
     pack: 200,
   }),
-  ing('mustard', 'Горчица', 'g', 'pantry', [143, 9.9, 12.7, 5.3], 400, { pack: 180 }),
-  ing('tomato_paste', 'Томатная паста', 'g', 'pantry', [82, 4.3, 0.5, 18.9], 250, { pack: 250 }),
+  ing('mustard', 'Горчица', 'g', 'pantry', [143, 9.9, 12.7, 5.3], 400, { pack: 180, tbspGrams: 20 }),
+  ing('tomato_paste', 'Томатная паста', 'g', 'pantry', [82, 4.3, 0.5, 18.9], 250, { pack: 250, tbspGrams: 30 }),
   ing('canned_tomatoes', 'Томаты в собственном соку', 'g', 'pantry', [32, 1.6, 0.2, 5.2], 250, {
     pack: 400,
   }),
   ing('coconut_milk', 'Кокосовое молоко', 'ml', 'pantry', [197, 2, 21, 2.8], 400, { pack: 400 }),
-  ing('cocoa', 'Какао', 'g', 'pantry', [228, 19.6, 13.7, 38.4], 1200, { pack: 100 }),
+  ing('cocoa', 'Какао', 'g', 'pantry', [228, 19.6, 13.7, 38.4], 1200, { pack: 100, tbspGrams: 12 }),
   ing('vegetable_broth', 'Овощной бульон (кубик)', 'g', 'pantry', [200, 8, 12, 15], 1500, {
     staple: true,
     pack: 60,
   }),
   // Добавлено для расширения базы рецептов
-  ing('sweet_potato', 'Батат', 'g', 'veg', [86, 1.6, 0.1, 20.1], 250),
-  ing('leek', 'Лук-порей', 'g', 'veg', [61, 2, 0.3, 14.2], 300, { tags: ['onion'] }),
+  ing('sweet_potato', 'Батат', 'g', 'veg', [86, 1.6, 0.1, 20.1], 250, { pieceGrams: 200, pieceName: ['батат', 'батата', 'бататов'] }),
+  ing('leek', 'Лук-порей', 'g', 'veg', [61, 2, 0.3, 14.2], 300, { tags: ['onion'], pieceGrams: 200, pieceName: ['стебель', 'стебля', 'стеблей'] }),
   ing('mint', 'Мята', 'g', 'veg', [70, 3.8, 0.9, 14.9], 900, { pack: 30 }),
   ing('basil', 'Базилик', 'g', 'veg', [23, 3.2, 0.6, 2.7], 900, { pack: 50 }),
   ing('pollock', 'Минтай', 'g', 'fish', [72, 15.9, 0.9, 0], 400, { allergens: ['fish'], pack: 500 }),
@@ -203,7 +211,7 @@ export const INGREDIENTS: Ingredient[] = [
   ing('rice_noodles', 'Рисовая лапша', 'g', 'grain', [364, 6, 0.6, 82], 300, { pack: 300 }),
   ing('buckwheat_flour', 'Гречневая мука', 'g', 'grain', [335, 13, 3, 62], 200, { pack: 500 }),
   ing('cornmeal', 'Кукурузная крупа', 'g', 'grain', [328, 8.3, 1.2, 71], 120, { pack: 600 }),
-  ing('chia', 'Семена чиа', 'g', 'nuts', [486, 16.5, 30.7, 42.1], 1400, { pack: 200 }),
+  ing('chia', 'Семена чиа', 'g', 'nuts', [486, 16.5, 30.7, 42.1], 1400, { pack: 200, tbspGrams: 12 }),
   ing('cinnamon', 'Корица', 'g', 'pantry', [247, 4, 1.2, 27.5], 2000, { staple: true, pack: 30 }),
 ]
 
