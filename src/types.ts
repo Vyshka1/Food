@@ -178,6 +178,21 @@ export interface DailyExtra {
   days: number[]
 }
 
+/**
+ * Чего мы хотим от пересборки. «Новое меню» — слишком грубая кнопка: чаще
+ * человеку не нужно всё новое, ему нужно дешевле, быстрее или из того, что
+ * уже лежит дома.
+ */
+export type MenuGoal = 'balanced' | 'cheaper' | 'faster' | 'stock' | 'variety'
+
+export const MENU_GOALS: { id: MenuGoal; label: string; hint: string }[] = [
+  { id: 'balanced', label: 'Просто иначе', hint: 'те же правила, другие блюда' },
+  { id: 'cheaper', label: 'Дешевле', hint: 'поднимем недорогие блюда' },
+  { id: 'faster', label: 'Быстрее', hint: 'меньше времени у плиты' },
+  { id: 'stock', label: 'Из запасов', hint: 'соберём из того, что уже дома' },
+  { id: 'variety', label: 'Разнообразнее', hint: 'меньше повторов за неделю' },
+]
+
 export type MealSlot = 'breakfast' | 'lunch' | 'dinner' | 'snack'
 
 export const MEAL_SLOTS: { id: MealSlot; label: string; icon: 'sun' | 'leaf' | 'moon' | 'apple' }[] =

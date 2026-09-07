@@ -9,6 +9,7 @@ import type {
   Kitchen,
   MealPlace,
   MealSlot,
+  MenuGoal,
   OilChoice,
   RepeatRules,
   Recipe,
@@ -107,9 +108,21 @@ export function defaultHousehold(): Household {
   }
 }
 
+/** Что именно пересобрать и ради чего. */
+export type RegenerateScope =
+  | { kind: 'week' }
+  | { kind: 'day'; day: number }
+  | { kind: 'meal'; day: number; slot: MealSlot }
+
+export interface RegenerateRequest {
+  scope?: RegenerateScope
+  goal?: MenuGoal
+  seed?: number
+}
+
 interface Store extends AppState {
   saveHousehold: (household: Household) => void
-  regenerate: (seed?: number) => void
+  regenerate: (request?: RegenerateRequest) => void
   swapDish: (entryId: string, recipeId: string) => void
   togglePin: (entryId: string) => void
   cycleMealPlace: (eaterId: string, day: number, slot: MealSlot) => void
@@ -307,17 +320,47 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  /** Пересборка недели: закреплённые блюда переживают её без изменений. */
-  const regenerate = useCallback((seed?: number) => {
+  /**
+   * Пересборка. Закреплённые блюда переживают её без изменений, а всё
+   * остальное зависит от того, что человек попросил: пересобрать неделю, один
+   * день или один приём пищи — и с какой целью.
+   *
+   * Частичная пересборка устроена через то же закрепление: всё, что человек
+   * не просил менять, на время сборки считается закреплённым. Отдельного
+   * алгоритма «пересобрать день» нет и не нужно — иначе он разошёлся бы с
+   * основным на первом же изменении правил.
+   */
+  const regenerate = useCallback((request: RegenerateRequest = {}) => {
     setState((prev) => {
       if (!prev.household) return prev
-      const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
+      const entries = prev.menu?.entries ?? []
+      const scope = request.scope ?? { kind: 'week' }
+      const keep = entries
+        .filter((e) => {
+          if (e.pinned) return true
+          if (scope.kind === 'day') return e.day !== scope.day
+          if (scope.kind === 'meal') return e.day !== scope.day || e.slot !== scope.slot
+          return false
+        })
+        .map((e) => ({ ...e, pinned: true }))
       const { menu, warnings } = buildWeekMenu(
         prev.household,
-        seed ?? Math.floor(Math.random() * 1e9),
+        request.seed ?? Math.floor(Math.random() * 1e9),
         keep,
+        { goal: request.goal, atHome: prev.atHome },
       )
-      return { ...prev, menu, warnings, atHome: prev.atHome, bought: [] }
+      // Закрепление на время сборки — приём, а не решение человека: возвращаем
+      // отметки такими, какими они были, иначе после пересборки дня вся
+      // неделя оказалась бы закреплённой.
+      const pinned = new Set(entries.filter((e) => e.pinned).map((e) => e.id))
+      const restored = menu.entries.map((e) => ({ ...e, pinned: pinned.has(e.id) || undefined }))
+      return {
+        ...prev,
+        menu: { ...menu, entries: restored },
+        warnings,
+        atHome: prev.atHome,
+        bought: scope.kind === 'week' ? [] : prev.bought,
+      }
     })
   }, [])
 

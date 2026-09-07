@@ -9,6 +9,7 @@ import { portionWeight, recipeStats } from '../lib/nutrition'
 import { useStore } from '../store'
 import { CalorieRing, Card, Warnings } from '../components/ui'
 import { RecipeSheet } from '../components/RecipeSheet'
+import { RebuildSheet } from '../components/RebuildSheet'
 import { Icon } from '../components/icons'
 import { DishThumb } from '../components/DishImage'
 import { plural } from '../lib/format'
@@ -28,12 +29,13 @@ function todayIndex(weekStart: string): number {
 }
 
 export function MenuScreen() {
-  const { household, menu, warnings, regenerate, swapDish, banRecipe, togglePin, setEntryStatus } =
+  const { household, menu, warnings, swapDish, banRecipe, togglePin, setEntryStatus } =
     useStore()
   const [day, setDay] = useState(() => (menu ? todayIndex(menu.weekStart) : 0))
   const [openEntry, setOpenEntry] = useState<MenuEntry | null>(null)
   const [note, setNote] = useState('')
   const [replacing, setReplacing] = useState<MenuEntry | null>(null)
+  const [rebuilding, setRebuilding] = useState(false)
   /** null — вся семья, иначе тарелка одного едока. */
   const [who, setWho] = useState<string | null>(null)
 
@@ -135,7 +137,7 @@ export function MenuScreen() {
               : `меню на ${household.eaters.length} ${plural(household.eaters.length, ['человек', 'человека', 'человек'])} · ${household.cookingDays.length} ${plural(household.cookingDays.length, ['день', 'дня', 'дней'])} готовки`}
           </div>
         </div>
-        <button className="btn btn--soft btn--small" onClick={() => regenerate()}>
+        <button className="btn btn--soft btn--small" onClick={() => setRebuilding(true)}>
           Пересобрать
         </button>
       </div>
@@ -333,6 +335,8 @@ export function MenuScreen() {
           </div>
         )
       })}
+
+      {rebuilding && <RebuildSheet day={day} onClose={() => setRebuilding(false)} />}
 
       {openEntry && (
         <RecipeSheet
