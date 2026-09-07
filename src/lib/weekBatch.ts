@@ -3,7 +3,7 @@ import type { Household, Pantry, WeekMenu } from '../types'
 import { planBatch } from './batch'
 import type { BatchPlan, BatchPreference } from './batch'
 import { cookTasks } from './menu'
-import { portionWeight } from './nutrition'
+import { cookedGrams } from './nutrition'
 import { freezerRoomGrams } from './pantry'
 
 export interface WeekBatchOptions {
@@ -40,7 +40,7 @@ export function planWeekBatches(
     const recipe = recipeById(task.recipeId)
     if (!recipe) continue
     const plan = planBatch(recipe, {
-      neededGrams: portionWeight(recipe, task.portions),
+      neededGrams: cookedGrams(recipe, task.portions),
       hasFreezer: household.kitchen.hasFreezer,
       freezerRoomGrams: room,
       prefer: options.prefer,

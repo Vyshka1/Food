@@ -1,6 +1,7 @@
 import type { Recipe, RecipeBatch } from '../types'
-import { INGREDIENT_BY_ID } from '../data/ingredients'
+import { INGREDIENT_BY_ID, ingredientGrams } from '../data/ingredients'
 import { MEAT_PACK_PREFERRED, purchaseInfo } from './purchase'
+import { COOK_LOSS, rawGramsPerServing } from './nutrition'
 
 /**
  * Базовая закладка рецепта.
@@ -52,12 +53,6 @@ function keepsWell(recipe: Recipe): boolean {
   return recipe.freezable || recipe.fridgeDays >= 3
 }
 
-/**
- * Доля веса, теряемая при готовке. Бытовая оценка: мясо и рыба ужариваются
- * заметно, крупы и макароны наоборот набирают воду, но её мы в вес закладки
- * не считаем — считаем сырьё.
- */
-const COOK_LOSS = 0.12
 
 /** Главный неудобно делимый продукт: самый «дорогой и фасованный» в рецепте. */
 export function anchorIngredient(recipe: Recipe): string | undefined {
@@ -71,23 +66,12 @@ export function anchorIngredient(recipe: Recipe): string | undefined {
     if (purchaseInfo(ing).openedFridgeDays > ANCHOR_MAX_OPENED_DAYS) continue
     // среди подходящих категорий выбираем более приоритетную, при равенстве —
     // ту, которой в блюде больше по весу
-    const grams = ing.unit === 'pcs' ? item.qty * (ing.pieceGrams ?? 50) : item.qty
+    const grams = ingredientGrams(ing, item.qty)
     if (!best || rank < best.rank || (rank === best.rank && grams > best.grams)) {
       best = { id: item.ingredientId, rank, grams }
     }
   }
   return best?.id
-}
-
-/** Приблизительный вес сырья одной доли рецепта, г. */
-export function rawGramsPerServing(recipe: Recipe): number {
-  let grams = 0
-  for (const item of recipe.items) {
-    const ing = INGREDIENT_BY_ID[item.ingredientId]
-    if (!ing) continue
-    grams += ing.unit === 'pcs' ? item.qty * (ing.pieceGrams ?? 50) : item.qty
-  }
-  return grams
 }
 
 /**
@@ -106,7 +90,7 @@ export function baseScaleOf(recipe: Recipe, anchorId: string | undefined): numbe
   if (info.form === 'weight') return 1
   const pack = info.preferredPack ?? info.packSizes[0] ?? MEAT_PACK_PREFERRED
   if (!pack) return 1
-  const perServing = ing.unit === 'pcs' ? item.qty * (ing.pieceGrams ?? 50) : item.qty
+  const perServing = ingredientGrams(ing, item.qty)
   const scale = pack / perServing
   // закладка не должна быть абсурдной: пачка творога 300 г при 30 г на порцию
   // это десять долей, и такое блюдо просто масштабируется свободно

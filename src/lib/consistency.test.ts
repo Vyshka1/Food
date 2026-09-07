@@ -7,8 +7,8 @@ import { buildWeekMenu, cookTasks, defaultRepeats, totalPortions } from './menu'
 import { buildCookingPlans } from './cookingPlan'
 import { cookCard } from './cookCard'
 import { defaultOils } from './oil'
-import { portionWeight, recipeStats } from './nutrition'
-import { rawGramsPerServing } from './batchInfo'
+import { COOK_LOSS, cookedGrams, cookedYieldPerServing, rawGrams, recipeStats } from './nutrition'
+import { INGREDIENTS, pieceWeight } from '../data/ingredients'
 import { addFreezer, emptyPantry, setStock } from './pantry'
 import { packPlan, purchaseInfo } from './purchase'
 import { buildShoppingList } from './shopping'
@@ -98,47 +98,59 @@ function stockedPantry(): Pantry {
 }
 
 describe('шкала граммов', () => {
-  it('«вес порции» и «сырьё на долю» — это одно и то же число', () => {
+  it('вес штуки не выдумывается', () => {
     /*
-     * portionWeight и rawGramsPerServing складывают одно и то же: сырые
-     * количества состава. Отличаются только запасным весом штуки (0 против 50).
-     * Пока это два имени одной величины, их легко перепутать со третьей —
-     * выходом готового блюда.
+     * Раньше запасной вес штуки стоял в двух модулях и был разным: ноль в
+     * расчёте веса порции и пятьдесят граммов в расчёте закладки. Один и тот же
+     * банан весил по-разному в зависимости от того, кто спрашивал.
      */
-    let worst = 0
-    for (const recipe of RECIPES) {
-      const raw = rawGramsPerServing(recipe)
-      if (raw <= 0) continue
-      worst = Math.max(worst, Math.abs(portionWeight(recipe, 1) - raw) / raw)
+    for (const ing of INGREDIENTS) {
+      if (ing.unit !== 'pcs') continue
+      expect(() => pieceWeight(ing), ing.id).not.toThrow()
+      expect(pieceWeight(ing), ing.id).toBeGreaterThan(0)
     }
-    expect(worst).toBeLessThan(0.05)
+    expect(() => pieceWeight({ ...INGREDIENTS[0], unit: 'pcs', pieceGrams: undefined })).toThrow()
   })
 
-  it('снимок: потребность считается в сыром весе, а выход — в готовом', () => {
+  it('потребность и выход партии считаются в одной шкале', () => {
     /*
-     * Здесь и находится корень расхождений. `place()` сравнивает выход партии
-     * (готовое) с потребностью по меню (сырьё), поэтому потребность завышена
-     * примерно на восьмую часть. Проверка держит замер, а не одобряет его:
-     * когда потребность переедет в готовый вес, отношение станет единицей.
+     * Главный инвариант этой переработки. Состав рецепта задан в сыром весе, а
+     * партия — в готовом; пока `place()` сравнивал одно с другим напрямую,
+     * потребность была завышена примерно на восьмую часть, и система честно
+     * доготавливала лишнее.
      */
-    let sum = 0
-    let n = 0
     for (const recipe of RECIPES) {
       const batch = recipe.batch
       if (!batch || batch.source !== 'verified') continue
-      const cookedPerServing = batch.yieldGrams / (batch.baseScale || 1)
-      const raw = portionWeight(recipe, 1)
-      if (raw <= 0) continue
-      sum += cookedPerServing / raw
-      n++
+      const fromDemandSide = cookedGrams(recipe, batch.baseScale)
+      expect(
+        Math.abs(fromDemandSide - batch.yieldGrams),
+        `${recipe.title}: потребность ${fromDemandSide} против выхода ${batch.yieldGrams}`,
+      ).toBeLessThanOrEqual(5)
     }
-    const ratio = sum / n
+  })
+
+  it('готовое легче сырого, и разница берётся из выверенных данных', () => {
+    let verified = 0
+    let derived = 0
+    let sum = 0
+    for (const recipe of RECIPES) {
+      const cooked = cookedYieldPerServing(recipe)
+      const raw = rawGrams(recipe, 1)
+      if (raw <= 0) continue
+      if (cooked.source === 'verified') verified++
+      else derived++
+      sum += cooked.grams / raw
+    }
     console.log(
-      `выход готового к сырью: ${ratio.toFixed(3)} по ${n} рецептам с выверенным выходом`,
+      `выход к сырью: ${(sum / (verified + derived)).toFixed(3)}; ` +
+        `выверено ${verified} рецептов, оценено ${derived}`,
     )
-    expect(n).toBeGreaterThan(20)
-    expect(ratio).toBeGreaterThan(0.8)
-    expect(ratio).toBeLessThan(0.95)
+    // выверенных данных должно быть больше, чем оценок «по умолчанию»
+    expect(verified).toBeGreaterThan(30)
+    // общее предположение не должно расходиться с выверенными данными в разы
+    expect(sum / (verified + derived)).toBeGreaterThan(1 - COOK_LOSS - 0.05)
+    expect(sum / (verified + derived)).toBeLessThan(1 - COOK_LOSS + 0.05)
   })
 })
 

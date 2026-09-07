@@ -1,8 +1,7 @@
 import type { Ingredient, Recipe, RecipeBatch } from '../types'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
-import { recipeStats } from './nutrition'
+import { cookedYieldPerServing, recipeStats } from './nutrition'
 import { packPlan, purchaseInfo } from './purchase'
-import { rawGramsPerServing } from './batchInfo'
 import { fryMinutes, pieceCookingOf, sizeOptions } from './pieces'
 
 /**
@@ -292,7 +291,7 @@ export function buildOption(
   const yieldGrams = Math.round(
     batch.source === 'verified'
       ? batch.yieldGrams * scale
-      : rawGramsPerServing(recipe) * servings * 0.88,
+      : cookedYieldPerServing(recipe).grams * servings,
   )
   const canFreeze = batch.freezeCooked && context.hasFreezer
   const { servedGrams, freezeGrams, tailGrams, unplacedGrams } = place(
@@ -356,7 +355,7 @@ export function planBatch(recipe: Recipe, context: BatchContext): BatchPlan | nu
   // сколько нужно по меню. Фиксированная закладка ×1 давала «нужно 1185 г,
   // приготовить 298 г» — то есть план, по которому семья остаётся голодной.
   if (batch.reason === 'fresh') {
-    const perServing = rawGramsPerServing(recipe) * 0.88
+    const perServing = cookedYieldPerServing(recipe).grams
     const scale = Math.max(1, Math.round((context.neededGrams / Math.max(1, perServing)) * 4) / 4)
     return {
       recipeId: recipe.id,
@@ -396,7 +395,7 @@ export function planBatch(recipe: Recipe, context: BatchContext): BatchPlan | nu
   // Если даже самая большая допустимая закладка не закрывает потребность,
   // добавляем ту, что закрывает: варят и две кастрюли, и три пачки фарша.
   // Без этого план молча предлагал приготовить меньше, чем нужно по меню.
-  const perScale = rawGramsPerServing(recipe) * batch.baseScale * 0.88
+  const perScale = cookedYieldPerServing(recipe).grams * batch.baseScale
   const maxScale = Math.max(...batch.scales)
   const needScale = Math.ceil((context.neededGrams / Math.max(1, perScale)) * 2) / 2
   const scales = [...batch.scales]

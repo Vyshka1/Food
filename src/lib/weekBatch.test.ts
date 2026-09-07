@@ -3,7 +3,7 @@ import { recipeById } from '../data/recipeRegistry'
 import type { Eater, Household, Kitchen } from '../types'
 import { planBatch } from './batch'
 import { buildWeekMenu, cookTasks, defaultRepeats } from './menu'
-import { portionWeight } from './nutrition'
+import { cookedGrams } from './nutrition'
 import { CONTAINER_GRAMS, freezerRoomGrams } from './pantry'
 import { defaultOils } from './oil'
 import { planWeekBatches } from './weekBatch'
@@ -79,7 +79,7 @@ describe('партии на неделю', () => {
         const recipe = recipeById(task.recipeId)
         if (!recipe) continue
         const plan = planBatch(recipe, {
-          neededGrams: portionWeight(recipe, task.portions),
+          neededGrams: cookedGrams(recipe, task.portions),
           hasFreezer: true,
           freezerRoomGrams: room,
         })

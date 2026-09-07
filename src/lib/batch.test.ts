@@ -3,7 +3,7 @@ import { RECIPES, RECIPE_BY_ID } from '../data/recipes'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { buildOption, planBatch, yieldLabel } from './batch'
 import { leftoverAdvice, packPlan, purchaseInfo } from './purchase'
-import { portionWeight, recipeStats } from './nutrition'
+import { cookedGrams, recipeStats } from './nutrition'
 
 const CONTEXT = { neededGrams: 1080, hasFreezer: true, freezerRoomGrams: 4000 }
 
@@ -134,7 +134,7 @@ describe('выбор партии', () => {
       if (!batch || batch.reason !== 'anchor-pack' || !batch.anchorIngredientId) continue
       for (const portions of [2, 3, 4, 6]) {
         for (const freezerRoomGrams of [0, 1200, 4000]) {
-          const neededGrams = portionWeight(recipe, portions)
+          const neededGrams = cookedGrams(recipe, portions)
           const plan = planBatch(recipe, { neededGrams, hasFreezer: true, freezerRoomGrams })
           const line = plan?.chosen.packs.find((l) => l.ingredientId === batch.anchorIngredientId)
           if (!line) continue
@@ -145,8 +145,18 @@ describe('выбор партии', () => {
       }
     }
     expect(cases).toBeGreaterThan(100)
-    // измерено: пачка в ноль в 54% случаев, средний остаток 72 г
-    expect(whole / cases).toBeGreaterThan(0.5)
+    /*
+     * Измерено: пачка в ноль в 45% случаев, средний остаток 79 г. Было 54% и
+     * 72 г, пока потребность считалась в сыром весе: она была завышена, партия
+     * чаще дотягивала до целой пачки, и «хорошая» цифра держалась на лишней
+     * готовке. С честной потребностью еды нужно меньше, и половина упаковки
+     * выбирается чаще — сырой остаток фарша при этом морозится, в отличие от
+     * лишнего готового блюда.
+     *
+     * Вес сырого остатка в модели стоимости с тех пор не перемерялся: это
+     * последний шаг переработки, после того как расчёт станет единым.
+     */
+    expect(whole / cases).toBeGreaterThan(0.4)
     expect(leftover / cases).toBeLessThan(100)
   })
 
@@ -160,7 +170,7 @@ describe('выбор партии', () => {
     for (const recipe of RECIPES) {
       for (const portions of [2, 4, 6]) {
         for (const freezerRoomGrams of [0, 1200, 4000]) {
-          const neededGrams = portionWeight(recipe, portions)
+          const neededGrams = cookedGrams(recipe, portions)
           const plan = planBatch(recipe, { neededGrams, hasFreezer: true, freezerRoomGrams })
           if (!plan) continue
           const o = plan.chosen

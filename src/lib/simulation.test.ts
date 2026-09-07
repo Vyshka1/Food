@@ -5,7 +5,7 @@ import { defaultOils } from './oil'
 import { simulate } from './simulation'
 import { RECIPES } from '../data/recipes'
 import { planBatch } from './batch'
-import { portionWeight } from './nutrition'
+import { cookedGrams } from './nutrition'
 
 const kitchen: Kitchen = {
   burners: 4,
@@ -149,7 +149,7 @@ describe('стратегии выбирают из одного и того же
     let maxGrams = 0
     for (const recipe of RECIPES) {
       for (const portions of [2, 3, 4, 6]) {
-        const neededGrams = portionWeight(recipe, portions)
+        const neededGrams = cookedGrams(recipe, portions)
         const ctx = { neededGrams, hasFreezer: true, freezerRoomGrams: 1200 }
         const cost = planBatch(recipe, ctx)
         const min = planBatch(recipe, { ...ctx, prefer: 'min' })
@@ -174,7 +174,7 @@ describe('стратегии выбирают из одного и того же
 
   it('«минимальная» никогда не оставляет стол голодным', () => {
     for (const recipe of RECIPES) {
-      const neededGrams = portionWeight(recipe, 4)
+      const neededGrams = cookedGrams(recipe, 4)
       const ctx = { neededGrams, hasFreezer: true, freezerRoomGrams: 1200 }
       const cost = planBatch(recipe, ctx)
       const min = planBatch(recipe, { ...ctx, prefer: 'min' })
@@ -188,7 +188,7 @@ describe('стратегии выбирают из одного и того же
 
   it('«впрок» не берёт того, что некуда деть', () => {
     for (const recipe of RECIPES) {
-      const neededGrams = portionWeight(recipe, 3)
+      const neededGrams = cookedGrams(recipe, 3)
       // морозилки нет: складывать излишек некуда
       const max = planBatch(recipe, {
         neededGrams,

@@ -12,7 +12,7 @@ import type {
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { recipeById } from '../data/recipeRegistry'
 import { portionOf, totalPortions } from './menu'
-import { portionWeight, recipeStats } from './nutrition'
+import { cookedGrams, recipeStats } from './nutrition'
 import { FREEZE_MIN_GRAMS } from './batch'
 import { planWeekBatches } from './weekBatch'
 import type { BatchPlan } from './batch'
@@ -224,7 +224,7 @@ export function cookCard(
     .sort((a, b) => a.day - b.day)
 
   const demandFactor = entries.reduce((sum, e) => sum + totalPortions(e), 0)
-  const neededGrams = portionWeight(recipe, demandFactor)
+  const neededGrams = cookedGrams(recipe, demandFactor)
 
   // Партия — из общего плана недели: место в морозилке одно на всю неделю,
   // и делят его все готовки, а не каждая по отдельности.

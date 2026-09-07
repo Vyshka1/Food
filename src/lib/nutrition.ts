@@ -1,5 +1,5 @@
 import type { Activity, Eater, Goal, MealSlot, Norms, Recipe } from '../types'
-import { INGREDIENT_BY_ID } from '../data/ingredients'
+import { INGREDIENT_BY_ID, ingredientGrams } from '../data/ingredients'
 
 export const ACTIVITY_FACTOR: Record<Activity, number> = {
   low: 1.2,
@@ -86,16 +86,74 @@ export interface RecipeStats extends Norms {
   price: number
 }
 
-/** Примерный вес порции в граммах: штучное считаем по среднему весу штуки. */
-export function portionWeight(recipe: Recipe, factor: number): number {
+/**
+ * Два веса одной доли рецепта: сырьё и то, что выйдет из него на тарелке.
+ *
+ * Их и путали. Состав рецепта задан в сыром весе, а партия — в готовом, и
+ * `place()` сравнивал одно с другим напрямую: потребность оказывалась завышена
+ * примерно на восьмую часть, и система честно доготавливала лишнее. Поэтому
+ * теперь два имени и ни одного безымянного «грамма».
+ */
+
+/** Сырьё на одну долю рецепта, г. Без округления — это промежуточная величина. */
+export function rawGramsPerServing(recipe: Recipe): number {
   let grams = 0
   for (const item of recipe.items) {
     const ing = INGREDIENT_BY_ID[item.ingredientId]
     if (!ing) continue
-    const perServing = ing.unit === 'pcs' ? item.qty * (ing.pieceGrams ?? 0) : item.qty
-    grams += perServing * factor
+    grams += ingredientGrams(ing, item.qty)
   }
-  return Math.round(grams / 5) * 5
+  return grams
+}
+
+/** Сколько сырья нужно на такую долю рецепта, г. */
+export function rawGrams(recipe: Recipe, factor: number): number {
+  return Math.round((rawGramsPerServing(recipe) * factor) / 5) * 5
+}
+
+/**
+ * Насколько блюдо теряет в весе при готовке, если о нём ничего не известно.
+ *
+ * Это предположение, а не факт: мясо теряет воду, крупа её набирает, а суп
+ * зависит от того, сколько налили. Поэтому число помечено `derived` и уступает
+ * любому выверенному выходу. Совпадение с выверенными данными неплохое —
+ * по 32 проверенным вручную блюдам отношение выхода к сырью 0.883, — но это
+ * среднее по больнице, и опираться на него надо ровно там, где других данных
+ * нет.
+ */
+export const COOK_LOSS = 0.12
+
+export interface CookedYield {
+  /** Вес готового блюда из одной доли рецепта, г. */
+  grams: number
+  /** Откуда взят: выверен вручную или получен из общего предположения. */
+  source: 'verified' | 'derived'
+}
+
+/**
+ * Выход готового блюда с одной доли рецепта.
+ *
+ * Порядок источников: сначала выверенный вручную выход партии, и только если
+ * его нет — общее предположение о потере веса. Третьей ступенью сюда же
+ * встраивается заданная у рецепта модель выхода, когда такие данные появятся:
+ * менять придётся только эту функцию.
+ */
+export function cookedYieldPerServing(recipe: Recipe): CookedYield {
+  const batch = recipe.batch
+  if (batch && batch.source === 'verified' && batch.baseScale > 0) {
+    return { grams: batch.yieldGrams / batch.baseScale, source: 'verified' }
+  }
+  return { grams: rawGramsPerServing(recipe) * (1 - COOK_LOSS), source: 'derived' }
+}
+
+/**
+ * Сколько готового блюда даёт такая доля рецепта, г.
+ *
+ * Это и есть потребность: то, что кладут на тарелки, убирают в морозилку и
+ * показывают как вес порции.
+ */
+export function cookedGrams(recipe: Recipe, factor: number): number {
+  return Math.round((cookedYieldPerServing(recipe).grams * factor) / 5) * 5
 }
 
 /**

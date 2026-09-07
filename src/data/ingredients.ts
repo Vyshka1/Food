@@ -243,6 +243,29 @@ export const INGREDIENTS: Ingredient[] = [
   ing('syrup', 'Сироп', 'ml', 'pantry', [270, 0, 0, 67, 0], 900, { tags: ['sugar'], pack: 250, tbspGrams: 20 }),
 ]
 
+/**
+ * Вес одной штуки, г.
+ *
+ * Ничего не подставляем. Раньше запасное значение стояло в двух модулях и было
+ * разным — ноль в расчёте веса порции и пятьдесят граммов в расчёте закладки, —
+ * так что один и тот же продукт весил по-разному в зависимости от того, кто
+ * спрашивал. Если вес штуки не задан, это дефект данных, а не повод придумать
+ * число: встроенную базу на этот счёт проверяет аудит, а свой рецепт может
+ * ссылаться только на продукты из этой же базы.
+ */
+export function pieceWeight(ing: Ingredient): number {
+  const grams = ing.pieceGrams
+  if (!grams || grams <= 0) {
+    throw new Error(`не задан вес одной штуки: ${ing.id} (${ing.name})`)
+  }
+  return grams
+}
+
+/** Вес количества продукта в граммах: штучное переводим через вес штуки. */
+export function ingredientGrams(ing: Ingredient, qty: number): number {
+  return ing.unit === 'pcs' ? qty * pieceWeight(ing) : qty
+}
+
 export const INGREDIENT_BY_ID: Record<string, Ingredient> = Object.fromEntries(
   INGREDIENTS.map((i) => [i.id, i]),
 )

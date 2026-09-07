@@ -5,7 +5,7 @@ import type { MenuEntry } from '../types'
 import { WEEKDAYS, dayNorms, dayTotals, fedEaters, portionOf, takeawayEaters, totalPortions } from '../lib/menu'
 import { drinkNorms } from '../lib/drinks'
 import { extraNorms, extraStats, extraSummary, extrasAt } from '../lib/extras'
-import { portionWeight, recipeStats } from '../lib/nutrition'
+import { cookedGrams, recipeStats } from '../lib/nutrition'
 import { useStore } from '../store'
 import { CalorieRing, Card, Warnings } from '../components/ui'
 import { RecipeSheet } from '../components/RecipeSheet'
@@ -299,7 +299,7 @@ export function MenuScreen() {
                         {eater && factor === 0
                           ? 'ест не дома'
                           : eater
-                            ? `${portionWeight(recipe, factor)} г · ${Math.round(stats.kcal * factor)} ккал`
+                            ? `${cookedGrams(recipe, factor)} г · ${Math.round(stats.kcal * factor)} ккал`
                             : `на всех: ${Math.round(stats.kcal * factor)} ккал · ≈ ${Math.round(stats.price * factor)} ₽`}
                       </span>
                       <br />

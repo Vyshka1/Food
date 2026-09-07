@@ -4,7 +4,7 @@ import { recipeById } from '../data/recipeRegistry'
 import { buildWeekMenu, cookTasks, dayNorms, dayTotals } from './menu'
 import { buildCookingPlans } from './cookingPlan'
 import { buildShoppingList } from './shopping'
-import { portionWeight } from './nutrition'
+import { cookedGrams as cookedGramsOf } from './nutrition'
 import type { BatchPlan } from './batch'
 import { planWeekBatches } from './weekBatch'
 import type { BatchPreference } from './batch'
@@ -271,7 +271,7 @@ export function simulate(household: Household, options: SimulationOptions): Simu
       if (!entry.fromFreezer) continue
       const recipe = recipeById(entry.recipeId)
       if (!recipe) continue
-      let left = portionWeight(recipe, entry.portions.reduce((s, p) => s + p.factor, 0))
+      let left = cookedGramsOf(recipe, entry.portions.reduce((s, p) => s + p.factor, 0))
       takenFromFreezer.push(recipe.title)
       for (const lot of frozen) {
         if (lot.recipeId !== recipe.id || left <= 0) continue
@@ -352,7 +352,7 @@ export function simulate(household: Household, options: SimulationOptions): Simu
     for (const task of cookTasks(cooked)) {
       const recipe = recipeById(task.recipeId)
       if (!recipe) continue
-      const demand = portionWeight(recipe, task.portions)
+      const demand = cookedGramsOf(recipe, task.portions)
       const plan = plans.get(task.key) ?? null
       const servings = plan ? plan.chosen.servings : task.portions
       const yieldGrams = plan ? plan.chosen.yieldGrams : demand
@@ -393,7 +393,7 @@ export function simulate(household: Household, options: SimulationOptions): Simu
           cookedWeek: week,
           keepDays: freezerDaysOf(recipe, 'cooked'),
           containers,
-          portionsEach: canFreeze / containers / Math.max(1, portionWeight(recipe, 1)),
+          portionsEach: canFreeze / containers / Math.max(1, cookedGramsOf(recipe, 1)),
         })
       }
     }
