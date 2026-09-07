@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "photos": "node scripts/photos.mjs"
   },
   "dependencies": {
     "react": "^18.3.1",

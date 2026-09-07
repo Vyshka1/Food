@@ -6,7 +6,7 @@ import { recipeById } from '../data/recipeRegistry'
 import { plural } from '../lib/format'
 import { useStore } from '../store'
 import { Sheet } from './ui'
-import { Icon, recipeIcon } from './icons'
+import { DishThumb } from './DishImage'
 
 const STORAGE_HINT: Record<string, string> = {
   fresh: '',
@@ -33,9 +33,7 @@ function OptionRow({
   const hint = STORAGE_HINT[option.storage]
   return (
     <button className="dish" onClick={onPick}>
-      <span className="dish__emoji">
-        <Icon name={recipeIcon(option.recipe)} size={24} />
-      </span>
+      <DishThumb recipe={option.recipe} />
       <span style={{ flex: 1 }}>
         <span className="dish__title">{option.recipe.title}</span>
         <span className="dish__meta">

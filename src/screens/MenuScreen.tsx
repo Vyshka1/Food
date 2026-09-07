@@ -7,7 +7,8 @@ import { portionWeight, recipeStats } from '../lib/nutrition'
 import { useStore } from '../store'
 import { CalorieRing, Card, Warnings } from '../components/ui'
 import { RecipeSheet } from '../components/RecipeSheet'
-import { Icon, recipeIcon } from '../components/icons'
+import { Icon } from '../components/icons'
+import { DishThumb } from '../components/DishImage'
 import { plural } from '../lib/format'
 import { MACRO_COLOR } from '../lib/palette'
 import { ReplacePicker } from '../components/ReplacePicker'
@@ -184,9 +185,7 @@ export function MenuScreen() {
                   data-status={entry.status ?? ""}
                 >
                   <button className="dish__open" onClick={() => setOpenEntry(entry)}>
-                    <span className="dish__emoji">
-                      <Icon name={recipeIcon(recipe)} size={24} />
-                    </span>
+                    <DishThumb recipe={recipe} />
                     <span style={{ flex: 1 }}>
                       <span className="dish__title">{recipe.title}</span>
                       <span className="dish__meta">

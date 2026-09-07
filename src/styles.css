@@ -536,6 +536,52 @@ select {
   flex: 0 0 auto;
 }
 
+/* Фото блюда там же, где была иконка: макет не прыгает от наличия картинки. */
+.dish__photo {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  flex: 0 0 auto;
+  background: var(--green-tint);
+  display: block;
+}
+
+.dish__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.dish-banner {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: 12px;
+  background: var(--card-soft);
+  aspect-ratio: 7 / 3;
+}
+
+.dish-banner img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Общее фото категории подписано прямо на снимке — чтобы его не приняли
+   за фотографию именно этого блюда. */
+.dish-banner__note {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  background: rgba(30, 35, 25, 0.72);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 9px;
+  border-radius: var(--radius-xs);
+}
+
 .dish__title {
   display: block;
   font-size: 16px;
