@@ -126,7 +126,14 @@ export function buildOption(
   context: BatchContext,
 ): BatchOption {
   const servings = batch.baseScale * scale
-  const yieldGrams = Math.round(rawGramsPerServing(recipe) * servings * 0.88)
+  // Проверенный вручную выход сильнее расчёта по составу: он и выставлялся
+  // затем, чтобы заменить прикидку. Первая версия его молча игнорировала, и
+  // выверенные числа никуда не шли.
+  const yieldGrams = Math.round(
+    batch.source === 'verified'
+      ? batch.yieldGrams * scale
+      : rawGramsPerServing(recipe) * servings * 0.88,
+  )
   const canFreeze = batch.freezeCooked && context.hasFreezer
   const { servedGrams, freezeGrams, unplacedGrams } = place(
     yieldGrams,
@@ -244,6 +251,9 @@ export function yieldLabel(batch: RecipeBatch, option: BatchOption): string {
 export function batchReasonText(batch: RecipeBatch): string {
   if (batch.reason === 'fresh') return 'блюдо готовят свежим, впрок его не делают'
   if (batch.reason === 'pot') return 'меньше кастрюли готовить непрактично'
+  if (batch.reason === 'form') return 'больше в форму не помещается'
+  if (batch.reason === 'pan') return 'жарится партиями на сковороде, и одну штуку жарить незачем'
+  if (batch.reason === 'keeps') return 'блюдо хорошо хранится, его удобно сделать впрок'
   const anchor = batch.anchorIngredientId ? INGREDIENT_BY_ID[batch.anchorIngredientId] : undefined
   const info = anchor ? purchaseInfo(anchor) : undefined
   const pack = info?.preferredPack ?? info?.packSizes[0]
