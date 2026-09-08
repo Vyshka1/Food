@@ -3,7 +3,7 @@ import { recipeById } from '../data/recipeRegistry'
 import type { Eater, Household, Kitchen, Recipe, WeekMenu } from '../types'
 import { planBatch } from './batch'
 import { buildWeekMenu, cookTasks, defaultRepeats } from './menu'
-import { cookedGrams } from './nutrition'
+import { cookedGrams, recipeStats, statsOf } from './nutrition'
 import { CONTAINER_GRAMS, emptyPantry, freezerRoomGrams, setStock } from './pantry'
 import { defaultOils } from './oil'
 import { planWeek } from './weekPlan'
@@ -327,5 +327,89 @@ describe('покупка сводится по неделе, а не по гот
     const staples = [...week.purchase.values()].filter((l) => l.staple)
     expect(staples.length).toBeGreaterThan(0)
     for (const line of staples) expect(line.needed).toBeGreaterThan(0)
+  })
+})
+
+describe('фактический состав и КБЖУ', () => {
+  it('хвост упаковки достаётся ровно одному блюду', () => {
+    /*
+     * Хвост один на неделю, а блюд с этим продуктом бывает несколько. Пока
+     * каждая карточка решала это сама, один и тот же остаток попадал в состав
+     * двух блюд сразу — и калории дважды.
+     */
+    for (let seed = 1; seed <= 20; seed++) {
+      const { menu } = buildWeekMenu(household, seed)
+      const week = planWeek(menu, household)
+      const owners = new Map<string, number>()
+      for (const cooking of week.tasks) {
+        for (const id of cooking.absorbed.keys()) {
+          owners.set(id, (owners.get(id) ?? 0) + 1)
+        }
+      }
+      for (const [id, count] of owners) {
+        const ing = INGREDIENT_BY_ID[id]
+        // штучное округляет каждая готовка сама — там это не общий хвост,
+        // а целая луковица именно в этом блюде
+        if (ing?.unit === 'pcs') continue
+        expect(count, `${ing?.name}, неделя ${seed}`).toBe(1)
+      }
+    }
+  })
+
+  it('пристроенный хвост списывается, а не берётся из воздуха', () => {
+    for (let seed = 1; seed <= 10; seed++) {
+      const { menu } = buildWeekMenu(household, seed)
+      const week = planWeek(menu, household)
+      for (const [id, line] of week.purchase) {
+        const used = week.tasks.reduce((sum, t) => sum + (t.ingredients.get(id) ?? 0), 0)
+        // расход не может превышать купленное вместе с запасом
+        expect(used, `${id}, неделя ${seed}`).toBeLessThanOrEqual(line.buy + line.fromStock + 1e-6)
+      }
+    }
+  })
+
+  it('штучное считается целыми штуками, и сумма сходится с покупкой', () => {
+    for (let seed = 1; seed <= 10; seed++) {
+      const { menu } = buildWeekMenu(household, seed)
+      const week = planWeek(menu, household)
+      for (const cooking of week.tasks) {
+        for (const [id, qty] of cooking.ingredients) {
+          if (INGREDIENT_BY_ID[id]?.unit !== 'pcs') continue
+          expect(Math.abs(qty - Math.round(qty)), `${id} в ${cooking.recipe.title}`).toBeLessThan(
+            1e-9,
+          )
+        }
+      }
+    }
+  })
+
+  it('КБЖУ партии считаются по её же составу', () => {
+    for (let seed = 1; seed <= 10; seed++) {
+      const { menu } = buildWeekMenu(household, seed)
+      for (const cooking of planWeek(menu, household).tasks) {
+        const fromItems = statsOf(
+          [...cooking.ingredients].map(([ingredientId, qty]) => ({ ingredientId, qty })),
+        )
+        expect(cooking.stats, cooking.recipe.title).toEqual(fromItems)
+      }
+    }
+  })
+
+  it('партия с досыпанным остатком калорийнее, чем состав как написано', () => {
+    // не «примерно то же», а строго больше хотя бы где-то: иначе проверка пустая
+    let richer = 0
+    for (let seed = 1; seed <= 20; seed++) {
+      const { menu } = buildWeekMenu(household, seed)
+      for (const cooking of planWeek(menu, household).tasks) {
+        // «как написано» округляется на порцию и умножается, партия — один раз
+        // в конце: отсюда допуск в половину калории на долю
+        const written = recipeStats(cooking.recipe).kcal * cooking.servings
+        expect(cooking.stats.kcal, cooking.recipe.title).toBeGreaterThanOrEqual(
+          written - cooking.servings,
+        )
+        if (cooking.stats.kcal > written + cooking.servings) richer++
+      }
+    }
+    expect(richer).toBeGreaterThan(20)
   })
 })

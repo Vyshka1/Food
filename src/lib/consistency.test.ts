@@ -2,17 +2,17 @@ import { describe, expect, it } from 'vitest'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { RECIPES } from '../data/recipes'
 import type { Eater, Household, Kitchen, Pantry } from '../types'
-import { buildWeekMenu, defaultRepeats } from './menu'
+import { buildWeekMenu, cookTaskId, defaultRepeats } from './menu'
 import { completeCookTask } from './cookFact'
 import { buildCookingPlans } from './cookingPlan'
 import { cookCard } from './cookCard'
 import { defaultOils } from './oil'
-import { COOK_LOSS, cookedGrams, cookedYieldPerServing, rawGrams, recipeStats } from './nutrition'
+import { COOK_LOSS, cookedGrams, cookedYieldPerServing, rawGrams } from './nutrition'
 import { INGREDIENTS, pieceWeight } from '../data/ingredients'
 import { addFreezer, emptyPantry, setStock } from './pantry'
 import { packPlan, purchaseInfo } from './purchase'
 import { buildShoppingList } from './shopping'
-import { planWeek } from './weekPlan'
+import { cookedStats, planWeek } from './weekPlan'
 
 /*
  * Сквозная согласованность: одно и то же число, посчитанное разными модулями.
@@ -258,14 +258,17 @@ describe('снимок расхождений между модулями', () =
       }
 
       // (3) калории карточки против тех, что уходят в дневной итог
+      const actual = cookedStats(week)
       for (const entry of menu.entries) {
         if (entry.fromFreezer) continue
         const card = cookCard(menu, household, entry, pantry)
         if (!card) continue
-        const fromStats = recipeStats(card.recipe).kcal * card.servings
-        if (fromStats <= 0) continue
-        const diff = Math.abs(card.stats.kcal - fromStats) / fromStats
+        const cooked = actual.get(
+          cookTaskId(menu.weekStart, entry.recipeId, entry.cookDay),
+        )
+        if (!cooked || cooked.stats.kcal <= 0) continue
         cards++
+        const diff = Math.abs(card.stats.kcal - cooked.stats.kcal) / cooked.stats.kcal
         kcalDiffSum += diff
         kcalWorst = Math.max(kcalWorst, diff)
       }
@@ -291,7 +294,7 @@ describe('снимок расхождений между модулями', () =
       [
         `упаковки: расходятся ${((packDiff / packLines) * 100).toFixed(1)}% строк (${packDiff} из ${packLines})`,
         `масштаб готовки: расписание против карточки — расхождение ${scaleDiffSum.toFixed(3)} доли на ${scaleTasks} готовок`,
-        `калории карточки против дневного итога: среднее ${((kcalDiffSum / cards) * 100).toFixed(2)}%, худшее ${((kcalWorst) * 100).toFixed(1)}% (${cards} карточек)`,
+        `калории карточки против дневного итога: худшее расхождение ${(kcalWorst * 100).toFixed(2)}% на ${cards} карточках`,
         `списание в кладовой против партии: расхождение ${storeDiffSum.toFixed(3)} на ${storeTasks} готовок`,
       ].join('\n  '),
     )
@@ -306,7 +309,8 @@ describe('снимок расхождений между модулями', () =
     expect(packLines).toBeGreaterThan(300)
     // список покупок и карточка решают про упаковки одним расчётом на неделю
     expect(packDiff).toBe(0)
-    expect(kcalDiffSum / cards).toBeLessThan(0.02)
-    expect(kcalWorst).toBeLessThan(0.15)
+    // карточка и дневной итог считают одну и ту же приготовленную партию
+    expect(cards).toBeGreaterThan(300)
+    expect(kcalWorst).toBe(0)
   })
 })

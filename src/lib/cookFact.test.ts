@@ -248,4 +248,24 @@ describe('факт готовки', () => {
       expect(RECIPES.length).toBeGreaterThan(0)
     }
   })
+
+  it('заготовка помнит калории своей партии', () => {
+    /*
+     * Заготовку едят через недели, когда плана той готовки давно нет. Калории
+     * у неё те же, что были в кастрюле: с досыпанным остатком упаковки и целой
+     * луковицей вместо половины.
+     */
+    const { menu } = buildWeekMenu(household, 11)
+    const start = facts(stockedFor(menu))
+    for (const cooking of planWeek(menu, household, { pantry: start.pantry }).tasks) {
+      if (cooking.placement.freezeGrams <= 0) continue
+      const state = completeCookTask(start, menu, household, cooking.task.key, TODAY)
+      const lot = state.pantry.freezer.find((f) => f.recipeId === cooking.recipe.id)
+      expect(lot, cooking.recipe.title).toBeTruthy()
+      expect(lot!.stats, 'у заготовки записаны калории партии').toBeTruthy()
+      expect(lot!.stats!.kcal).toBe(Math.round(cooking.stats.kcal / cooking.servings))
+      return
+    }
+    throw new Error('не нашлось готовки с заготовкой')
+  })
 })

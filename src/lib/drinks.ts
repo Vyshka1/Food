@@ -1,6 +1,6 @@
 import type { DrinkHabit, DrinkKind, Eater, Household, Norms } from '../types'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
-import { dailyNorm } from './nutrition'
+import { dailyNorm, statsOf } from './nutrition'
 import { extraNorms } from './extras'
 
 /**
@@ -124,31 +124,7 @@ export interface DrinkStats extends Norms {
 
 /** Ккал, БЖУ и цена одной чашки. */
 export function cupStats(habit: DrinkHabit): DrinkStats {
-  let kcal = 0
-  let protein = 0
-  let fat = 0
-  let carbs = 0
-  let fiber = 0
-  let price = 0
-  for (const { ingredientId, qty } of cupIngredients(habit)) {
-    const ing = INGREDIENT_BY_ID[ingredientId]
-    if (!ing) continue
-    const factor = ing.unit === 'pcs' ? qty : qty / 100
-    kcal += ing.kcal * factor
-    protein += ing.protein * factor
-    fat += ing.fat * factor
-    carbs += ing.carbs * factor
-    fiber += ing.fiber * factor
-    price += ing.unit === 'pcs' ? ing.price * qty : (ing.price * qty) / 1000
-  }
-  return {
-    kcal: Math.round(kcal),
-    protein: Math.round(protein),
-    fat: Math.round(fat),
-    carbs: Math.round(carbs),
-    fiber: Math.round(fiber * 10) / 10,
-    price: Math.round(price),
-  }
+  return statsOf(cupIngredients(habit))
 }
 
 /** Пьёт ли человек этот напиток в этот день недели. */

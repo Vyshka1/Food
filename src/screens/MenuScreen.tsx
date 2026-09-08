@@ -6,6 +6,7 @@ import { WEEKDAYS, cookTaskId, dayNorms, dayTotals, fedEaters, portionOf, takeaw
 import { drinkNorms } from '../lib/drinks'
 import { extraNorms, extraStats, extraSummary, extrasAt } from '../lib/extras'
 import { cookedGrams, recipeStats } from '../lib/nutrition'
+import { cookedStats, planWeek } from '../lib/weekPlan'
 import { useStore } from '../store'
 import { CalorieRing, Card, Warnings } from '../components/ui'
 import { RecipeSheet } from '../components/RecipeSheet'
@@ -35,6 +36,7 @@ export function MenuScreen() {
     household,
     menu,
     warnings,
+    pantry,
     cookEvents,
     swapDish,
     banRecipe,
@@ -60,9 +62,15 @@ export function MenuScreen() {
     () => (household ? dayNorms(household, day, eater?.id) : null),
     [household, day, eater],
   )
+  // калории дня считаются по фактически приготовленным партиям: досыпанный в
+  // блюдо остаток упаковки — это съеденные калории, и прятать их нечестно
+  const actual = useMemo(
+    () => (menu && household ? cookedStats(planWeek(menu, household, { pantry }), pantry) : undefined),
+    [menu, household, pantry],
+  )
   const totals = useMemo(
-    () => (menu ? dayTotals(menu, day, eater?.id) : null),
-    [menu, day, eater],
+    () => (menu ? dayTotals(menu, day, eater?.id, actual) : null),
+    [menu, day, eater, actual],
   )
   /**
    * Напитки показываем отдельной строкой, а не подмешиваем в еду: человек

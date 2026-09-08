@@ -58,7 +58,17 @@ export function completeCookTask(
     const containers = Math.max(1, Math.ceil(freezeGrams / CONTAINER_GRAMS))
     const perServing = Math.max(1, cookedGrams(cooking.recipe, 1))
     const portionsEach = freezeGrams / containers / perServing
-    pantry = addFreezer(pantry, cooking.recipe, containers, portionsEach, today)
+    // заготовка помнит калории своей партии: съедят её через недели, когда
+    // плана этой готовки уже не будет
+    const perPortion = (value: number) => Math.round((value / cooking.servings) * 10) / 10
+    pantry = addFreezer(pantry, cooking.recipe, containers, portionsEach, today, {
+      kcal: Math.round(cooking.stats.kcal / cooking.servings),
+      protein: perPortion(cooking.stats.protein),
+      fat: perPortion(cooking.stats.fat),
+      carbs: perPortion(cooking.stats.carbs),
+      fiber: perPortion(cooking.stats.fiber),
+      price: Math.round(cooking.stats.price / cooking.servings),
+    })
     frozen = { containers, portionsEach, grams: freezeGrams }
   }
 

@@ -1283,7 +1283,22 @@ export interface DayTotals extends Norms {
  * считаются: иначе шапка говорила бы «пропущено 1», а кольцо показывало бы
  * полную норму.
  */
-export function dayTotals(menu: WeekMenu, day: number, eaterId?: string): DayTotals {
+/**
+ * Итог дня.
+ *
+ * `actual` — как посчитали готовки на этой неделе. Если он передан, калории
+ * берутся от фактически приготовленной партии, а не от состава как написано:
+ * досыпанный в блюдо остаток упаковки и целая штука вместо половины — это
+ * съеденные калории, и прятать их нечестно. Без него считается по составу —
+ * так остаётся для заготовок из морозилки, у которых готовки на этой неделе
+ * нет вовсе.
+ */
+export function dayTotals(
+  menu: WeekMenu,
+  day: number,
+  eaterId?: string,
+  actual?: Map<string, { servings: number; stats: DayTotals }>,
+): DayTotals {
   const acc: DayTotals = { kcal: 0, protein: 0, fat: 0, carbs: 0, fiber: 0, price: 0 }
   for (const entry of menu.entries) {
     if (entry.day !== day) continue
@@ -1291,7 +1306,20 @@ export function dayTotals(menu: WeekMenu, day: number, eaterId?: string): DayTot
     if (entry.status === 'skipped') continue
     const recipe = recipeById(entry.recipeId)
     if (!recipe) continue
-    const s = recipeStats(recipe)
+    const cooked = entry.fromFreezer
+      ? actual?.get(`freezer:${entry.recipeId}`)
+      : actual?.get(cookTaskId(menu.weekStart, entry.recipeId, entry.cookDay))
+    // доля партии, а не доля рецепта: партию и едят
+    const s = cooked
+      ? {
+          kcal: cooked.stats.kcal / cooked.servings,
+          protein: cooked.stats.protein / cooked.servings,
+          fat: cooked.stats.fat / cooked.servings,
+          carbs: cooked.stats.carbs / cooked.servings,
+          fiber: cooked.stats.fiber / cooked.servings,
+          price: cooked.stats.price / cooked.servings,
+        }
+      : recipeStats(recipe)
     const factor = eaterId ? portionOf(entry, eaterId) : totalPortions(entry)
     acc.kcal += s.kcal * factor
     acc.protein += s.protein * factor

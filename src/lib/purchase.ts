@@ -205,3 +205,24 @@ export function leftoverAdvice(ing: Ingredient, leftover: number): string | null
   }
   return `${Math.round(leftover)} ${unit} — останется в запасе`
 }
+
+/** Ниже этого веса остаток проще досыпать в блюдо, чем куда-то девать. */
+const ABSORB_MAX_G = 30
+/** …или если это меньше двадцатой части упаковки. */
+const ABSORB_MAX_SHARE = 0.05
+
+/**
+ * Мелкий хвост упаковки: его проще досыпать в блюдо, чем куда-то девать.
+ *
+ * У штучного порог свой и жёсткий: остаток меньше штуки — это не остаток, а
+ * дробь. Полторы луковицы не бывает: вторую кладут целиком, и именно её надо
+ * считать и в КБЖУ, и в цене, иначе состав карточки расходится с её же
+ * калориями.
+ */
+export function absorbable(ing: Ingredient, leftover: number, packSize: number): boolean {
+  if (leftover <= 0) return false
+  if (ing.unit === 'pcs') return leftover < 1
+  if (ing.staple) return false
+  const limit = Math.max(ABSORB_MAX_G, packSize * ABSORB_MAX_SHARE)
+  return leftover <= limit
+}

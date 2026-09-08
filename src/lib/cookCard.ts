@@ -1,7 +1,6 @@
 import type {
   Eater,
   Household,
-  Ingredient,
   MenuEntry,
   Norms,
   Pantry,
@@ -12,7 +11,7 @@ import type {
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { recipeById } from '../data/recipeRegistry'
 import { cookTaskId, portionOf, totalPortions } from './menu'
-import { cookedGrams, recipeStats } from './nutrition'
+import { cookedGrams, recipeStats, statsOf } from './nutrition'
 import { FREEZE_MIN_GRAMS } from './batch'
 import { planWeek } from './weekPlan'
 import type { TaskPlan } from './weekPlan'
@@ -33,11 +32,6 @@ import { scaledMinutes } from './cookingPlan'
  * цена и раскладка по людям. Что не разошлось по тарелкам — уходит в
  * морозилку, и сумма сходится: выход = распределено + заморожено + остаток.
  */
-
-/** Ниже этого веса остаток проще досыпать в блюдо, чем куда-то девать. */
-const ABSORB_MAX_G = 30
-/** …или если это меньше двадцатой части упаковки. */
-const ABSORB_MAX_SHARE = 0.05
 
 export interface CardRow {
   day: number
@@ -184,21 +178,6 @@ export function splitPieces(needs: number[], total: number): number[] {
 }
 
 /** Что ещё на неделе тратит этот продукт — кроме этой готовки. */
-/**
- * Мелкий хвост упаковки: его проще досыпать в блюдо, чем куда-то девать.
- *
- * У штучного порог свой и жёсткий: остаток меньше штуки — это не остаток, а
- * дробь. Полторы луковицы не бывает: вторую кладут целиком, и именно её надо
- * считать и в КБЖУ, и в цене, иначе состав карточки расходится с её же
- * калориями.
- */
-function absorbable(ing: Ingredient, leftover: number, packSize: number): boolean {
-  if (leftover <= 0) return false
-  if (ing.unit === 'pcs') return leftover < 1
-  if (ing.staple) return false
-  const limit = Math.max(ABSORB_MAX_G, packSize * ABSORB_MAX_SHARE)
-  return leftover <= limit
-}
 
 export function cookCard(
   menu: WeekMenu,
@@ -336,26 +315,17 @@ export function cookCard(
     const exactOther = Math.max(0, totalNeed - exactHere)
     const stock = line?.fromStock ?? 0
     const bought = ing.staple ? 0 : (line?.buy ?? 0)
-    const packSize = line?.packSize ?? 0
     const available = bought + stock
-    const rawLeft = Math.max(0, available - totalNeed)
 
     /*
-     * Сколько продукта уходит именно в это блюдо.
+     * Сколько продукта уходит именно в это блюдо — из плана недели.
      *
-     * Штучное считается целыми: пятый банан открывают здесь, даже если в
-     * блюдо идёт его половина, — иначе состав карточки («5 шт») расходится с
-     * её же разбором упаковки («4 шт сюда»). Весовое округляем вверх только
-     * на мелкий хвост: двадцать граммов муки некуда девать, а в тесте они
-     * растворятся.
+     * Целые штуки и пристроенные хвосты упаковок считаются там: хвост один на
+     * неделю, а блюд с этим продуктом бывает несколько, и пока карточка решала
+     * это сама, один остаток попадал в состав двух блюд сразу.
      */
-    const absorbed =
-      ing.unit === 'pcs'
-        ? Math.ceil(exactHere - 1e-9) - exactHere
-        : absorbable(ing, rawLeft, packSize || bought)
-          ? rawLeft
-          : 0
-    const qty = exactHere + absorbed
+    const qty = plan?.ingredients.get(item.ingredientId) ?? exactHere
+    const absorbed = plan?.absorbed.get(item.ingredientId) ?? 0
 
     items.push({ ingredientId: ing.id, name: ing.name, unit: ing.unit, qty, absorbed })
     usedPrice += ing.unit === 'pcs' ? ing.price * qty : (ing.price * qty) / 1000
@@ -395,24 +365,9 @@ export function cookCard(
     })
   }
 
-  // КБЖУ считаем по тем же продуктам, что и показываем: иначе калории в
-  // карточке не сходятся с её же составом
-  const stats: Norms = { kcal: 0, protein: 0, fat: 0, carbs: 0, fiber: 0 }
-  for (const item of items) {
-    const ing = INGREDIENT_BY_ID[item.ingredientId]
-    if (!ing) continue
-    const factor = ing.unit === 'pcs' ? item.qty : item.qty / 100
-    stats.kcal += ing.kcal * factor
-    stats.protein += ing.protein * factor
-    stats.fat += ing.fat * factor
-    stats.carbs += ing.carbs * factor
-    stats.fiber += ing.fiber * factor
-  }
-  stats.kcal = Math.round(stats.kcal)
-  stats.protein = Math.round(stats.protein)
-  stats.fat = Math.round(stats.fat)
-  stats.carbs = Math.round(stats.carbs)
-  stats.fiber = Math.round(stats.fiber * 10) / 10
+  // КБЖУ — той партии, которую и готовим: тот же состав, что показан выше, и
+  // то же число, что уйдёт в дневной итог
+  const stats: Norms = plan ? plan.stats : statsOf(items)
 
   // Альтернативы человек читает как «а если приготовить больше или меньше».
   // Значит и говорить надо результатом: сколько выйдет и что с этим будет, —

@@ -7,9 +7,10 @@ import type { BatchOption, BatchPreference } from './batch'
 import { drinkShopping } from './drinks'
 import { extraShopping } from './extras'
 import { cookTasks } from './menu'
-import { cookedGrams } from './nutrition'
+import { cookedGrams, statsOf } from './nutrition'
+import type { RecipeStats } from './nutrition'
 import { freezerRoomGrams, isAlways, stockOf } from './pantry'
-import { packPlan } from './purchase'
+import { absorbable, packPlan } from './purchase'
 
 /**
  * План недели — единственный расчёт готовки, который есть у приложения.
@@ -56,10 +57,16 @@ export interface TaskPlan {
   /**
    * Сырьё на эту готовку: сколько чего уйдёт в кастрюлю.
    *
-   * Это расход, а не покупка. Покупка сводится по всей неделе: две готовки по
-   * 250 г — это одна пачка 500 г, а не две.
+   * Это фактический расход, а не потребность по составу: штучное считается
+   * целыми штуками, и сюда же попадают пристроенные хвосты упаковок. И это не
+   * покупка — покупка сводится по всей неделе: две готовки по 250 г это одна
+   * пачка 500 г, а не две.
    */
   ingredients: Map<string, number>
+  /** Сколько чего досыпано сверх состава: остаток упаковки и целые штуки. */
+  absorbed: Map<string, number>
+  /** КБЖУ и цена всего, что уйдёт в кастрюлю. Считается по ingredients. */
+  stats: RecipeStats
 }
 
 /**
@@ -139,7 +146,62 @@ export function planWeek(
    * покупок не замечает, как разложили пакеты, — и он действительно не замечал,
    * пока покупка сюда не переехала.
    */
-  return { ...cooking, purchase: purchaseFor(cooking.demand, options.pantry) }
+  /*
+   * Готовки копируем, а не правим на месте: они лежат в кэше, а пристраивание
+   * хвостов их меняет. Иначе второй вызов на то же меню досыпал бы остаток
+   * упаковки ещё раз — и так на каждый кадр.
+   */
+  const tasks = cooking.tasks.map((task) => ({
+    ...task,
+    ingredients: new Map(task.ingredients),
+    absorbed: new Map(task.absorbed),
+  }))
+  const demand = new Map(cooking.demand)
+  const purchase = purchaseFor(demand, options.pantry)
+  return absorbTails({
+    tasks,
+    byKey: new Map(tasks.map((t) => [t.task.key, t])),
+    demand,
+    purchase,
+    missing: cooking.missing,
+  })
+}
+
+/**
+ * Досыпать мелкие хвосты упаковок в блюда.
+ *
+ * Двадцать граммов муки некуда девать, а в тесте они растворятся. Но хвост
+ * один, а блюд с этим продуктом за неделю бывает несколько: пока каждая
+ * карточка решала это сама, один и тот же остаток попадал в состав двух блюд
+ * сразу — и калории дважды.
+ *
+ * Поэтому хвост достаётся ровно одной готовке — той, что берёт продукта
+ * больше всех: там он и правда растворится. И он списывается: положили в
+ * блюдо — значит, продукт израсходован, а КБЖУ пересчитаны.
+ */
+function absorbTails(plan: WeekPlan): WeekPlan {
+  const changed = new Set<TaskPlan>()
+  for (const [ingredientId, line] of plan.purchase) {
+    const ing = INGREDIENT_BY_ID[ingredientId]
+    if (!ing || ing.unit === 'pcs') continue
+    const leftover = line.buy + line.fromStock - line.needed
+    if (!absorbable(ing, leftover, line.packSize || line.buy)) continue
+    let best: TaskPlan | null = null
+    for (const task of plan.tasks) {
+      const qty = task.ingredients.get(ingredientId)
+      if (!qty) continue
+      if (!best || qty > (best.ingredients.get(ingredientId) ?? 0)) best = task
+    }
+    if (!best) continue
+    best.ingredients.set(ingredientId, (best.ingredients.get(ingredientId) ?? 0) + leftover)
+    best.absorbed.set(ingredientId, (best.absorbed.get(ingredientId) ?? 0) + leftover)
+    plan.demand.set(ingredientId, (plan.demand.get(ingredientId) ?? 0) + leftover)
+    changed.add(best)
+  }
+  for (const task of changed) {
+    task.stats = statsOf([...task.ingredients].map(([ingredientId, qty]) => ({ ingredientId, qty })))
+  }
+  return plan
 }
 
 /** Готовки недели: то, что не зависит от запасов и потому кэшируется. */
@@ -182,10 +244,20 @@ function cookingFor(
       missing.push(task.recipeId)
       continue
     }
+    /*
+     * Штучное считается целыми штуками: половину банана в кастрюлю не кладут и
+     * половину луковицы обратно в холодильник не убирают. Округляем здесь, на
+     * уровне готовки, а не в карточке: иначе покупка считает 1.6 банана, а две
+     * карточки показывают по одному целому — и на кухне не хватает.
+     */
     const ingredients = new Map<string, number>()
+    const absorbed = new Map<string, number>()
     for (const item of recipe.items) {
-      const qty = item.qty * batchPlan.chosen.servings
+      const ing = INGREDIENT_BY_ID[item.ingredientId]
+      const exact = item.qty * batchPlan.chosen.servings
+      const qty = ing?.unit === 'pcs' ? Math.ceil(exact - 1e-9) : exact
       ingredients.set(item.ingredientId, (ingredients.get(item.ingredientId) ?? 0) + qty)
+      if (qty > exact) absorbed.set(item.ingredientId, qty - exact)
       need(item.ingredientId, qty)
     }
     const plan: TaskPlan = {
@@ -204,6 +276,8 @@ function cookingFor(
         unplacedGrams: batchPlan.chosen.unplacedGrams,
       },
       ingredients,
+      absorbed,
+      stats: statsOf([...ingredients].map(([ingredientId, qty]) => ({ ingredientId, qty }))),
     }
     tasks.push(plan)
     byKey.set(task.key, plan)
@@ -300,3 +374,30 @@ function toCache(
 ): void {
   cache.set(menu, { sig: signature(household, options), plan })
 }
+
+/**
+ * Факт готовок для дневного итога: доли партии и её КБЖУ по ключу готовки.
+ *
+ * Отдаём простой картой, а не планом целиком: dayTotals живёт в menu.ts, а
+ * menu — под планом недели, и тащить его наверх значило бы завести круг.
+ */
+export function cookedStats(
+  plan: WeekPlan,
+  pantry?: Pantry,
+): Map<string, { servings: number; stats: RecipeStats }> {
+  const map = new Map(
+    plan.tasks.map((t) => [t.task.key, { servings: t.servings, stats: t.stats }] as const),
+  )
+  /*
+   * Заготовки считаем по той партии, из которой их убрали: она помнит свои
+   * калории. Ключ отдельный — у заготовки нет готовки на этой неделе.
+   */
+  for (const lot of pantry?.freezer ?? []) {
+    if (!lot.stats) continue
+    map.set(`${FREEZER_KEY}${lot.recipeId}`, { servings: 1, stats: lot.stats })
+  }
+  return map
+}
+
+/** Префикс ключа для заготовки: готовки на этой неделе у неё нет. */
+export const FREEZER_KEY = 'freezer:'

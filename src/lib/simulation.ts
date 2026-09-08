@@ -5,7 +5,7 @@ import { buildWeekMenu, cookTasks, dayNorms, dayTotals } from './menu'
 import { buildCookingPlans } from './cookingPlan'
 import { buildShoppingList } from './shopping'
 import { cookedGrams as cookedGramsOf } from './nutrition'
-import { planWeek } from './weekPlan'
+import { cookedStats, planWeek } from './weekPlan'
 import type { BatchPreference } from './batch'
 import { CONTAINER_GRAMS, emptyPantry, freezerRoomGrams } from './pantry'
 import { freezerDaysOf } from './freezing'
@@ -411,6 +411,8 @@ export function simulate(household: Household, options: SimulationOptions): Simu
     // цена стратегии не только в деньгах: сколько раз вставать к плите и
     // насколько меню попадает в норму
     const cookingPlans = buildCookingPlans(cooked, household, 1, pantry)
+    // калории считаем по фактически приготовленным партиям, а не по составу
+    const actual = cookedStats(plan, pantry)
     let worstDeviation = 0
     let protein = 0
     let proteinNorm = 0
@@ -420,7 +422,7 @@ export function simulate(household: Household, options: SimulationOptions): Simu
       for (const eater of household.eaters) {
         const norms = dayNorms(household, day, eater.id)
         if (norms.kcal <= 0) continue
-        const fact = dayTotals(cooked, day, eater.id)
+        const fact = dayTotals(cooked, day, eater.id, actual)
         worstDeviation = Math.max(worstDeviation, Math.abs(fact.kcal / norms.kcal - 1))
         protein += fact.protein
         proteinNorm += norms.protein

@@ -167,18 +167,26 @@ export function cookedGrams(recipe: Recipe, factor: number): number {
 const statsCache = new WeakMap<Recipe, RecipeStats>()
 
 /** Ккал, БЖУ и цена одной порции рецепта. */
-export function recipeStats(recipe: Recipe): RecipeStats {
-  const cached = statsCache.get(recipe)
-  if (cached) return cached
+/**
+ * КБЖУ и цена произвольного состава.
+ *
+ * Единственное место, где продукты складываются в питание. Раньше этот цикл
+ * был написан четырежды — в рецептах, в карточке блюда, в напитках и в
+ * дополнениях, — и каждый раз чуть иначе: где-то округляли клетчатку, где-то
+ * нет, где-то считали цену. Расходились они не сразу, а при первой же правке
+ * одного из четырёх.
+ */
+export function statsOf(items: { ingredientId: string; qty: number }[]): RecipeStats {
   let kcal = 0
   let protein = 0
   let fat = 0
   let carbs = 0
   let fiber = 0
   let price = 0
-  for (const item of recipe.items) {
+  for (const item of items) {
     const ing = INGREDIENT_BY_ID[item.ingredientId]
     if (!ing) continue
+    // питательность задана на 100 г или на штуку — приводим количество к этой мере
     const factor = ing.unit === 'pcs' ? item.qty : item.qty / 100
     kcal += ing.kcal * factor
     protein += ing.protein * factor
@@ -187,7 +195,7 @@ export function recipeStats(recipe: Recipe): RecipeStats {
     fiber += ing.fiber * factor
     price += ing.unit === 'pcs' ? ing.price * item.qty : (ing.price * item.qty) / 1000
   }
-  const stats: RecipeStats = {
+  return {
     kcal: Math.round(kcal),
     protein: Math.round(protein),
     fat: Math.round(fat),
@@ -195,6 +203,13 @@ export function recipeStats(recipe: Recipe): RecipeStats {
     fiber: Math.round(fiber * 10) / 10,
     price: Math.round(price),
   }
+}
+
+/** Ккал, БЖУ и цена одной доли рецепта — то есть его состава как написано. */
+export function recipeStats(recipe: Recipe): RecipeStats {
+  const cached = statsCache.get(recipe)
+  if (cached) return cached
+  const stats = statsOf(recipe.items)
   statsCache.set(recipe, stats)
   return stats
 }

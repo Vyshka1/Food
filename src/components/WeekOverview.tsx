@@ -3,6 +3,7 @@ import { MEAL_SLOTS } from '../types'
 import { WEEKDAYS_FULL, cookTasks, dayNorms, dayTotals, fedEaters, takeawayEaters } from '../lib/menu'
 import { recipeById } from '../data/recipeRegistry'
 import { extrasAt } from '../lib/extras'
+import { cookedStats, planWeek } from '../lib/weekPlan'
 import { useStore } from '../store'
 import { Icon } from './icons'
 
@@ -17,8 +18,11 @@ import { Icon } from './icons'
  * отметки готовки и заморозки и то, кого в этот день нет.
  */
 export function WeekOverview({ onOpenDay }: { onOpenDay: (day: number) => void }) {
-  const { household, menu } = useStore()
+  const { household, menu, pantry } = useStore()
   if (!household || !menu) return null
+
+  // калории дня — от фактически приготовленных партий, как и в карточке блюда
+  const actual = cookedStats(planWeek(menu, household, { pantry }), pantry)
 
   const slots = MEAL_SLOTS.filter((m) => household.meals.includes(m.id))
   const tasks = cookTasks(menu)
@@ -31,7 +35,7 @@ export function WeekOverview({ onOpenDay }: { onOpenDay: (day: number) => void }
   return (
     <div className="week-view">
       {WEEKDAYS_FULL.map((label, day) => {
-        const totals = dayTotals(menu, day)
+        const totals = dayTotals(menu, day, undefined, actual)
         const norms = dayNorms(household, day)
         const cooking = tasks.some((t) => t.cookDay === day)
         const freezing = tasks.some((t) => t.cookDay === day && t.freezerPortions > 0)
