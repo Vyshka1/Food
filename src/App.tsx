@@ -9,6 +9,7 @@ import { MyRecipesScreen } from './screens/MyRecipesScreen'
 import { ShoppingModeScreen } from './screens/ShoppingModeScreen'
 import { CookNowScreen } from './screens/CookNowScreen'
 import { Icon, type IconName } from './components/icons'
+import { StorageNotice } from './components/StorageNotice'
 import type { CookingPlan } from './types'
 
 type Tab = 'menu' | 'plan' | 'products' | 'profile' | 'recipes'
@@ -44,15 +45,18 @@ function Shell() {
 
   if (!household || !menu || editing) {
     return (
-      <Onboarding
-        initial={editing ? household : null}
-        onCancel={editing ? () => setEditing(false) : undefined}
-        onDone={(next) => {
-          saveHousehold(next)
-          setEditing(false)
-          setTab('menu')
-        }}
-      />
+      <>
+        <StorageNotice />
+        <Onboarding
+          initial={editing ? household : null}
+          onCancel={editing ? () => setEditing(false) : undefined}
+          onDone={(next) => {
+            saveHousehold(next)
+            setEditing(false)
+            setTab('menu')
+          }}
+        />
+      </>
     )
   }
 
@@ -68,6 +72,7 @@ function Shell() {
 
   return (
     <>
+      <StorageNotice />
       {imported && (
         <div className="app" style={{ minHeight: 0, paddingBottom: 0, paddingTop: 12 }}>
           <div className={imported === 'ok' ? 'shop__note' : 'warning'}>
