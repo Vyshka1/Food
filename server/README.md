@@ -16,34 +16,45 @@ GitHub Pages, а служба на своём домене, браузер сч�
 Служба ничего не хранит и ничего не знает о людях: получила ссылку — вернула
 текст.
 
-## Как выложить, по шагам
+## Как выложить — одной командой
+
+На чистом Debian или Ubuntu:
 
 ```bash
-# 1. Забрать проект (один раз)
-sudo mkdir -p /opt/food && sudo chown "$USER" /opt/food
-git clone https://github.com/Vyshka1/Food.git /opt/food
-cd /opt/food
-
-# 2. Собрать приложение и прогнать проверки
-./server/deploy.sh
-
-# 3. Настроить nginx
-sudo cp server/nginx.conf.example /etc/nginx/sites-available/food.altum-it.ru
-sudo ln -s /etc/nginx/sites-available/food.altum-it.ru /etc/nginx/sites-enabled/
-sudo nginx -t && sudo systemctl reload nginx
-
-# 4. Сертификат — она же настроит продление и перенаправление с http
-sudo certbot --nginx -d food.altum-it.ru
-
-# 5. Службу — как постоянную (см. ниже), затем ещё раз ./server/deploy.sh
+curl -fsSL https://raw.githubusercontent.com/Vyshka1/Food/main/server/bootstrap.sh \
+  | sudo EMAIL=вы@почта.ru bash
 ```
+
+Скрипт ставит Node, nginx и certbot, забирает проект в `/opt/food`, собирает
+приложение, заводит службу, настраивает сайт и выпускает сертификат. Запускать
+можно повторно: он ничего не ломает и не стирает, а файлы, которые собирается
+заменить, сохраняет рядом с меткой времени.
+
+Почта нужна Let's Encrypt — на неё придёт письмо, если сертификат перестанет
+продлеваться. Отложить сертификат: добавить `SKIP_CERT=1`. Другие переменные,
+если что-то отличается: `DOMAIN`, `DIR`, `PORT`, `BRANCH`.
 
 После этого `https://food.altum-it.ru` открывает приложение, а
 `https://food.altum-it.ru/api/health` отвечает `{"ok":true}`.
 
-Обновление потом — одна команда: `./server/deploy.sh`. Он забирает изменения,
-прогоняет проверки, собирает и перезапускает службу; если проверки не прошли,
-сборка не заменится.
+Обновление потом — одна команда: `sudo ./server/deploy.sh`. Он забирает
+изменения, прогоняет проверки, собирает и перезапускает службу; если проверки не
+прошли, сборка не заменится.
+
+### Если что-то пошло не так
+
+| что видно | что это значит |
+|---|---|
+| `certbot не смог выпустить сертификат` | домен не указывает на этот сервер, или порт 80 закрыт снаружи |
+| `служба не отвечает` | причину покажет `journalctl -u food-extract -n 50` |
+| страница открылась, а `/api/health` нет | nginx не перезагрузился: `sudo nginx -t && sudo systemctl reload nginx` |
+| ссылки на ролики не работают | не встал `yt-dlp`. Вставка текста руками при этом работает всегда |
+
+### Если хочется по шагам
+
+Всё то же самое расписано ниже: сборка (`./server/deploy.sh`), конфиг nginx
+(`server/nginx.conf.example`), служба (systemd) и
+`sudo certbot --nginx -d food.altum-it.ru`.
 
 ## Что нужно
 
