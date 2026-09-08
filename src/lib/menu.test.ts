@@ -410,6 +410,7 @@ describe('блюдо должно накормить того, кто за ст�
         worst = Math.max(worst, deviation)
       }
     }
+    // перемерено после единого расчёта: худшее личное отклонение 3.30%
     expect(worst).toBeLessThan(0.05)
   })
 })

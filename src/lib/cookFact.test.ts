@@ -220,17 +220,20 @@ describe('факт готовки', () => {
   })
 
   it('в морозилку уходит ровно то, что посчитал план', () => {
-    const { menu } = buildWeekMenu(household, 11)
-    const start = facts(stockedFor(menu))
-    let state = start
+    // ищем по нескольким неделям: заготовка бывает не в каждой, и привязка к
+    // одному seed делает проверку заложницей подбора блюд
     let checked = 0
-    for (const cooking of planWeek(menu, household, { pantry: start.pantry }).tasks) {
-      if (cooking.placement.freezeGrams <= 0) continue
-      state = completeCookTask(state, menu, household, cooking.task.key, TODAY)
-      const event = state.cookEvents[state.cookEvents.length - 1]
-      expect(event.frozen?.grams).toBe(cooking.placement.freezeGrams)
-      checked++
-      break
+    for (let seed = 1; seed <= 20 && checked === 0; seed++) {
+      const { menu } = buildWeekMenu(household, seed)
+      const start = facts(stockedFor(menu))
+      for (const cooking of planWeek(menu, household, { pantry: start.pantry }).tasks) {
+        if (cooking.placement.freezeGrams <= 0) continue
+        const state = completeCookTask(start, menu, household, cooking.task.key, TODAY)
+        const event = state.cookEvents[state.cookEvents.length - 1]
+        expect(event.frozen?.grams).toBe(cooking.placement.freezeGrams)
+        checked++
+        break
+      }
     }
     expect(checked, 'нашлась готовка с заготовкой').toBe(1)
   })
@@ -255,16 +258,18 @@ describe('факт готовки', () => {
      * у неё те же, что были в кастрюле: с досыпанным остатком упаковки и целой
      * луковицей вместо половины.
      */
-    const { menu } = buildWeekMenu(household, 11)
-    const start = facts(stockedFor(menu))
-    for (const cooking of planWeek(menu, household, { pantry: start.pantry }).tasks) {
-      if (cooking.placement.freezeGrams <= 0) continue
-      const state = completeCookTask(start, menu, household, cooking.task.key, TODAY)
-      const lot = state.pantry.freezer.find((f) => f.recipeId === cooking.recipe.id)
-      expect(lot, cooking.recipe.title).toBeTruthy()
-      expect(lot!.stats, 'у заготовки записаны калории партии').toBeTruthy()
-      expect(lot!.stats!.kcal).toBe(Math.round(cooking.stats.kcal / cooking.servings))
-      return
+    for (let seed = 1; seed <= 20; seed++) {
+      const { menu } = buildWeekMenu(household, seed)
+      const start = facts(stockedFor(menu))
+      for (const cooking of planWeek(menu, household, { pantry: start.pantry }).tasks) {
+        if (cooking.placement.freezeGrams <= 0) continue
+        const state = completeCookTask(start, menu, household, cooking.task.key, TODAY)
+        const lot = state.pantry.freezer.find((f) => f.recipeId === cooking.recipe.id)
+        expect(lot, cooking.recipe.title).toBeTruthy()
+        expect(lot!.stats, 'у заготовки записаны калории партии').toBeTruthy()
+        expect(lot!.stats!.kcal).toBe(Math.round(cooking.stats.kcal / cooking.servings))
+        return
+      }
     }
     throw new Error('не нашлось готовки с заготовкой')
   })

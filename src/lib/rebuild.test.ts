@@ -94,13 +94,20 @@ describe('цель пересборки видна в результате', () 
   })
 
   it('«разнообразнее» даёт больше разных блюд', () => {
+    /*
+     * Восьми недель для этого мало: цель добавляет примерно одно блюдо на
+     * восемь недель, и на короткой выборке разница тонет в округлении — тест
+     * ловил не эффект, а шум, и падал от любой правки в подборе. На шестидесяти
+     * неделях эффект виден устойчиво: 12.87 против 13.00 у одного едока.
+     */
+    const seeds = Array.from({ length: 60 }, (_, i) => i + 1)
     const kinds = (goal: 'balanced' | 'variety') => {
       let sum = 0
-      for (const seed of SEEDS) {
+      for (const seed of seeds) {
         const { menu } = buildWeekMenu(household, seed, [], { goal })
         sum += new Set(menu.entries.map((e) => e.recipeId)).size
       }
-      return sum / SEEDS.length
+      return sum / seeds.length
     }
     expect(kinds('variety')).toBeGreaterThan(kinds('balanced'))
   })
