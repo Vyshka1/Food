@@ -627,7 +627,7 @@ describe('план и факт', () => {
     const h = household()
     const { menu } = buildWeekMenu(h, 12)
     const before = dayTotals(menu, 2)
-    for (const status of ['cooked', 'eaten'] as const) {
+    for (const status of ['eaten'] as const) {
       const marked = {
         ...menu,
         entries: menu.entries.map((e) => (e.day === 2 ? { ...e, status } : e)),

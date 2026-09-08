@@ -239,15 +239,25 @@ export function scheduleSteps(
   }
 }
 
+/**
+ * Задача для расписания.
+ *
+ * Время шагов масштабируется по тому, что реально ставят на плиту, — по доле
+ * партии, а не по потребности меню. Пока здесь стояла потребность, расписание
+ * обещало нарезку на 4 доли там, где карточка советовала приготовить 5:
+ * партия в среднем на десятую часть больше, и ровно на столько расписание
+ * недооценивало работу.
+ */
 function toSchedTask(
   task: CookTask,
   index: number,
   household?: Household,
   pieces?: number,
+  servings?: number,
 ): SchedTask | null {
   const recipe = recipeById(task.recipeId)
   if (!recipe) return null
-  const portions = task.portions
+  const portions = servings ?? task.portions
   /*
    * У штучного блюда жарка занимает не «время рецепта × коэффициент», а число
    * заходов на время захода: на сковороде помещается пять оладий, и тридцать
@@ -304,7 +314,7 @@ export function buildCookingPlans(
         .map((task, i) => {
           const plan = week.byKey.get(task.key)
           const pieces = plan ? optionPieces(plan.batch, plan.chosen.scale) : undefined
-          return toSchedTask(task, i, household, pieces)
+          return toSchedTask(task, i, household, pieces, plan?.servings)
         })
         .filter((t): t is SchedTask => t !== null)
       const result = scheduleSteps(sched, household.kitchen, cooks)
@@ -379,7 +389,9 @@ export function buildCookingPlans(
           recipeId: t.recipeId,
           title: recipeById(t.recipeId)?.title ?? t.recipeId,
           emoji: recipeById(t.recipeId)?.emoji ?? '🍽️',
-          portions: t.portions,
+          // доли, которые ставят на плиту, а не потребность меню: расписание
+          // считает время по ним же
+          portions: week.byKey.get(t.key)?.servings ?? t.portions,
         })),
         steps: result.steps,
         makespan: result.makespan,

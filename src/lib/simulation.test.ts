@@ -103,6 +103,30 @@ describe('симуляция сходится сама с собой', () => {
     }
   })
 
+  it('замороженное возвращается на стол, а не исчезает', () => {
+    /*
+     * Заготовка имеет смысл, только если её потом едят. Проверяем и то, что
+     * счёт сходится (положили = достали + пропало + лежит), и то, что она
+     * действительно возвращается: замер по 12 прогонам на 20 недель — съедено
+     * 71% замороженного, пропало по сроку 16%, осталось лежать 13%.
+     */
+    const long = simulate(household, { weeks: 20 })
+    const froze = long.weeks.reduce((s, w) => s + w.frozenGrams, 0)
+    const thawed = long.weeks.reduce((s, w) => s + w.thawedGrams, 0)
+    const spoiled = long.weeks.reduce((s, w) => s + w.wastedFrozenGrams, 0)
+    const left = long.weeks[long.weeks.length - 1].freezerGramsEnd
+
+    expect(froze).toBeGreaterThan(1000)
+    // сходится: из морозилки ничего не исчезает и в ней ничего не заводится
+    expect(Math.abs(froze - (thawed + spoiled + left))).toBeLessThanOrEqual(
+      Math.max(50, froze * 0.02),
+    )
+    // и возвращается: больше половины замороженного съедено
+    expect(thawed / froze).toBeGreaterThan(0.5)
+    // а пропадает по сроку — меньшая часть
+    expect(spoiled / froze).toBeLessThan(0.3)
+  })
+
   it('кладовая переходит между неделями, а не обнуляется', () => {
     for (let i = 1; i < result.weeks.length; i++) {
       expect(result.weeks[i].stockStart).toBe(result.weeks[i - 1].stockEnd)

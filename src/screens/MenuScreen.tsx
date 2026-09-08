@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { recipeById } from '../data/recipeRegistry'
 import { ENTRY_STATUS, MEAL_SLOTS } from '../types'
 import type { MenuEntry } from '../types'
-import { WEEKDAYS, dayNorms, dayTotals, fedEaters, portionOf, takeawayEaters, totalPortions } from '../lib/menu'
+import { WEEKDAYS, cookTaskId, dayNorms, dayTotals, fedEaters, portionOf, takeawayEaters, totalPortions } from '../lib/menu'
 import { drinkNorms } from '../lib/drinks'
 import { extraNorms, extraStats, extraSummary, extrasAt } from '../lib/extras'
 import { cookedGrams, recipeStats } from '../lib/nutrition'
@@ -31,7 +31,18 @@ function todayIndex(weekStart: string): number {
 }
 
 export function MenuScreen() {
-  const { household, menu, warnings, swapDish, banRecipe, togglePin, setEntryStatus } =
+  const {
+    household,
+    menu,
+    warnings,
+    cookEvents,
+    swapDish,
+    banRecipe,
+    togglePin,
+    setEntryStatus,
+    completeCookTask,
+    undoCookTask,
+  } =
     useStore()
   const [day, setDay] = useState(() => (menu ? todayIndex(menu.weekStart) : 0))
   const [openEntry, setOpenEntry] = useState<MenuEntry | null>(null)
@@ -284,6 +295,9 @@ export function MenuScreen() {
               const badge = entry.fromFreezer
                 ? { label: 'готово, из морозилки', cls: 'badge badge--freezer' }
                 : STORAGE_BADGE[entry.storage]
+              // отметка о готовке — свойство всей готовки, а не этой записи
+              const taskId = cookTaskId(menu.weekStart, entry.recipeId, entry.cookDay)
+              const cooked = cookEvents.some((e) => e.taskId === taskId)
               return (
                 <div
                   className="dish dish--row"
@@ -326,6 +340,23 @@ export function MenuScreen() {
                     <Icon name="pin" size={18} />
                   </button>
                   <div className="dish__status">
+                    {/*
+                      «Приготовлено» — про всю готовку сразу: одно блюдо
+                      закрывает несколько приёмов, а продукты списываются один
+                      раз. «Съедено» и «пропущено» — про эту тарелку.
+                    */}
+                    {!entry.fromFreezer && (
+                      <button
+                        data-on={cooked}
+                        onClick={() => (cooked ? undoCookTask(taskId) : completeCookTask(taskId))}
+                        title="Приготовлено"
+                        aria-label={`${recipe.title}: приготовлено`}
+                        aria-pressed={cooked}
+                      >
+                        <Icon name="pot" size={15} />
+                        <span>Приготовлено</span>
+                      </button>
+                    )}
                     {ENTRY_STATUS.map((st) => (
                       <button
                         key={st.id}

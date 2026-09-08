@@ -1310,7 +1310,20 @@ export function dayTotals(menu: WeekMenu, day: number, eaterId?: string): DayTot
   }
 }
 
+/**
+ * Устойчивый ключ готовки.
+ *
+ * Он переживает пересборку меню и попадает в сохранённый факт готовки,
+ * поэтому в нём есть дата недели: без неё «гречка, вторник» с прошлой недели и
+ * с этой — один и тот же ключ, и отметка «приготовлено» переехала бы на новую
+ * неделю вместе с историей.
+ */
+export function cookTaskId(weekStart: string, recipeId: string, cookDay: number): string {
+  return `${weekStart}|${recipeId}|${cookDay}`
+}
+
 export interface CookTask {
+  /** См. cookTaskId: неделя, блюдо, день готовки. */
   key: string
   recipeId: string
   cookDay: number
@@ -1326,7 +1339,7 @@ export function cookTasks(menu: WeekMenu): CookTask[] {
   for (const entry of menu.entries) {
     // заготовку из морозилки не готовят и не покупают — её достают
     if (entry.fromFreezer) continue
-    const key = `${entry.recipeId}|${entry.cookDay}`
+    const key = cookTaskId(menu.weekStart, entry.recipeId, entry.cookDay)
     const task = map.get(key)
     const portions = totalPortions(entry)
     if (task) {

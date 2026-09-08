@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { RECIPES } from '../data/recipes'
 import type { Eater, Household, Kitchen, Pantry } from '../types'
-import { buildWeekMenu, defaultRepeats, totalPortions } from './menu'
+import { buildWeekMenu, defaultRepeats } from './menu'
+import { completeCookTask } from './cookFact'
 import { buildCookingPlans } from './cookingPlan'
 import { cookCard } from './cookCard'
 import { defaultOils } from './oil'
@@ -244,11 +245,16 @@ describe('снимок расхождений между модулями', () =
         if (Math.abs(packPlan(ing, needed).buy - line.buy) > 0.5) packDiff++
       }
 
-      // (2) масштаб: расписание считает шаги от потребности, карточка от партии
-      for (const cooking of week.tasks) {
-        if (Math.abs(cooking.servings - cooking.task.portions) < 0.01) continue
-        scaleTasks++
-        scaleDiffSum += (cooking.servings - cooking.task.portions) / cooking.task.portions
+      // (2) масштаб: расписание и карточка должны говорить об одной готовке
+      for (const plan of buildCookingPlans(menu, household, 1, pantry)) {
+        for (const dish of plan.dishes) {
+          const cooking = week.tasks.find(
+            (t) => t.task.recipeId === dish.recipeId && t.task.cookDay === plan.cookDay,
+          )
+          if (!cooking) continue
+          scaleTasks++
+          scaleDiffSum += Math.abs(dish.portions - cooking.servings)
+        }
       }
 
       // (3) калории карточки против тех, что уходят в дневной итог
@@ -264,32 +270,39 @@ describe('снимок расхождений между модулями', () =
         kcalWorst = Math.max(kcalWorst, diff)
       }
 
-      // (4) списание в кладовой: store берёт потребность записи, а не партию
+      // (4) факт готовки списывает партию, а не потребность одной записи меню
       for (const cooking of week.tasks) {
-        const entries = menu.entries.filter(
-          (e) =>
-            e.recipeId === cooking.task.recipeId &&
-            e.cookDay === cooking.task.cookDay &&
-            !e.fromFreezer,
+        const facts = completeCookTask(
+          { pantry: emptyPantry(), cookEvents: [] },
+          menu,
+          household,
+          cooking.task.key,
+          '2026-01-07',
         )
-        const byEntry = entries.reduce((sum, e) => sum + totalPortions(e), 0)
-        if (Math.abs(byEntry - cooking.servings) < 0.01) continue
+        const used = facts.cookEvents[0]?.used ?? []
         storeTasks++
-        storeDiffSum += (cooking.servings - byEntry) / Math.max(0.1, byEntry)
+        for (const { ingredientId, qty } of used) {
+          storeDiffSum += Math.abs(qty - (cooking.ingredients.get(ingredientId) ?? 0))
+        }
       }
     }
 
     console.log(
       [
         `упаковки: расходятся ${((packDiff / packLines) * 100).toFixed(1)}% строк (${packDiff} из ${packLines})`,
-        `масштаб готовки: расписание ≠ карточка в ${scaleTasks} готовках, партия больше в среднем на ${((scaleDiffSum / Math.max(1, scaleTasks)) * 100).toFixed(0)}%`,
+        `масштаб готовки: расписание против карточки — расхождение ${scaleDiffSum.toFixed(3)} доли на ${scaleTasks} готовок`,
         `калории карточки против дневного итога: среднее ${((kcalDiffSum / cards) * 100).toFixed(2)}%, худшее ${((kcalWorst) * 100).toFixed(1)}% (${cards} карточек)`,
-        `списание в кладовой против партии: ${storeTasks} готовок, в среднем на ${((storeDiffSum / Math.max(1, storeTasks)) * 100).toFixed(0)}% меньше, чем куплено`,
+        `списание в кладовой против партии: расхождение ${storeDiffSum.toFixed(3)} на ${storeTasks} готовок`,
       ].join('\n  '),
     )
 
     // Пороги стерегут порядок величины: расхождения не должны расти, пока
     // расчёт не станет единым. Ноль здесь появится по мере переработки.
+    // расписание и факт готовки считают ту же партию, что и карточка
+    expect(scaleTasks).toBeGreaterThan(100)
+    expect(scaleDiffSum).toBeLessThan(0.001)
+    expect(storeTasks).toBeGreaterThan(100)
+    expect(storeDiffSum).toBeLessThan(0.001)
     expect(packLines).toBeGreaterThan(300)
     expect(packDiff / packLines).toBeLessThan(0.1)
     expect(kcalDiffSum / cards).toBeLessThan(0.02)

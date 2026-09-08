@@ -11,7 +11,7 @@ import type {
 } from '../types'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { recipeById } from '../data/recipeRegistry'
-import { portionOf, totalPortions } from './menu'
+import { cookTaskId, portionOf, totalPortions } from './menu'
 import { cookedGrams, recipeStats } from './nutrition'
 import { FREEZE_MIN_GRAMS } from './batch'
 import { planWeek } from './weekPlan'
@@ -232,7 +232,9 @@ export function cookCard(
    * заново значит завести второй ответ на тот же вопрос, а расходиться они
    * начинают ровно в тот день, когда один из них поправят.
    */
-  const plan = planWeek(menu, household, { pantry }).byKey.get(`${entry.recipeId}|${entry.cookDay}`) ?? null
+  const plan = planWeek(menu, household, { pantry }).byKey.get(
+      cookTaskId(menu.weekStart, entry.recipeId, entry.cookDay),
+    ) ?? null
   const neededGrams = plan ? plan.neededGrams : cookedGrams(recipe, demandFactor)
   const servings = plan ? plan.servings : demandFactor
   const cookGrams = plan ? plan.cookedGrams : neededGrams

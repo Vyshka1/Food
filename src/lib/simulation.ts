@@ -68,6 +68,10 @@ export interface WeekReport {
   wastedItems: string[]
   /** Что взяли из морозилки вместо готовки. */
   takenFromFreezer: string[]
+  /** Сколько готовой еды достали из морозилки на стол, г. */
+  thawedGrams: number
+  /** Сколько заготовок пропало по сроку, г. */
+  wastedFrozenGrams: number
   cookedGrams: number
   eatenGrams: number
   frozenGrams: number
@@ -237,6 +241,7 @@ export function simulate(household: Household, options: SimulationOptions): Simu
 
     // то, что достали из морозилки, оттуда и исчезает
     const takenFromFreezer: string[] = []
+    let thawedGrams = 0
     for (const entry of menu.entries) {
       if (!entry.fromFreezer) continue
       const recipe = recipeById(entry.recipeId)
@@ -251,6 +256,7 @@ export function simulate(household: Household, options: SimulationOptions): Simu
         lot.containers = Math.max(0, Math.ceil((lot.grams - take) / CONTAINER_GRAMS))
         lot.grams -= take
         left -= take
+        thawedGrams += take
       }
       frozen = frozen.filter((f) => f.grams > 1)
     }
@@ -389,10 +395,12 @@ export function simulate(household: Household, options: SimulationOptions): Simu
     lots = keep
 
     const keepFrozen: FrozenLot[] = []
+    let wastedFrozenGrams = 0
     for (const lot of frozen) {
       if ((week - lot.cookedWeek + 1) * 7 > lot.keepDays) {
         wasted += lot.value
         wastedFrozen += lot.value
+        wastedFrozenGrams += lot.grams
         wastedItems.push(`${recipeById(lot.recipeId)?.title ?? lot.recipeId} (морозилка)|${Math.round(lot.value)}`)
       } else {
         keepFrozen.push(lot)
@@ -441,6 +449,8 @@ export function simulate(household: Household, options: SimulationOptions): Simu
       wastedFrozen: Math.round(wastedFrozen),
       wastedItems,
       takenFromFreezer,
+      thawedGrams: Math.round(thawedGrams),
+      wastedFrozenGrams: Math.round(wastedFrozenGrams),
       cookedGrams: Math.round(cookedGrams),
       eatenGrams: Math.round(eatenGrams),
       frozenGrams: Math.round(frozenGrams),
