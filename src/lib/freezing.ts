@@ -119,7 +119,7 @@ export function freezingOf(recipe: Recipe): FreezingInfo | undefined {
 }
 
 /** Дата, до которой заготовку стоит съесть. */
-export function useByDate(cookedOn: Date, days: number): Date {
+export function expiresOn(cookedOn: Date, days: number): Date {
   const date = new Date(cookedOn)
   date.setDate(date.getDate() + days)
   return date

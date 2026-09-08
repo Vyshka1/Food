@@ -10,7 +10,7 @@ import {
   isAlways,
   setStock,
   takeFreezer,
-  useByDate,
+  expiresOn,
 } from '../lib/pantry'
 import { plural, shortDate } from '../lib/format'
 import { useStore } from '../store'
@@ -166,7 +166,7 @@ export function PantryCard() {
                     <span className="muted small">
                       {item.containers}{' '}
                       {plural(item.containers, ['контейнер', 'контейнера', 'контейнеров'])} ·
-                      приготовлено {shortDate(item.cookedAt)} · до {shortDate(useByDate(item))}
+                      приготовлено {shortDate(item.cookedAt)} · до {shortDate(expiresOn(item))}
                       {planned ? ' · есть в меню' : ''}
                     </span>
                   </span>

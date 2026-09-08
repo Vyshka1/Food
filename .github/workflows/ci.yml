@@ -10,12 +10,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Node 22, а не 20: jsdom тянет undici, а тот берёт markAsUncloneable из
+      # node:worker_threads — в двадцатке этого API нет, и тесты на провайдер
+      # молча не запускались. Двадцатка к тому же уже снята с поддержки.
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
       - run: npm ci
       - run: npm run typecheck
+      - run: npm run lint
       # Раннер живёт по Гринвичу, а приложение — по местному календарю. В UTC
       # местное и всемирное время совпадают, и проверки на разницу между ними
       # проходят по случайности. Гоняем сюиту в поясе с плюсом и с минусом:

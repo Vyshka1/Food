@@ -20,7 +20,7 @@ import {
   storePurchase,
   takeFreezer,
   takeStock,
-  useByDate,
+  expiresOn,
 } from './pantry'
 
 const TODAY = '2026-01-05'
@@ -157,7 +157,7 @@ describe('морозилка', () => {
     expect(item.containers).toBe(2)
     expect(item.portionsEach).toBe(1.5)
     expect(item.keepDays).toBeGreaterThan(20)
-    expect(useByDate(item) > TODAY).toBe(true)
+    expect(expiresOn(item) > TODAY).toBe(true)
     expect(freezerPortions(pantry)).toBe(3)
   })
 

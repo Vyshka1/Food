@@ -227,7 +227,6 @@ describe('модули считают одно и то же одинаково',
     let scaleTasks = 0
     let scaleDiffSum = 0
     let cards = 0
-    let kcalDiffSum = 0
     let kcalWorst = 0
     let storeTasks = 0
     let storeDiffSum = 0
@@ -271,7 +270,6 @@ describe('модули считают одно и то же одинаково',
         if (!cooked || cooked.stats.kcal <= 0) continue
         cards++
         const diff = Math.abs(card.stats.kcal - cooked.stats.kcal) / cooked.stats.kcal
-        kcalDiffSum += diff
         kcalWorst = Math.max(kcalWorst, diff)
       }
 

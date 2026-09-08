@@ -6,7 +6,7 @@ const root = new URL('..', import.meta.url).pathname
 const source = readFileSync(`${root}src/data/recipes.ts`, 'utf8')
 
 // вытаскиваем id и название из вызовов r('id', 'Название', ...)
-const recipes = [...source.matchAll(/\n  r\(\s*\n?\s*'([^']+)',\s*\n?\s*'([^']+)'/g)].map(
+const recipes = [...source.matchAll(/\n {2}r\(\s*\n?\s*'([^']+)',\s*\n?\s*'([^']+)'/g)].map(
   ([, id, title]) => ({ id, title }),
 )
 

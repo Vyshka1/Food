@@ -1,34 +1,30 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import type {
+  AppState,
   DailyExtra,
   Eater,
   EntryStatus,
   Household,
   DrinkHabit,
-  Kitchen,
-  MealPlace,
   MealSlot,
   MenuEntry,
   MenuGoal,
   OilChoice,
-  CookEvent,
   Pantry,
   RepeatRules,
   Recipe,
   WeekMenu,
-  WeekRecord,
 } from './types'
 import {
   buildWeekMenu,
-  cookTaskId,
   defaultRepeats,
   replaceEntryWith,
   totalPortions,
 } from './lib/menu'
 import type { BuildOptions } from './lib/menu'
 import { defaultOils } from './lib/oil'
-import { emptyPantry, storePurchase, takeFreezer } from './lib/pantry'
+import { storePurchase, takeFreezer } from './lib/pantry'
 import {
   completeCookTask as completeFact,
   undoCookTask as undoFact,
@@ -44,42 +40,23 @@ import {
 import { setCustomRecipes, setOilChoice } from './data/recipeRegistry'
 import { decodeProfile } from './lib/transfer'
 import { mondayOf, today as todayIso } from './lib/day'
+import {
+  MAX_HISTORY,
+  blankState,
+  makeRecord,
+  needsRebuild,
+  parseState,
+  rotateWeek,
+  serialize,
+} from './lib/persist'
+import type { LoadResult } from './lib/persist'
 
 const STORAGE_KEY = 'menu-nedelya.v1'
 /** Ключ до переименования проекта: читаем один раз, чтобы не потерять анкету. */
 const LEGACY_STORAGE_KEY = 'ufff.food.v1'
+/** Оба ключа: под старым может лежать всё, что человек накопил до переименования. */
+export const STORAGE_KEYS = [STORAGE_KEY, LEGACY_STORAGE_KEY] as const
 
-export interface AppState {
-  household: Household | null
-  menu: WeekMenu | null
-  /** Ингредиенты, которые уже есть дома — не считаем в сумму покупок. */
-  atHome: string[]
-  /** Что есть дома: постоянные продукты, запасы и морозилка. */
-  pantry: Pantry
-  /** Дублировать ли напоминания системными уведомлениями. */
-  notifications: boolean
-  bought: string[]
-  warnings: string[]
-  /** Рецепты, добавленные вручную. */
-  customRecipes: Recipe[]
-  /** Прошлые недели: удачную можно повторить, не собирая заново. */
-  history: WeekRecord[]
-  /** Что уже приготовлено: снимок списанного, а не производная от плана. */
-  cookEvents: CookEvent[]
-}
-
-const emptyState: AppState = {
-  household: null,
-  menu: null,
-  atHome: [],
-  pantry: emptyPantry(),
-  notifications: false,
-  bought: [],
-  warnings: [],
-  customRecipes: [],
-  history: [],
-  cookEvents: [],
-}
 
 
 export function newEater(partial: Partial<Eater> = {}): Eater {
@@ -159,7 +136,29 @@ function menuFor(
   })
 }
 
+/**
+ * Состояние сохранения — то, что человек обязан узнать, а не то, о чём код
+ * молчит. Не сохраняется в браузер: это про текущую сессию.
+ */
+export interface StorageStatus {
+  /** Запись выключена, чтобы не затереть данные, которые не удалось прочитать. */
+  blocked: boolean
+  /** Что не прочиталось при запуске. */
+  readProblem: string | null
+  /**
+   * Данные сохранены более новой сборкой приложения. Чинить и стирать нечего:
+   * поможет обновление страницы, а «начать заново» уничтожит целые данные.
+   */
+  newer: boolean
+  /** Данные прочитались, а меню не собралось. Это не потеря, и путать нельзя. */
+  menuProblem: string | null
+  /** Что не записалось только что: кончилось место или частный режим. */
+  saveProblem: string | null
+}
+
 interface Store extends AppState {
+  /** Сохраняется ли всё это вообще. */
+  storage: StorageStatus
   saveHousehold: (household: Household) => void
   regenerate: (request?: RegenerateRequest) => void
   swapDish: (entryId: string, recipeId: string) => void
@@ -196,160 +195,156 @@ interface Store extends AppState {
 const StoreContext = createContext<Store | null>(null)
 
 /**
- * Кухни, сохранённые до появления списка приборов: hasOven превращаем в одну
- * духовку, остального просто не было — считаем, что прибора нет.
+ * Прочитать сохранённое и довести до состояния, в котором приложение работает.
+ *
+ * Разбор и починка данных — чистая работа, она живёт в `lib/persist` и
+ * проверяется без экрана. Здесь остаётся только то, чего чистой функцией не
+ * сделать: часы, случайный seed и сборщик меню.
+ *
+ * Что бы тут ни случилось, прочитанная анкета не теряется: результат разбора
+ * возвращается как есть, а `broken` говорит вызывающему, что сохранять поверх
+ * исходных байтов нельзя.
  */
-/**
- * Анкеты, сохранённые до появления трёх мест приёма пищи. Старый список
- * `awayMeals` — это ровно «не дома»; «с собой» тогда сказать было нельзя,
- * и придумывать за человека, какие из его отлучек были обедом в контейнере,
- * мы не станем.
- */
-function migrateEater(eater: Eater & { awayMeals?: string[] }): Eater {
-  const mealPlaces: Record<string, MealPlace> = { ...(eater.mealPlaces ?? {}) }
-  for (const key of eater.awayMeals ?? []) mealPlaces[key] = 'away'
-  const migrated: Eater = { ...eater, mealPlaces, ratings: eater.ratings ?? {} }
-  delete (migrated as Eater & { awayMeals?: string[] }).awayMeals
-  return migrated
+/** Что `boot` узнал о сохранённых данных: разбор плюс сборка меню. */
+interface BootResult extends LoadResult {
+  /** Данные прочитались, а меню на эту неделю не собралось. Разные вещи. */
+  menuProblem: string | null
 }
 
-function migrateKitchen(kitchen: Kitchen & { hasOven?: boolean }): Kitchen {
-  return {
-    burners: kitchen.burners ?? 4,
-    ovens: kitchen.ovens ?? (kitchen.hasOven === false ? 0 : 1),
-    hasAirfryer: kitchen.hasAirfryer ?? false,
-    hasMulticooker: kitchen.hasMulticooker ?? false,
-    hasBlender: kitchen.hasBlender ?? true,
-    hasProcessor: kitchen.hasProcessor ?? false,
-    hasMicrowave: kitchen.hasMicrowave ?? true,
-    hasDishwasher: kitchen.hasDishwasher ?? false,
-    containers: kitchen.containers ?? 8,
-    hasFreezer: kitchen.hasFreezer ?? true,
-  }
-}
+function boot(): BootResult {
+  const clean = (state: AppState): BootResult => ({
+    state,
+    broken: false,
+    problem: null,
+    newer: false,
+    menuProblem: null,
+  })
 
-/** Сколько недель храним: localStorage не резиновый, а меню весит немало. */
-const MAX_HISTORY = 12
+  if (typeof localStorage === 'undefined') return clean(blankState())
 
-function makeRecord(menu: WeekMenu, cookEvents: CookEvent[] = []): WeekRecord {
-  const count = (status: string) => menu.entries.filter((e) => e.status === status).length
-  return {
-    id: `${menu.weekStart}-${menu.seed}`,
-    weekStart: menu.weekStart,
-    savedAt: new Date().toISOString(),
-    menu,
-    // приготовленное считаем по фактам готовки этой недели, а не по отметкам
-    cooked: cookEvents.filter((e) => e.taskId.startsWith(`${menu.weekStart}|`)).length,
-    eaten: count('eaten'),
-    skipped: count('skipped'),
-    total: menu.entries.length,
-  }
-}
-
-function load(): AppState {
-  if (typeof localStorage === 'undefined') return emptyState
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
-    if (!raw) return emptyState
-    const parsed = JSON.parse(raw) as Partial<AppState>
-    const state = { ...emptyState, ...parsed }
-    // анкеты, сохранённые до появления мест приёма пищи, читаем как «всё дома»;
-    // старый список awayMeals переносим в новую матрицу как «не дома»
-    if (state.household) {
-      state.household = {
-        ...state.household,
-        kitchen: migrateKitchen(state.household.kitchen),
-        // напитков в старых анкетах не было — это пустой список, а не «не знаем»
-        drinks: state.household.drinks ?? [],
-        // а масло раньше было тем, что стоит в рецепте: подсолнечное с оливковым
-        oils: state.household.oils ?? defaultOils(),
-        // а повторы раньше были жёстко зашиты: до двух дней подряд из партии
-        repeats: state.household.repeats ?? defaultRepeats(),
-        extras: state.household.extras ?? [],
-        eaters: state.household.eaters.map(migrateEater),
-      }
+  const read = (key: string): string | null => {
+    try {
+      const value = localStorage.getItem(key)
+      // пустая строка — это не запись, а её отсутствие: под старым ключом
+      // может лежать всё, что человек накопил до переименования
+      return value ? value : null
+    } catch {
+      // хранилище запрещено политикой браузера
+      return null
     }
-    // реестр должен знать о своих рецептах и о выбранном масле до первой
-    // сборки меню: масло входит в состав, а значит и в калории, и в закупку
+  }
+
+  const result = parseState(read(STORAGE_KEY) ?? read(LEGACY_STORAGE_KEY))
+  if (result.broken) return { ...result, menuProblem: null }
+  const state = result.state
+
+  /*
+   * Реестр должен знать о своих рецептах и о выбранном масле до первой сборки
+   * меню: масло входит в состав, а значит и в калории, и в закупку. Поэтому не
+   * эффектом после первого кадра, а здесь, до него; вызов идемпотентен.
+   *
+   * И обязательно внутри `try`. `boot` работает инициализатором состояния, то
+   * есть исключение отсюда уносит с собой весь провайдер — вместе с
+   * сообщением об ошибке и кнопкой «скачать копию», которые живут внутри него.
+   * Человек получил бы белый экран без единого способа что-то сделать.
+   */
+  try {
     if (state.household) setOilChoice(state.household.oils)
     setCustomRecipes(state.customRecipes)
-    // кладовой раньше не было: заводим её из базовых продуктов
-    if (!state.pantry) state.pantry = emptyPantry()
-    /*
-     * Раньше «приготовлено» было отметкой на записи меню, а продукты
-     * списывались тут же. Восстановить снимок списанного задним числом нельзя,
-     * но и списывать второй раз нельзя тем более: заводим факт готовки с
-     * пустым списком — он говорит «это уже сделано», и повторное нажатие
-     * ничего не спишет.
-     */
-    if (state.menu) {
-      const legacy = state.menu.entries.filter(
-        (e) => (e.status as string | undefined) === 'cooked',
-      )
-      if (legacy.length > 0) {
-        const known = new Set(state.cookEvents.map((e) => e.taskId))
-        const restored: CookEvent[] = []
-        for (const entry of legacy) {
-          const taskId = cookTaskId(state.menu.weekStart, entry.recipeId, entry.cookDay)
-          if (known.has(taskId)) continue
-          known.add(taskId)
-          restored.push({
-            taskId,
-            at: state.menu.weekStart,
-            recipeId: entry.recipeId,
-            servings: 0,
-            cookedGrams: 0,
-            used: [],
-          })
-        }
-        state.cookEvents = [...state.cookEvents, ...restored]
-        state.menu = {
-          ...state.menu,
-          entries: state.menu.entries.map((e) =>
-            (e.status as string | undefined) === 'cooked' ? { ...e, status: undefined } : e,
-          ),
-        }
-      }
+  } catch (error) {
+    return {
+      state: blankState(),
+      broken: true,
+      problem: reason(error, 'свои рецепты не читаются'),
+      newer: false,
+      menuProblem: null,
     }
+  }
+
+  try {
     // меню, собранные до появления личных порций, пересобираем на том же seed
-    const outdated = state.menu?.entries.some((e) => !Array.isArray(e.portions))
-    if (state.household && state.menu && outdated) {
+    if (state.household && state.menu && needsRebuild(state)) {
       const { menu, warnings } = menuFor(state.household, state.menu.seed, [], state.pantry)
-      return { ...state, menu, warnings }
+      return { ...result, menuProblem: null, state: { ...state, menu, warnings } }
     }
     // наступила новая неделя: прошлую убираем в историю вместе с отметками
-    // «приготовлено / съедено», а не затираем молча
     const monday = mondayOf()
     if (state.household && state.menu && state.menu.weekStart !== monday) {
       const household = { ...state.household, weekStart: monday }
-      const { menu, warnings } = menuFor(household, Math.floor(Math.random() * 1e9), [], state.pantry)
-      const history = [makeRecord(state.menu, state.cookEvents), ...state.history]
-        .filter((r, i, all) => all.findIndex((x) => x.id === r.id) === i)
-        .slice(0, MAX_HISTORY)
-      // факты готовки живут столько же, сколько недели, к которым относятся
-      const weeks = new Set([menu.weekStart, ...history.map((r) => r.weekStart)])
-      const cookEvents = state.cookEvents.filter((e) => weeks.has(e.taskId.split('|')[0]))
-      return { ...state, household, menu, warnings, history, cookEvents, bought: [] }
+      const seed = Math.floor(Math.random() * 1e9)
+      const { menu, warnings } = menuFor(household, seed, [], state.pantry)
+      return {
+        ...result,
+        menuProblem: null,
+        state: rotateWeek(state, monday, menu, warnings, new Date().toISOString()),
+      }
     }
-    return state
-  } catch {
-    return emptyState
+  } catch (error) {
+    /*
+     * Сборка меню упала — но анкета, кладовая, история и факты готовки уже
+     * прочитаны и целы. Отдаём их как есть и разрешаем сохранять: без меню
+     * приложение неполно, а без анкеты его нет вовсе. И говорим об этом
+     * отдельно от ошибок чтения: данные-то прочитались.
+     */
+    return {
+      ...result,
+      state,
+      menuProblem: reason(error, 'не удалось собрать меню на эту неделю'),
+    }
   }
+  return { ...result, menuProblem: null }
 }
 
+function reason(error: unknown, fallback: string): string {
+  return error instanceof Error && error.message ? `${fallback}: ${error.message}` : fallback
+}
+
+/**
+ * Почему не сохранилось. Место кончается только у тех, кто пользуется
+ * приложением давно, и молчать об этом нельзя: человек продолжит планировать
+ * неделю, а из браузера всё исчезнет при закрытии вкладки.
+ */
+function saveReason(error: unknown): string {
+  const quota =
+    error instanceof DOMException &&
+    (error.name === 'QuotaExceededError' || error.name === 'NS_ERROR_DOM_QUOTA_REACHED')
+  if (quota) return 'в браузере кончилось место — удалите старые недели в истории'
+  return reason(error, 'браузер не разрешает сохранение (частный режим?)')
+}
+
+
 export function StoreProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<AppState>(load)
+  const [start] = useState(boot)
+  const [state, setState] = useState<AppState>(start.state)
+  /**
+   * Сохранение выключено.
+   *
+   * Прочитать сохранённое не удалось, а значит лежащие в браузере байты —
+   * единственное, что осталось от анкеты, кладовой, морозилки и истории
+   * недель. Записать поверх них пустое состояние — потерять всё; ссылка-профиль
+   * вернула бы только анкету и свои рецепты. Пусть лучше человек поработает
+   * сессию без сохранения, чем лишится данных за первый же кадр.
+   */
+  const [blocked, setBlocked] = useState(start.broken)
+  const [readProblem, setReadProblem] = useState<string | null>(start.problem)
+  const [newer, setNewer] = useState(start.newer)
+  const [menuProblem, setMenuProblem] = useState<string | null>(start.menuProblem)
+  const [saveProblem, setSaveProblem] = useState<string | null>(null)
 
   useEffect(() => {
+    if (blocked) return
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-    } catch {
-      // приватный режим — просто работаем без сохранения
+      localStorage.setItem(STORAGE_KEY, serialize(state))
+      setSaveProblem((prev) => (prev === null ? prev : null))
+    } catch (error) {
+      setSaveProblem(saveReason(error))
     }
-  }, [state])
+  }, [state, blocked])
 
   const saveHousehold = useCallback(
     (household: Household) => {
+      // анкету поправили — прошлая жалоба на сборку меню больше не про эти данные
+      setMenuProblem(null)
       setState((prev) => {
         const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
         const { menu, warnings } = menuFor(household, seed, [], prev.pantry)
@@ -688,13 +683,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     if (!payload) return false
     setOilChoice(payload.household.oils ?? defaultOils())
     setCustomRecipes(payload.customRecipes)
-    const { menu, warnings } = buildWeekMenu(payload.household, Math.floor(Math.random() * 1e9), [], {
+    // неделя берётся своя: в профиле лежит понедельник того, кто им поделился,
+    // и с чужой датой первая же перезагрузка убрала бы новое меню в историю
+    const household: Household = { ...payload.household, weekStart: mondayOf() }
+    const { menu, warnings } = buildWeekMenu(household, Math.floor(Math.random() * 1e9), [], {
       freezer: [],
       today: todayIso(),
     })
     setState((prev) => ({
       ...prev,
-      household: payload.household,
+      household,
       customRecipes: payload.customRecipes,
       menu,
       warnings,
@@ -734,7 +732,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!prev.menu || prev.menu.entries.length === 0) return prev
       return {
         ...prev,
-        history: [makeRecord(prev.menu, prev.cookEvents), ...prev.history].slice(0, MAX_HISTORY),
+        history: [makeRecord(prev.menu, prev.cookEvents, new Date().toISOString()), ...prev.history]
+          .slice(0, MAX_HISTORY),
       }
     })
   }, [])
@@ -762,19 +761,37 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setState((prev) => ({ ...prev, history: prev.history.filter((r) => r.id !== recordId) }))
   }, [])
 
+  /**
+   * Начать заново — единственное место, где стирать данные можно: это выбор
+   * человека, а не следствие ошибки разбора. Заодно снимаем запрет на запись:
+   * терять больше нечего.
+   */
   const reset = useCallback(() => {
-    setState(emptyState)
+    setState(blankState())
     setCustomRecipes([])
-    try {
-      localStorage.removeItem(STORAGE_KEY)
-    } catch {
-      // ignore
+    setBlocked(false)
+    setReadProblem(null)
+    setNewer(false)
+    setMenuProblem(null)
+    setSaveProblem(null)
+    for (const key of [STORAGE_KEY, LEGACY_STORAGE_KEY]) {
+      try {
+        localStorage.removeItem(key)
+      } catch {
+        // хранилище недоступно — стирать нечего
+      }
     }
   }, [])
+
+  const storage = useMemo<StorageStatus>(
+    () => ({ blocked, readProblem, newer, menuProblem, saveProblem }),
+    [blocked, readProblem, newer, menuProblem, saveProblem],
+  )
 
   const value = useMemo<Store>(
     () => ({
       ...state,
+      storage,
       saveHousehold,
       regenerate,
       swapDish,
@@ -807,6 +824,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }),
     [
       state,
+      storage,
       saveHousehold,
       regenerate,
       swapDish,

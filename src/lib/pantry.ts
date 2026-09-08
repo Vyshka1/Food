@@ -162,8 +162,8 @@ export function daysLeft(item: FreezerItem, today: string): number {
   return item.keepDays - daysBetween(item.cookedAt, today)
 }
 
-/** Дата, до которой стоит съесть. */
-export function useByDate(item: FreezerItem): string {
+/** Дата, до которой стоит съесть: срок годности заготовки. */
+export function expiresOn(item: FreezerItem): string {
   return addDays(item.cookedAt, item.keepDays)
 }
 

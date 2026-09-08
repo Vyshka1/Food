@@ -8,7 +8,7 @@ import {
   loads,
   pieceCookingOf,
   sizeOptions,
-  useTwoPans,
+  needsTwoPans,
 } from './pieces'
 import { planBatch, optionPieces } from './batch'
 import { buildCookingPlans } from './cookingPlan'
@@ -80,9 +80,9 @@ describe('заходы, а не коэффициент', () => {
   })
 
   it('вторая сковорода включается там, где начинает помогать', () => {
-    expect(useTwoPans(12, pan, kitchen)).toBe(false)
-    expect(useTwoPans(30, pan, kitchen)).toBe(true)
-    expect(useTwoPans(30, pan, { ...kitchen, burners: 1 })).toBe(false)
+    expect(needsTwoPans(12, pan, kitchen)).toBe(false)
+    expect(needsTwoPans(30, pan, kitchen)).toBe(true)
+    expect(needsTwoPans(30, pan, { ...kitchen, burners: 1 })).toBe(false)
     expect(fryMinutes(30, pan, 2)).toBe(12)
   })
 
@@ -161,7 +161,7 @@ describe('план готовки считает жарку заходами', (
         if (!cooking || !piece) continue
         const pieces = optionPieces(cooking.batch, cooking.chosen.scale)
         if (!pieces) continue
-        const pans = useTwoPans(pieces, piece, household.kitchen) ? 2 : 1
+        const pans = needsTwoPans(pieces, piece, household.kitchen) ? 2 : 1
         expect(step.end - step.start, `${cooking.recipe.title}, ${pieces} шт`).toBe(
           fryMinutes(pieces, piece, pans),
         )

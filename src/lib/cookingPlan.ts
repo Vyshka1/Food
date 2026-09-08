@@ -13,11 +13,11 @@ import type {
 } from '../types'
 import { APPLIANCE_LABEL, applianceCapacity } from '../types'
 import { WEEKDAYS_FULL, cookTasks, type CookTask } from './menu'
-import { containerLabel, useByDate } from './freezing'
+import { containerLabel, expiresOn } from './freezing'
 import { thawReminders } from './thaw'
 import { FRY_STEP, optionPieces } from './batch'
 import { planWeek } from './weekPlan'
-import { fryMinutes, pieceCookingOf, useTwoPans } from './pieces'
+import { fryMinutes, pieceCookingOf, needsTwoPans } from './pieces'
 import { isoDate, parseIso } from './day'
 
 /**
@@ -267,7 +267,7 @@ function toSchedTask(
    */
   const cooking = pieceCookingOf(recipe)
   const pans =
-    cooking && pieces && household && useTwoPans(pieces, cooking, household.kitchen) ? 2 : 1
+    cooking && pieces && household && needsTwoPans(pieces, cooking, household.kitchen) ? 2 : 1
   const steps = recipe.steps.map((step) => {
     if (cooking && pieces && FRY_STEP.test(step.text)) {
       const minutes = fryMinutes(pieces, cooking, pans)
@@ -331,7 +331,7 @@ export function buildCookingPlans(
           const title = recipe?.title ?? t.recipeId
           const info = recipe?.freezing
           const containers = Math.max(1, Math.round(t.freezerPortions))
-          const useBy = useByDate(cookedOn, info?.days ?? 30)
+          const useBy = expiresOn(cookedOn, info?.days ?? 30)
           return {
             recipeId: t.recipeId,
             title,

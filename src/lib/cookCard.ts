@@ -17,7 +17,7 @@ import { planWeek } from './weekPlan'
 import type { TaskPlan } from './weekPlan'
 import { purchaseInfo } from './purchase'
 import { householdGrams } from './measures'
-import { fryMinutes, loads as loadCount, pieceCookingOf, useTwoPans } from './pieces'
+import { fryMinutes, loads as loadCount, pieceCookingOf, needsTwoPans } from './pieces'
 import { FRY_STEP } from './batch'
 import { scaledMinutes } from './cookingPlan'
 
@@ -225,7 +225,6 @@ export function cookCard(
 
   const rows: CardRow[] = []
   let placedGrams = 0
-  let placedPieces = 0
   if (cookPieces && pieceGrams) {
     // штучное раздаём целыми изделиями: половину голубца никто не положит
     const forPlates = Math.min(
@@ -250,7 +249,6 @@ export function cookCard(
         kcal: Math.round(pieces * kcalPerPiece),
         targetKcal: Math.round(need.kcal),
       })
-      placedPieces += pieces
       placedGrams += Math.round(pieces * pieceGrams)
     })
   } else {
@@ -391,7 +389,7 @@ export function cookCard(
   })
 
   const cooking = pieceCookingOf(recipe)
-  const twoPans = cookPieces && cooking ? useTwoPans(cookPieces, cooking, household.kitchen) : false
+  const twoPans = cookPieces && cooking ? needsTwoPans(cookPieces, cooking, household.kitchen) : false
   const pans = twoPans ? 2 : 1
 
   const stepMinutes = recipe.steps.map((step) => {
