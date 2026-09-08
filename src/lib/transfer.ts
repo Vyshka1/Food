@@ -40,6 +40,12 @@ export function decodeProfile(input: string): ProfilePayload | null {
     if (parsed.v !== 1) return null
     if (!parsed.household || !Array.isArray(parsed.household.eaters)) return null
     if (parsed.household.eaters.length === 0) return null
+    /*
+     * Дату начала недели проверяем здесь, на границе: дальше её разбирает
+     * lib/day, который на мусоре падает. Пусть чужая ссылка окажется просто
+     * нечитаемой — это честнее, чем белый экран посреди приложения.
+     */
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(parsed.household.weekStart ?? '')) return null
     return {
       v: 1,
       household: parsed.household,

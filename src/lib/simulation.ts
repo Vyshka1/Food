@@ -10,6 +10,7 @@ import type { BatchPreference } from './batch'
 import { CONTAINER_GRAMS, emptyPantry, freezerRoomGrams } from './pantry'
 import { freezerDaysOf } from './freezing'
 import { purchaseInfo } from './purchase'
+import { addDays } from './day'
 
 /**
  * Жизнь одной кладовой на несколько месяцев.
@@ -181,10 +182,8 @@ export interface SimulationResult {
 }
 
 /** Дата понедельника нужной недели — от неё считаются сроки. */
-function weekDate(start: Date, week: number): string {
-  const d = new Date(start)
-  d.setDate(d.getDate() + week * 7)
-  return d.toISOString().slice(0, 10)
+function weekDate(start: string, week: number): string {
+  return addDays(start, week * 7)
 }
 
 export function simulate(household: Household, options: SimulationOptions): SimulationResult {
@@ -193,11 +192,9 @@ export function simulate(household: Household, options: SimulationOptions): Simu
   let frozen: FrozenLot[] = []
   const always = new Set(emptyPantry().always)
 
-  const start = new Date(household.weekStart)
+  const start = household.weekStart
   for (let week = 0; week < options.weeks; week++) {
-    const today = new Date(start)
-    today.setDate(today.getDate() + week * 7)
-    const todayIso = today.toISOString().slice(0, 10)
+    const todayIso = weekDate(start, week)
     if (options.independent) {
       lots = []
       frozen = []

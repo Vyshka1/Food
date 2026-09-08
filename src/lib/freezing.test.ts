@@ -6,6 +6,7 @@ import { buildCookingPlans } from './cookingPlan'
 import { containerLabel, formatUseBy, isSafeThaw, rawFreezeStep, useByDate } from './freezing'
 import { thawReminders } from './thaw'
 import { defaultOils } from './oil'
+import { parseIso } from './day'
 
 describe('на каком этапе морозить', () => {
   it('лепное и потом жареное морозится сырым', () => {
@@ -92,7 +93,8 @@ describe('разморозка', () => {
 
 describe('этикетка контейнера', () => {
   it('содержит блюдо, число контейнеров и дату', () => {
-    const useBy = useByDate(new Date('2026-09-09'), 90)
+    // дату строим так же, как приложение: местной полночью, а не гринвичской
+    const useBy = useByDate(parseIso('2026-09-09'), 90)
     expect(formatUseBy(useBy)).toBe('до 8 декабря')
     expect(containerLabel('Тефтели из индейки', 2, useBy)).toBe(
       'Тефтели из индейки · 2 контейнера · до 8 декабря',

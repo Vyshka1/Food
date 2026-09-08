@@ -5,6 +5,7 @@ import { addFreezer, emptyPantry } from './pantry'
 import { recipeById } from '../data/recipeRegistry'
 import { defaultOils } from './oil'
 import { dueNow, remindersFor } from './reminders'
+import { addDays } from './day'
 
 const TODAY = '2026-01-05'
 
@@ -95,14 +96,12 @@ describe('дела на сегодня', () => {
     const recipe = recipeById('lazy_cabbage_rolls')!
     const pantry = addFreezer(emptyPantry(), recipe, 1, 2, '2026-01-01')
     const keep = pantry.freezer[0].keepDays
-    const soon = new Date('2026-01-01')
-    soon.setDate(soon.getDate() + keep - 5)
-    const late = new Date('2026-01-01')
-    late.setDate(late.getDate() + keep + 5)
+    const soon = addDays('2026-01-01', keep - 5)
+    const late = addDays('2026-01-01', keep + 5)
     const h = household()
     const { menu } = buildWeekMenu(h, 4)
-    const before = remindersFor(h, menu, pantry, 0, soon.toISOString().slice(0, 10))
-    const after = remindersFor(h, menu, pantry, 0, late.toISOString().slice(0, 10))
+    const before = remindersFor(h, menu, pantry, 0, soon)
+    const after = remindersFor(h, menu, pantry, 0, late)
     expect(before.find((r) => r.kind === 'expiring')!.title).toBe('Скоро истечёт срок')
     expect(after.find((r) => r.kind === 'expiring')!.title).toBe('Срок вышел')
   })

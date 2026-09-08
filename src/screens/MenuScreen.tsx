@@ -18,6 +18,7 @@ import { DishThumb } from '../components/DishImage'
 import { plural } from '../lib/format'
 import { MACRO_COLOR } from '../lib/palette'
 import { ReplacePicker } from '../components/ReplacePicker'
+import { daysBetween, parseIso, today } from '../lib/day'
 
 const STORAGE_BADGE: Record<string, { label: string; cls: string } | null> = {
   fresh: null,
@@ -26,8 +27,10 @@ const STORAGE_BADGE: Record<string, { label: string; cls: string } | null> = {
 }
 
 function todayIndex(weekStart: string): number {
-  const start = new Date(weekStart)
-  const diff = Math.floor((Date.now() - start.getTime()) / 86_400_000)
+  // разность считаем по календарю: в ночь перевода часов сутки не 24 часа, и
+  // деление миллисекунд в последний час недели давало седьмой день — то есть
+  // выход за пределы недели и откат на понедельник
+  const diff = daysBetween(weekStart, today())
   return diff >= 0 && diff <= 6 ? diff : 0
 }
 
@@ -116,7 +119,7 @@ export function MenuScreen() {
   if (!household || !menu || !norms || !totals) return null
 
   const dates = Array.from({ length: 7 }, (_, i) => {
-    const d = new Date(menu.weekStart)
+    const d = parseIso(menu.weekStart)
     d.setDate(d.getDate() + i)
     return d.getDate()
   })
@@ -125,8 +128,8 @@ export function MenuScreen() {
     'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
     'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
   ]
-  const weekStart = new Date(menu.weekStart)
-  const weekEnd = new Date(menu.weekStart)
+  const weekStart = parseIso(menu.weekStart)
+  const weekEnd = parseIso(menu.weekStart)
   weekEnd.setDate(weekEnd.getDate() + 6)
   const weekLabel =
     weekStart.getMonth() === weekEnd.getMonth()

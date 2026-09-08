@@ -4,6 +4,7 @@ import { useReminders } from '../hooks/useReminders'
 import { useStore } from '../store'
 import { Card } from './ui'
 import { Icon } from './icons'
+import { today as todayIso } from '../lib/day'
 
 const ICON = {
   thaw: 'snowflake',
@@ -25,7 +26,7 @@ const ICON = {
  */
 export function TodayCard({ day }: { day: number }) {
   const { household, menu, pantry, notifications, setNotifications } = useStore()
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayIso()
   const reminders = useMemo(
     () => (household ? remindersFor(household, menu, pantry, day, today) : []),
     [household, menu, pantry, day, today],

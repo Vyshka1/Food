@@ -17,6 +17,7 @@ import { useStore } from '../store'
 import { Sheet } from './ui'
 import { Icon } from './icons'
 import { DishBanner, DishThumb } from './DishImage'
+import { today as todayIso } from '../lib/day'
 
 const STORAGE_LABEL: Record<string, string> = {
   fresh: 'Готовим в этот день',
@@ -92,7 +93,7 @@ function FreezerMealSheet({
   const { household, pantry, rateRecipe } = useStore()
   const recipe = recipeById(entry.recipeId)
   if (!recipe || !household) return null
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayIso()
   const lots = pantry.freezer.filter((f) => f.recipeId === recipe.id)
   const need = entry.portions.reduce((sum, p) => sum + p.factor, 0)
   const perContainer = lots[0]?.portionsEach ?? 1
