@@ -183,6 +183,50 @@ describe('сохранение', () => {
     expect(JSON.parse(localStorage.getItem(KEY) ?? '{}').household).toBeNull()
   })
 
+  /*
+   * `boot` работает инициализатором состояния: исключение оттуда уносит с собой
+   * весь провайдер — вместе с сообщением об ошибке и кнопкой «скачать копию»,
+   * которые живут внутри него. Человек получал белый экран без единого способа
+   * что-то сделать, и перезагрузка повторяла это бесконечно.
+   */
+  it('свой рецепт без шагов не оставляет человека с белым экраном', () => {
+    const data = JSON.parse(goodData())
+    data.customRecipes = [{ id: 'r1', title: 'Своё', items: [] }]
+    const raw = JSON.stringify(data)
+    localStorage.setItem(KEY, raw)
+
+    mount()
+
+    expect(at('blocked')).toBe('true')
+    expect(at('read')).not.toBe('')
+    expect(localStorage.getItem(KEY)).toBe(raw)
+  })
+
+  it('и не оставляет, если рецепт сломан глубже, чем видно на входе', () => {
+    // проверка на входе смотрит на форму рецепта; здесь форма правильная, а
+    // внутри шагов пусто — реестр падает уже на разборе. Провайдер обязан
+    // остаться на ногах и в этом случае
+    const data = JSON.parse(goodData())
+    data.customRecipes = [{ id: 'r1', title: 'Своё', items: [], steps: [null] }]
+    const raw = JSON.stringify(data)
+    localStorage.setItem(KEY, raw)
+
+    mount()
+
+    expect(at('blocked')).toBe('true')
+    expect(localStorage.getItem(KEY)).toBe(raw)
+  })
+
+  it('данные из старого ключа не заслоняются пустой строкой в новом', () => {
+    localStorage.setItem(KEY, '')
+    localStorage.setItem(LEGACY_KEY, goodData())
+
+    mount()
+
+    expect(at('eaters')).toBe('1')
+    expect(at('blocked')).toBe('false')
+  })
+
   it('первый запуск: пусто — это не поломка', () => {
     mount()
     expect(at('blocked')).toBe('false')

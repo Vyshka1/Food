@@ -118,8 +118,11 @@ describe('нечитаемые данные', () => {
     ['не объект, а строка', '"анкета"'],
     ['массив вместо объекта', '[]'],
     ['мусор от другого приложения', '<!DOCTYPE html>'],
-    ['пустая анкета без едоков', JSON.stringify({ household: { eaters: [] } })],
-    ['меню без списка записей', saved({ menu: { weekStart: '2026-09-07', seed: 1 } })],
+    ['история недель не списком', saved({ history: { w1: { id: 'a' } } })],
+    ['свои рецепты не списком', saved({ customRecipes: { my: { id: 'r1' } } })],
+    ['отметки о готовке не списком', saved({ cookEvents: { z: 1 } })],
+    ['запасы не списком', saved({ pantry: { always: [], stock: {}, freezer: [] } })],
+    ['свой рецепт без шагов', saved({ customRecipes: [{ id: 'r1', title: 'Своё', items: [] }] })],
   ])('%s — сломано, и об этом сказано', (_name, raw) => {
     const result = parseState(raw)
     expect(result.broken).toBe(true)
@@ -131,6 +134,39 @@ describe('нечитаемые данные', () => {
     const result = parseState(saved({ version: SCHEMA_VERSION + 1 }))
     expect(result.broken).toBe(true)
     expect(result.problem).toContain(String(SCHEMA_VERSION + 1))
+    // это не поломка: чинить нечего, и стирать целые данные тем более
+    expect(result.newer).toBe(true)
+  })
+
+  /*
+   * Первая версия этого файла считала нечитаемым всё, у чего сломано меню или
+   * пуста анкета, — и предлагала человеку «начать заново». Но меню собирается
+   * заново каждый понедельник, а кладовая, морозилка, история и свои рецепты к
+   * анкете не привязаны: терять их из-за этого нельзя.
+   */
+  it('сломанное меню — не повод объявить нечитаемой всю запись', () => {
+    const raw = saved({
+      menu: { weekStart: '2026-09-07', seed: 1 },
+      pantry: { always: ['sol'], stock: [{ ingredientId: 'ris', qty: 900, addedAt: '2026-09-01' }], freezer: [] },
+    })
+    const { state, broken, problem } = parseState(raw)
+    expect(broken).toBe(false)
+    expect(problem).toBeTruthy()
+    expect(state.menu).toBeNull()
+    expect(state.household?.eaters).toHaveLength(1)
+    expect(state.pantry.stock).toHaveLength(1)
+  })
+
+  it('анкета без едоков — тоже: кладовая и история к ней не привязаны', () => {
+    const raw = saved({
+      household: household({ eaters: [] }),
+      history: [{ id: 'h1', weekStart: '2026-08-31', savedAt: 'x', menu: null, cooked: 1, eaten: 1, skipped: 0, total: 3 }],
+    })
+    const { state, broken, problem } = parseState(raw)
+    expect(broken).toBe(false)
+    expect(problem).toBeTruthy()
+    expect(state.household).toBeNull()
+    expect(state.history).toHaveLength(1)
   })
 
   it('данные постарше читаются как свои', () => {

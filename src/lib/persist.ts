@@ -75,6 +75,11 @@ export interface LoadResult {
   broken: boolean
   /** Что именно не прочиталось — человеку и в отчёт об ошибке. */
   problem: string | null
+  /**
+   * Данные сохранены более новой сборкой. Чинить тут нечего и стирать нечего:
+   * поможет обновление страницы, а не «начать заново».
+   */
+  newer: boolean
 }
 
 /**
@@ -131,22 +136,59 @@ export function makeRecord(
   }
 }
 
-/** Список, который должен быть списком. Сохранённый null — это не «пусто». */
-function listOf<T>(value: unknown, fallback: T[] = []): T[] {
-  return Array.isArray(value) ? (value as T[]) : fallback
+/**
+ * Список, который должен быть списком.
+ *
+ * Пропущенное поле и сохранённый `null` — это «не задано», и пустой список тут
+ * честный ответ. А вот объект вместо списка — это данные, которых мы не
+ * понимаем, и молча заменить их пустотой значит стереть двенадцать недель
+ * истории или все свои рецепты. Такое поле возвращает `null`, и разбор
+ * останавливается — ровно та ошибка, ради которой этот файл и появился.
+ */
+function listOf<T>(value: unknown, fallback: T[] = []): T[] | null {
+  if (value === undefined || value === null) return fallback
+  return Array.isArray(value) ? (value as T[]) : null
+}
+
+/**
+ * Свой рецепт, который можно отдать в реестр.
+ *
+ * Реестр сразу же считает по рецепту шаги, заморозку и партию, и на рецепте без
+ * `steps` падает — а падает он внутри инициализатора состояния, то есть уносит
+ * с собой весь провайдер вместе с сообщением об ошибке. Проверяем здесь.
+ */
+function looksLikeRecipe(value: unknown): boolean {
+  const recipe = value as Partial<Recipe> | null
+  return Boolean(
+    recipe &&
+      typeof recipe === 'object' &&
+      typeof recipe.id === 'string' &&
+      Array.isArray(recipe.items) &&
+      Array.isArray(recipe.steps),
+  )
+}
+
+/** Меню, по которому вообще можно работать. */
+function looksLikeMenu(menu: WeekMenu | null | undefined): boolean {
+  return Boolean(
+    menu && typeof menu.weekStart === 'string' && Array.isArray(menu.entries),
+  )
 }
 
 /**
  * Кладовая целиком: раньше чинился только сам объект, но не его части.
  * Пропавший `pantry.freezer` переживал загрузку и падал уже при отрисовке.
  */
-function repairPantry(pantry: Pantry | undefined): Pantry {
+function repairPantry(
+  pantry: Pantry | undefined,
+  list: <T>(value: unknown, name: string, fallback?: T[]) => T[],
+): Pantry {
   const empty = emptyPantry()
   if (!pantry) return empty
   return {
-    always: listOf<string>(pantry.always, empty.always),
-    stock: listOf(pantry.stock),
-    freezer: listOf(pantry.freezer),
+    always: list<string>(pantry.always, 'постоянные продукты', empty.always),
+    stock: list(pantry.stock, 'запасы'),
+    freezer: list(pantry.freezer, 'морозилка'),
   }
 }
 
@@ -195,11 +237,24 @@ function migrateCookedMarks(state: AppState): AppState {
  * состояние под видом успеха.
  */
 export function parseState(raw: string | null): LoadResult {
-  if (!raw) return { state: blankState(), broken: false, problem: null }
+  const ok = (state: AppState, problem: string | null = null): LoadResult => ({
+    state,
+    broken: false,
+    problem,
+    newer: false,
+  })
+  const fail = (problem: string): LoadResult => ({
+    state: blankState(),
+    broken: true,
+    problem,
+    newer: false,
+  })
+
+  if (!raw) return ok(blankState())
   try {
     const parsed = JSON.parse(raw) as Partial<AppState>
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      return { state: blankState(), broken: true, problem: 'сохранённые данные не похожи на анкету' }
+      return fail('сохранённые данные не похожи на анкету')
     }
     /*
      * Данные новее, чем эта сборка, читать нельзя: мы не знаем, что в них
@@ -211,7 +266,23 @@ export function parseState(raw: string | null): LoadResult {
         state: blankState(),
         broken: true,
         problem: `данные сохранены более новой версией приложения (${parsed.version})`,
+        newer: true,
       }
+    }
+
+    /*
+     * Поля, сохранённые не списком. Пустой список вместо них — это тихая потеря
+     * ровно того, что человек копил: своих рецептов, истории недель, отметок о
+     * готовке. Собираем такие поля и останавливаемся.
+     */
+    const strange: string[] = []
+    const list = <T,>(value: unknown, name: string, fallback: T[] = []): T[] => {
+      const result = listOf<T>(value, fallback)
+      if (result === null) {
+        strange.push(name)
+        return fallback
+      }
+      return result
     }
 
     // Присутствующий null перекрывает значение по умолчанию — чиним каждое поле
@@ -219,13 +290,13 @@ export function parseState(raw: string | null): LoadResult {
       ...blankState(),
       ...parsed,
       version: SCHEMA_VERSION,
-      atHome: listOf<string>(parsed.atHome),
-      bought: listOf<string>(parsed.bought),
-      warnings: listOf<string>(parsed.warnings),
-      customRecipes: listOf<Recipe>(parsed.customRecipes),
-      history: listOf<WeekRecord>(parsed.history),
-      cookEvents: listOf<CookEvent>(parsed.cookEvents),
-      pantry: repairPantry(parsed.pantry),
+      atHome: list<string>(parsed.atHome, 'что есть дома'),
+      bought: list<string>(parsed.bought, 'отметки о покупках'),
+      warnings: list<string>(parsed.warnings, 'предупреждения'),
+      customRecipes: list<Recipe>(parsed.customRecipes, 'свои рецепты'),
+      history: list<WeekRecord>(parsed.history, 'история недель'),
+      cookEvents: list<CookEvent>(parsed.cookEvents, 'отметки о готовке'),
+      pantry: repairPantry(parsed.pantry, list),
     }
 
     if (state.household) {
@@ -233,31 +304,55 @@ export function parseState(raw: string | null): LoadResult {
         ...state.household,
         kitchen: migrateKitchen(state.household.kitchen),
         // напитков в старых анкетах не было — это пустой список, а не «не знаем»
-        drinks: listOf(state.household.drinks),
+        drinks: list(state.household.drinks, 'напитки'),
         // а масло раньше было тем, что стоит в рецепте: подсолнечное с оливковым
         oils: state.household.oils ?? defaultOils(),
         // а повторы раньше были жёстко зашиты: до двух дней подряд из партии
         repeats: state.household.repeats ?? defaultRepeats(),
-        extras: listOf(state.household.extras),
-        eaters: listOf<Eater>(state.household.eaters).map(migrateEater),
+        extras: list(state.household.extras, 'дополнения к дню'),
+        eaters: list<Eater>(state.household.eaters, 'состав семьи').map(migrateEater),
       }
-      if (state.household.eaters.length === 0) {
-        return { state: blankState(), broken: true, problem: 'в анкете не осталось едоков' }
-      }
-    }
-    if (state.menu && !Array.isArray(state.menu.entries)) {
-      return { state: blankState(), broken: true, problem: 'меню сохранено не полностью' }
     }
 
-    return { state: migrateCookedMarks(state), broken: false, problem: null }
+    if (strange.length > 0) {
+      return fail(`не удалось прочитать: ${strange.join(', ')}`)
+    }
+    if (!state.customRecipes.every(looksLikeRecipe)) {
+      return fail('свой рецепт сохранён не полностью')
+    }
+
+    /*
+     * Меню — самое недолговечное в записи: его собирают заново каждый
+     * понедельник. Объявлять из-за него нечитаемой всю запись — вместе с
+     * анкетой, кладовой, морозилкой и историей — значит предложить человеку
+     * стереть всё ради того, что и так пересоберётся. Отбрасываем одно меню.
+     */
+    if (state.menu && !looksLikeMenu(state.menu)) {
+      return ok(
+        { ...state, menu: null },
+        'меню сохранено не полностью — оно будет собрано заново',
+      )
+    }
+    /*
+     * Анкета без едоков — не анкета, её придётся заполнить заново. Но кладовая,
+     * морозилка, история и свои рецепты к ней не привязаны и целы.
+     */
+    if (state.household && state.household.eaters.length === 0) {
+      return ok(
+        { ...state, household: null, menu: null },
+        'в анкете не осталось едоков — её придётся заполнить заново',
+      )
+    }
+
+    return ok(migrateCookedMarks(state))
   } catch {
     /*
-     * Сообщение разборщика тут не годится: человеку показывают «Expected ',' or
-     * '}' after property value in JSON at position 47», и это ни о чём ему не
+     * Сообщение разборщика тут не годится: человеку показывают «Expected \',\' or
+     * \'}\' after property value in JSON at position 47», и это ни о чём ему не
      * говорит. Для разбирательства есть сами байты — их можно скачать, пока
      * запись выключена.
      */
-    return { state: blankState(), broken: true, problem: 'запись оборвана или испорчена' }
+    return fail('запись оборвана или испорчена')
   }
 }
 

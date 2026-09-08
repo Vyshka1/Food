@@ -145,6 +145,13 @@ export interface StorageStatus {
   blocked: boolean
   /** Что не прочиталось при запуске. */
   readProblem: string | null
+  /**
+   * Данные сохранены более новой сборкой приложения. Чинить и стирать нечего:
+   * поможет обновление страницы, а «начать заново» уничтожит целые данные.
+   */
+  newer: boolean
+  /** Данные прочитались, а меню не собралось. Это не потеря, и путать нельзя. */
+  menuProblem: string | null
   /** Что не записалось только что: кончилось место или частный режим. */
   saveProblem: string | null
 }
@@ -198,34 +205,67 @@ const StoreContext = createContext<Store | null>(null)
  * возвращается как есть, а `broken` говорит вызывающему, что сохранять поверх
  * исходных байтов нельзя.
  */
-function boot(): LoadResult {
-  if (typeof localStorage === 'undefined') {
-    return { state: blankState(), broken: false, problem: null }
-  }
-  let raw: string | null = null
-  try {
-    raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
-  } catch {
-    // хранилище запрещено политикой браузера: читать нечего, но и терять
-    // нечего — начинаем как при первом запуске
-    return { state: blankState(), broken: false, problem: null }
+/** Что `boot` узнал о сохранённых данных: разбор плюс сборка меню. */
+interface BootResult extends LoadResult {
+  /** Данные прочитались, а меню на эту неделю не собралось. Разные вещи. */
+  menuProblem: string | null
+}
+
+function boot(): BootResult {
+  const clean = (state: AppState): BootResult => ({
+    state,
+    broken: false,
+    problem: null,
+    newer: false,
+    menuProblem: null,
+  })
+
+  if (typeof localStorage === 'undefined') return clean(blankState())
+
+  const read = (key: string): string | null => {
+    try {
+      const value = localStorage.getItem(key)
+      // пустая строка — это не запись, а её отсутствие: под старым ключом
+      // может лежать всё, что человек накопил до переименования
+      return value ? value : null
+    } catch {
+      // хранилище запрещено политикой браузера
+      return null
+    }
   }
 
-  const result = parseState(raw)
-  if (result.broken) return result
+  const result = parseState(read(STORAGE_KEY) ?? read(LEGACY_STORAGE_KEY))
+  if (result.broken) return { ...result, menuProblem: null }
   const state = result.state
 
-  // реестр должен знать о своих рецептах и о выбранном масле до первой сборки
-  // меню: масло входит в состав, а значит и в калории, и в закупку. Поэтому
-  // не эффектом после первого кадра, а здесь, до него; вызов идемпотентен
-  if (state.household) setOilChoice(state.household.oils)
-  setCustomRecipes(state.customRecipes)
+  /*
+   * Реестр должен знать о своих рецептах и о выбранном масле до первой сборки
+   * меню: масло входит в состав, а значит и в калории, и в закупку. Поэтому не
+   * эффектом после первого кадра, а здесь, до него; вызов идемпотентен.
+   *
+   * И обязательно внутри `try`. `boot` работает инициализатором состояния, то
+   * есть исключение отсюда уносит с собой весь провайдер — вместе с
+   * сообщением об ошибке и кнопкой «скачать копию», которые живут внутри него.
+   * Человек получил бы белый экран без единого способа что-то сделать.
+   */
+  try {
+    if (state.household) setOilChoice(state.household.oils)
+    setCustomRecipes(state.customRecipes)
+  } catch (error) {
+    return {
+      state: blankState(),
+      broken: true,
+      problem: reason(error, 'свои рецепты не читаются'),
+      newer: false,
+      menuProblem: null,
+    }
+  }
 
   try {
     // меню, собранные до появления личных порций, пересобираем на том же seed
     if (state.household && state.menu && needsRebuild(state)) {
       const { menu, warnings } = menuFor(state.household, state.menu.seed, [], state.pantry)
-      return { ...result, state: { ...state, menu, warnings } }
+      return { ...result, menuProblem: null, state: { ...state, menu, warnings } }
     }
     // наступила новая неделя: прошлую убираем в историю вместе с отметками
     const monday = mondayOf()
@@ -235,6 +275,7 @@ function boot(): LoadResult {
       const { menu, warnings } = menuFor(household, seed, [], state.pantry)
       return {
         ...result,
+        menuProblem: null,
         state: rotateWeek(state, monday, menu, warnings, new Date().toISOString()),
       }
     }
@@ -242,11 +283,16 @@ function boot(): LoadResult {
     /*
      * Сборка меню упала — но анкета, кладовая, история и факты готовки уже
      * прочитаны и целы. Отдаём их как есть и разрешаем сохранять: без меню
-     * приложение неполно, а без анкеты его нет вовсе.
+     * приложение неполно, а без анкеты его нет вовсе. И говорим об этом
+     * отдельно от ошибок чтения: данные-то прочитались.
      */
-    return { state, broken: false, problem: reason(error, 'не удалось собрать меню на эту неделю') }
+    return {
+      ...result,
+      state,
+      menuProblem: reason(error, 'не удалось собрать меню на эту неделю'),
+    }
   }
-  return result
+  return { ...result, menuProblem: null }
 }
 
 function reason(error: unknown, fallback: string): string {
@@ -281,6 +327,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
    */
   const [blocked, setBlocked] = useState(start.broken)
   const [readProblem, setReadProblem] = useState<string | null>(start.problem)
+  const [newer, setNewer] = useState(start.newer)
+  const [menuProblem, setMenuProblem] = useState<string | null>(start.menuProblem)
   const [saveProblem, setSaveProblem] = useState<string | null>(null)
 
   useEffect(() => {
@@ -295,6 +343,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const saveHousehold = useCallback(
     (household: Household) => {
+      // анкету поправили — прошлая жалоба на сборку меню больше не про эти данные
+      setMenuProblem(null)
       setState((prev) => {
         const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
         const { menu, warnings } = menuFor(household, seed, [], prev.pantry)
@@ -721,6 +771,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setCustomRecipes([])
     setBlocked(false)
     setReadProblem(null)
+    setNewer(false)
+    setMenuProblem(null)
     setSaveProblem(null)
     for (const key of [STORAGE_KEY, LEGACY_STORAGE_KEY]) {
       try {
@@ -732,8 +784,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const storage = useMemo<StorageStatus>(
-    () => ({ blocked, readProblem, saveProblem }),
-    [blocked, readProblem, saveProblem],
+    () => ({ blocked, readProblem, newer, menuProblem, saveProblem }),
+    [blocked, readProblem, newer, menuProblem, saveProblem],
   )
 
   const value = useMemo<Store>(
