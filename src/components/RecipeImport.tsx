@@ -6,6 +6,13 @@ import { statsOf } from '../lib/nutrition'
 import { householdQty } from '../lib/measures'
 import { plural } from '../lib/format'
 import { Card, Stepper, TextArea } from './ui'
+
+/**
+ * Служба, которая открывает ссылку и отдаёт текст. Задаётся при сборке: пока её
+ * нет, поля для ссылки просто не видно — вставка текста от неё не зависит и
+ * работает всегда.
+ */
+const EXTRACT_SERVICE = import.meta.env.VITE_EXTRACT_URL ?? ''
 import { Icon } from './icons'
 
 const EXAMPLE = `Сырники из творога
@@ -67,6 +74,9 @@ export function RecipeImport({
   onCancel: () => void
 }) {
   const [text, setText] = useState('')
+  const [link, setLink] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [linkProblem, setLinkProblem] = useState<string | null>(null)
   const [servings, setServings] = useState<number | null>(null)
   /**
    * Что человек выбрал сам для строк, которые разбор не узнал. Ключ — место
@@ -80,9 +90,54 @@ export function RecipeImport({
     [text, servings],
   )
 
+  const byLink = async () => {
+    setLinkProblem(null)
+    setLoading(true)
+    try {
+      const answer = await fetch(`${EXTRACT_SERVICE}/extract`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: link.trim() }),
+      })
+      const data = (await answer.json()) as { text?: string; error?: string }
+      if (!answer.ok || !data.text) {
+        setLinkProblem(data.error ?? 'по этой ссылке не нашлось текста рецепта')
+        return
+      }
+      setText(data.text)
+    } catch {
+      /*
+       * Служба может быть не поднята, а может не иметь действующего
+       * сертификата — тогда браузер не отправит запрос вовсе. Различить это
+       * снаружи нельзя, поэтому говорим то, что знаем наверняка.
+       */
+      setLinkProblem('не удалось связаться со службой — вставьте текст руками')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   if (!draft) {
     return (
       <>
+        {EXTRACT_SERVICE && (
+          <Card>
+            <div className="section-title">Ссылка на рецепт</div>
+            <div className="row" style={{ gap: 8 }}>
+              <input
+                style={{ flex: 1 }}
+                value={link}
+                placeholder="https://…"
+                onChange={(e) => setLink(e.target.value)}
+              />
+              <button className="btn btn--small" disabled={!link.trim() || loading} onClick={byLink}>
+                {loading ? 'Читаю…' : 'Взять текст'}
+              </button>
+            </div>
+            {linkProblem && <p className="muted small" style={{ marginBottom: 0 }}>{linkProblem}</p>}
+          </Card>
+        )}
+
         <TextArea
           label="Текст рецепта"
           value={text}

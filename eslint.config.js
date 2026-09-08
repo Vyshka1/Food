@@ -52,7 +52,7 @@ export default tseslint.config(
   },
   {
     // Скрипты сборки живут в Node, а не в браузере
-    files: ['*.config.{js,ts}', 'scripts/**/*.mjs'],
+    files: ['*.config.{js,ts}', 'scripts/**/*.mjs', 'server/**/*.mjs'],
     languageOptions: { globals: globals.node },
   },
   {
