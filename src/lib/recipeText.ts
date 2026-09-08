@@ -558,6 +558,26 @@ export function parseItemLines(line: string): {
   return { items: [single.item], notes: single.note ? [single.note] : [], ok: true }
 }
 
+/**
+ * Строка, которую разбор не узнал, но человек сказал, что это за продукт.
+ *
+ * Количество в строке при этом есть и написано так же, как в остальных, —
+ * менять руками надо только название. `null` значит, что и количества нет:
+ * тогда его тоже придётся ввести самому.
+ */
+export function resolveLine(line: string, ingredientId: string): RecipeItem | null {
+  const ing = INGREDIENT_BY_ID[ingredientId]
+  if (!ing) return null
+  const text = stripBullet(line).replace(/\d+\s*%/g, ' ').replace(/\s+/g, ' ').trim()
+  const at = text.search(/[\d½⅓⅔¼¾]|пол[а-я]/i)
+  if (at < 0) return null
+  const amount = parseAmount(text.slice(at))
+  if (!amount) return null
+  const measure = parseMeasure(amount.rest)?.measure ?? impliedMeasure(ing, amount.rest, amount.value)
+  const converted = toBaseQty(ing, amount.value, measure)
+  return converted ? { ingredientId, qty: converted.qty } : null
+}
+
 /** Число порций из текста: «на 4 порции», «4 порции», «на 2 человека». */
 export function parseServings(text: string): number | null {
   const hit = text.match(/(?:на\s+)?(\d+)(?:\s*[-–—]\s*(\d+))?\s*(порци\w*|человек\w*|персон\w*)/i)
