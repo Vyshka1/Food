@@ -1,8 +1,6 @@
 import type { MealSlot, Recipe, RecipeBatch, Station } from '../types'
 import { deriveRecipeSteps } from '../lib/stepDetail'
-import { freezingOf } from '../lib/freezing'
-import { batchInfoOf } from '../lib/batchInfo'
-import { VERIFIED_BATCHES } from './verifiedBatches'
+import { normalizeRecipe } from './normalize'
 
 type ItemTuple = [ingredientId: string, qtyPerServing: number]
 type StepTuple = [text: string, minutes: number, station: Station, handsOn?: boolean]
@@ -46,14 +44,9 @@ function r(
     fridgeDays: opts.fridgeDays ?? 3,
     needs: opts.needs,
   }
-  // разметка заморозки и партии считается от готового рецепта: ей нужны и
-  // шаги, и состав
-  const withFreezing = { ...recipe, freezing: freezingOf(recipe) }
-  // проверенная вручную партия сильнее любых правил
-  return {
-    ...withFreezing,
-    batch: opts.batch ?? VERIFIED_BATCHES[id] ?? batchInfoOf(withFreezing),
-  }
+  // разметку заморозки и партию дописывает normalizeRecipe — тем же способом,
+  // что и своим рецептам пользователя
+  return normalizeRecipe(opts.batch ? { ...recipe, batch: opts.batch } : recipe)
 }
 
 /** Количества в items — на одну порцию. */

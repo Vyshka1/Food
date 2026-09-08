@@ -2,7 +2,7 @@ import type { Household, Pantry, WeekMenu } from '../types'
 import { THAW_LABEL } from '../types'
 import { recipeById } from '../data/recipeRegistry'
 import { WEEKDAYS_ACC, WEEKDAYS_FULL, cookTasks, takeawayEaters } from './menu'
-import { thawReminders } from './freezing'
+import { thawReminders } from './thaw'
 import { daysLeft, freezerLabel } from './pantry'
 import { plural } from './format'
 

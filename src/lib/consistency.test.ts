@@ -1,9 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { RECIPES } from '../data/recipes'
-import { recipeById } from '../data/recipeRegistry'
 import type { Eater, Household, Kitchen, Pantry } from '../types'
-import { buildWeekMenu, cookTasks, defaultRepeats, totalPortions } from './menu'
+import { buildWeekMenu, defaultRepeats, totalPortions } from './menu'
 import { buildCookingPlans } from './cookingPlan'
 import { cookCard } from './cookCard'
 import { defaultOils } from './oil'
@@ -12,7 +11,7 @@ import { INGREDIENTS, pieceWeight } from '../data/ingredients'
 import { addFreezer, emptyPantry, setStock } from './pantry'
 import { packPlan, purchaseInfo } from './purchase'
 import { buildShoppingList } from './shopping'
-import { planWeekBatches, weekServings } from './weekBatch'
+import { planWeek } from './weekPlan'
 
 /*
  * Сквозная согласованность: одно и то же число, посчитанное разными модулями.
@@ -165,15 +164,11 @@ describe('одинаковые входы — одинаковый расчёт'
     for (const seed of SEEDS.slice(0, 8)) {
       const { menu } = buildWeekMenu(household, seed)
 
-      const cardFirst = cookTasks(menu).map((t) => {
-        const plans = planWeekBatches(menu, household, { pantry })
-        return weekServings(plans, t)
-      })
+      const cardFirst = planWeek(menu, household, { pantry }).tasks.map((t) => t.servings)
       const planFirst = (() => {
         buildCookingPlans(menu, household, 1, pantry)
         buildShoppingList(menu, household, pantry)
-        const plans = planWeekBatches(menu, household, { pantry })
-        return cookTasks(menu).map((t) => weekServings(plans, t))
+        return planWeek(menu, household, { pantry }).tasks.map((t) => t.servings)
       })()
       expect(planFirst, `неделя ${seed}`).toEqual(cardFirst)
     }
@@ -236,22 +231,11 @@ describe('снимок расхождений между модулями', () =
 
     for (const seed of SEEDS) {
       const { menu } = buildWeekMenu(household, seed)
-      const plans = planWeekBatches(menu, household, { pantry })
+      const week = planWeek(menu, household, { pantry })
       const list = buildShoppingList(menu, household, pantry)
 
       // (1) упаковки: список округляет по ing.pack, карточка выбирает фасовку
-      const perIngredient = new Map<string, number>()
-      for (const task of cookTasks(menu)) {
-        const recipe = recipeById(task.recipeId)
-        if (!recipe) continue
-        const servings = weekServings(plans, task)
-        for (const item of recipe.items) {
-          perIngredient.set(
-            item.ingredientId,
-            (perIngredient.get(item.ingredientId) ?? 0) + item.qty * servings,
-          )
-        }
-      }
+      const perIngredient = week.demand
       for (const line of list.lines) {
         const ing = INGREDIENT_BY_ID[line.ingredientId]
         const needed = perIngredient.get(line.ingredientId) ?? 0
@@ -261,11 +245,10 @@ describe('снимок расхождений между модулями', () =
       }
 
       // (2) масштаб: расписание считает шаги от потребности, карточка от партии
-      for (const task of cookTasks(menu)) {
-        const servings = weekServings(plans, task)
-        if (Math.abs(servings - task.portions) < 0.01) continue
+      for (const cooking of week.tasks) {
+        if (Math.abs(cooking.servings - cooking.task.portions) < 0.01) continue
         scaleTasks++
-        scaleDiffSum += (servings - task.portions) / task.portions
+        scaleDiffSum += (cooking.servings - cooking.task.portions) / cooking.task.portions
       }
 
       // (3) калории карточки против тех, что уходят в дневной итог
@@ -282,15 +265,17 @@ describe('снимок расхождений между модулями', () =
       }
 
       // (4) списание в кладовой: store берёт потребность записи, а не партию
-      for (const task of cookTasks(menu)) {
+      for (const cooking of week.tasks) {
         const entries = menu.entries.filter(
-          (e) => e.recipeId === task.recipeId && e.cookDay === task.cookDay && !e.fromFreezer,
+          (e) =>
+            e.recipeId === cooking.task.recipeId &&
+            e.cookDay === cooking.task.cookDay &&
+            !e.fromFreezer,
         )
         const byEntry = entries.reduce((sum, e) => sum + totalPortions(e), 0)
-        const servings = weekServings(plans, task)
-        if (Math.abs(byEntry - servings) < 0.01) continue
+        if (Math.abs(byEntry - cooking.servings) < 0.01) continue
         storeTasks++
-        storeDiffSum += (servings - byEntry) / Math.max(0.1, byEntry)
+        storeDiffSum += (cooking.servings - byEntry) / Math.max(0.1, byEntry)
       }
     }
 

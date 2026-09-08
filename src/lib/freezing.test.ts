@@ -3,7 +3,8 @@ import { RECIPES, RECIPE_BY_ID } from '../data/recipes'
 import type { Eater, Household } from '../types'
 import { buildWeekMenu, defaultRepeats} from './menu'
 import { buildCookingPlans } from './cookingPlan'
-import { containerLabel, formatUseBy, isSafeThaw, rawFreezeStep, thawReminders, useByDate } from './freezing'
+import { containerLabel, formatUseBy, isSafeThaw, rawFreezeStep, useByDate } from './freezing'
+import { thawReminders } from './thaw'
 import { defaultOils } from './oil'
 
 describe('на каком этапе морозить', () => {

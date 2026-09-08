@@ -14,8 +14,8 @@ import { recipeById } from '../data/recipeRegistry'
 import { portionOf, totalPortions } from './menu'
 import { cookedGrams, recipeStats } from './nutrition'
 import { FREEZE_MIN_GRAMS } from './batch'
-import { planWeekBatches } from './weekBatch'
-import type { BatchPlan } from './batch'
+import { planWeek } from './weekPlan'
+import type { TaskPlan } from './weekPlan'
 import { packPlan, purchaseInfo } from './purchase'
 import { householdGrams } from './measures'
 import { fryMinutes, loads as loadCount, pieceCookingOf, useTwoPans } from './pieces'
@@ -133,7 +133,8 @@ export interface CookCard {
   leftovers: CardLeftover[]
   reason: string
   alternatives: CardAlternative[]
-  plan: BatchPlan | null
+  /** Готовка целиком, как её посчитал план недели. */
+  plan: TaskPlan | null
   /** Как это жарится: сколько заходов и сколько это минут. */
   loads?: { count: number; perLoad: number; minutes: number; twoPans: boolean }
   /**
@@ -153,7 +154,7 @@ export interface CookCard {
 }
 
 /** Сколько изделий выходит из выбранной партии. Только у проверенных блюд. */
-function piecesOf(plan: BatchPlan | null): number | undefined {
+function piecesOf(plan: TaskPlan | null): number | undefined {
   if (!plan || plan.batch.source !== 'verified' || !plan.batch.yieldPieces) return undefined
   return Math.max(1, Math.round(plan.batch.yieldPieces * plan.chosen.scale))
 }
@@ -224,17 +225,17 @@ export function cookCard(
     .sort((a, b) => a.day - b.day)
 
   const demandFactor = entries.reduce((sum, e) => sum + totalPortions(e), 0)
-  const neededGrams = cookedGrams(recipe, demandFactor)
 
-  // Партия — из общего плана недели: место в морозилке одно на всю неделю,
-  // и делят его все готовки, а не каждая по отдельности.
-  const plan =
-    planWeekBatches(menu, household, { pantry }).get(`${entry.recipeId}|${entry.cookDay}`) ?? null
-
-  // Сколько реально ставим на плиту. Всё остальное в карточке считается
-  // отсюда — иначе продукты, КБЖУ и «приготовим» разойдутся между собой.
-  const servings = plan ? plan.chosen.servings : demandFactor
-  const cookGrams = plan ? plan.chosen.yieldGrams : neededGrams
+  /*
+   * Карточка ничего не считает сама: всё берётся из плана недели — того же,
+   * по которому закупаются продукты и строится расписание. Считать здесь
+   * заново значит завести второй ответ на тот же вопрос, а расходиться они
+   * начинают ровно в тот день, когда один из них поправят.
+   */
+  const plan = planWeek(menu, household, { pantry }).byKey.get(`${entry.recipeId}|${entry.cookDay}`) ?? null
+  const neededGrams = plan ? plan.neededGrams : cookedGrams(recipe, demandFactor)
+  const servings = plan ? plan.servings : demandFactor
+  const cookGrams = plan ? plan.cookedGrams : neededGrams
   const cookPieces = piecesOf(plan)
   const pieceGrams = cookPieces ? Math.round(cookGrams / cookPieces) : undefined
 
@@ -313,7 +314,7 @@ export function cookCard(
    */
   const restGrams = Math.max(0, cookGrams - placedGrams)
   const canFreeze = recipe.freezable && household.kitchen.hasFreezer
-  const freezeGrams = canFreeze ? Math.min(restGrams, plan?.chosen.freezeGrams ?? restGrams) : 0
+  const freezeGrams = canFreeze ? Math.min(restGrams, plan?.placement.freezeGrams ?? restGrams) : 0
   const eatSoonGrams = Math.min(restGrams - freezeGrams, FREEZE_MIN_GRAMS)
   const freezePieces =
     cookPieces && freezeGrams > 0

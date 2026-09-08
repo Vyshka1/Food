@@ -3,10 +3,8 @@ import { recipeById } from '../data/recipeRegistry'
 import type { Household, Pantry, ShoppingLine, WeekMenu } from '../types'
 import { cookTasks } from './menu'
 import type { BatchPreference } from './batch'
-import { drinkShopping } from './drinks'
-import { extraShopping } from './extras'
 import { isAlways, stockOf } from './pantry'
-import { planWeekBatches, weekServings } from './weekBatch'
+import { planWeek } from './weekPlan'
 
 function roundUpTo(value: number, step: number): number {
   return Math.ceil(value / step) * step
@@ -18,41 +16,39 @@ export interface ShoppingList {
   total: number
 }
 
+/**
+ * Потребность без семьи: столько, сколько просит меню, без партий и напитков.
+ *
+ * Так список считается только там, где семьи ещё нет — например, в предпросмотре
+ * до онбординга. Для настоящей недели это неверный ответ: партия почти всегда
+ * больше потребности.
+ */
+function demandWithoutHousehold(menu: WeekMenu): Map<string, number> {
+  const needed = new Map<string, number>()
+  for (const task of cookTasks(menu)) {
+    const recipe = recipeById(task.recipeId)
+    if (!recipe) continue
+    for (const item of recipe.items) {
+      needed.set(item.ingredientId, (needed.get(item.ingredientId) ?? 0) + item.qty * task.portions)
+    }
+  }
+  return needed
+}
+
 export function buildShoppingList(
   menu: WeekMenu,
   household?: Household,
   pantry?: Pantry,
   prefer?: BatchPreference,
 ): ShoppingList {
-  const needed = new Map<string, number>()
-  const plans = household ? planWeekBatches(menu, household, { pantry, prefer }) : null
-
-  // Напитки — не блюда, но молоко для капучино покупать всё равно нужно, и
-  // покупает его тот же список. Без этого две пачки молока в неделю уходили
-  // мимо закупки.
-  if (household) {
-    for (const source of [drinkShopping(household), extraShopping(household)]) {
-      for (const [ingredientId, qty] of source) {
-        needed.set(ingredientId, (needed.get(ingredientId) ?? 0) + qty)
-      }
-    }
-  }
-
-  for (const task of cookTasks(menu)) {
-    const recipe = recipeById(task.recipeId)
-    if (!recipe) continue
-    /*
-     * Покупаем на ту готовку, которую и советуем: партия часто больше
-     * потребности по меню — пачка фарша, полная форма, сковорода оладий.
-     * Пока список считался по потребности, карточка говорила «приготовим
-     * 1,2 кг», а продуктов покупалось на 1,0 кг: разойтись должно было прямо
-     * на кухне.
-     */
-    const portions = plans ? weekServings(plans, task) : task.portions
-    for (const item of recipe.items) {
-      needed.set(item.ingredientId, (needed.get(item.ingredientId) ?? 0) + item.qty * portions)
-    }
-  }
+  /*
+   * Что нужно на неделю, берём из плана недели: он уже свёл готовки, напитки и
+   * дополнения. Покупаем ровно на ту готовку, которую и советуем — партия часто
+   * больше потребности по меню (пачка фарша, полная форма, сковорода оладий), и
+   * пока список считался по потребности, карточка говорила «приготовим 1,2 кг»,
+   * а продуктов покупалось на 1,0 кг.
+   */
+  const needed = household ? planWeek(menu, household, { pantry, prefer }).demand : demandWithoutHousehold(menu)
 
   const lines: ShoppingLine[] = []
   for (const [ingredientId, rawQty] of needed) {
@@ -125,19 +121,8 @@ export function weekSpending(
   const lines = list.lines.filter((l) => !l.staple && !skipped.has(l.ingredientId))
   const checkout = lines.reduce((sum, l) => sum + l.price, 0)
 
-  // сколько каждого продукта реально уйдёт в готовку этой недели
-  const need = new Map<string, number>()
-  const plans = planWeekBatches(menu, household, { pantry })
-  const add = (id: string, qty: number) => need.set(id, (need.get(id) ?? 0) + qty)
-  for (const task of cookTasks(menu)) {
-    const recipe = recipeById(task.recipeId)
-    if (!recipe) continue
-    const portions = weekServings(plans, task)
-    for (const item of recipe.items) add(item.ingredientId, item.qty * portions)
-  }
-  for (const source of [drinkShopping(household), extraShopping(household)]) {
-    for (const [id, qty] of source) add(id, qty)
-  }
+  // сколько каждого продукта реально уйдёт в еду этой недели — из того же плана
+  const need = planWeek(menu, household, { pantry }).demand
 
   let used = 0
   for (const line of lines) {

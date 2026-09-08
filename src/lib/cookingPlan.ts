@@ -13,9 +13,10 @@ import type {
 } from '../types'
 import { APPLIANCE_LABEL, applianceCapacity } from '../types'
 import { WEEKDAYS_FULL, cookTasks, type CookTask } from './menu'
-import { containerLabel, thawReminders, useByDate } from './freezing'
+import { containerLabel, useByDate } from './freezing'
+import { thawReminders } from './thaw'
 import { FRY_STEP, optionPieces } from './batch'
-import { planWeekBatches } from './weekBatch'
+import { planWeek } from './weekPlan'
 import { fryMinutes, pieceCookingOf, useTwoPans } from './pieces'
 
 /**
@@ -288,7 +289,7 @@ export function buildCookingPlans(
   pantry?: Pantry,
 ): CookingPlan[] {
   // Партии берём из общего плана недели — те же самые, что показывает карточка
-  const plans = planWeekBatches(menu, household, { pantry })
+  const week = planWeek(menu, household, { pantry })
   const byDay = new Map<number, CookTask[]>()
   for (const task of cookTasks(menu)) {
     const list = byDay.get(task.cookDay) ?? []
@@ -301,7 +302,7 @@ export function buildCookingPlans(
     .map(([cookDay, tasks]) => {
       const sched = tasks
         .map((task, i) => {
-          const plan = plans.get(task.key)
+          const plan = week.byKey.get(task.key)
           const pieces = plan ? optionPieces(plan.batch, plan.chosen.scale) : undefined
           return toSchedTask(task, i, household, pieces)
         })
