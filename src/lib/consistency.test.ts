@@ -304,7 +304,8 @@ describe('снимок расхождений между модулями', () =
     expect(storeTasks).toBeGreaterThan(100)
     expect(storeDiffSum).toBeLessThan(0.001)
     expect(packLines).toBeGreaterThan(300)
-    expect(packDiff / packLines).toBeLessThan(0.1)
+    // список покупок и карточка решают про упаковки одним расчётом на неделю
+    expect(packDiff).toBe(0)
     expect(kcalDiffSum / cards).toBeLessThan(0.02)
     expect(kcalWorst).toBeLessThan(0.15)
   })

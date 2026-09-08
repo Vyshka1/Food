@@ -1,3 +1,4 @@
+import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { recipeById } from '../data/recipeRegistry'
 import type { CookTask } from './menu'
 import type { Household, Pantry, Recipe, RecipeBatch, WeekMenu } from '../types'
@@ -7,7 +8,8 @@ import { drinkShopping } from './drinks'
 import { extraShopping } from './extras'
 import { cookTasks } from './menu'
 import { cookedGrams } from './nutrition'
-import { freezerRoomGrams } from './pantry'
+import { freezerRoomGrams, isAlways, stockOf } from './pantry'
+import { packPlan } from './purchase'
 
 /**
  * План недели — единственный расчёт готовки, который есть у приложения.
@@ -60,6 +62,38 @@ export interface TaskPlan {
   ingredients: Map<string, number>
 }
 
+/**
+ * Что купить на неделю по одному продукту.
+ *
+ * Фасовка решается один раз и на всю неделю: две готовки по 250 г — это одна
+ * пачка 500 г, а не две. Пока каждая готовка считала упаковки сама, карточка
+ * блюда и список покупок расходились на каждой шестнадцатой строке, а на мясе
+ * ещё и по-разному выбирали фасовку.
+ */
+export interface PurchaseLine {
+  ingredientId: string
+  /** Сколько нужно на неделю всего, сырьё, до кладовой. */
+  needed: number
+  /** Сколько из этого закрыто запасом дома. */
+  fromStock: number
+  /** Сколько докупить по бытовой мере: целая штука, десяток граммов. */
+  toBuy: number
+  /** Сколько придётся купить с учётом фасовки. */
+  buy: number
+  /** Крупнейшая из взятых фасовок. 0 — продаётся на вес. */
+  packSize: number
+  /** Сколько упаковок всего. */
+  packs: number
+  /** Из каких фасовок сложилась покупка: размеры можно смешивать. */
+  parts: { size: number; count: number }[]
+  /** Что останется от упаковок после недели. */
+  leftover: number
+  /** Цена покупки, ₽. */
+  price: number
+  /** Постоянный продукт: в чек не идёт. */
+  staple: boolean
+}
+
 export interface WeekPlan {
   tasks: TaskPlan[]
   /** Та же готовка по ключу задачи — для тех, кто пришёл с записью меню. */
@@ -69,6 +103,8 @@ export interface WeekPlan {
    * Сырьё, до кладовой и до упаковок.
    */
   demand: Map<string, number>
+  /** Что купить на неделю: одно решение о фасовке на продукт. */
+  purchase: Map<string, PurchaseLine>
   /** Готовки, для которых не нашлось рецепта: молча терять их нельзя. */
   missing: string[]
 }
@@ -96,6 +132,24 @@ export function planWeek(
   household: Household,
   options: WeekPlanOptions = {},
 ): WeekPlan {
+  const cooking = cookingFor(menu, household, options)
+  /*
+   * Покупка считается каждый раз, а не берётся из кэша: она зависит от запасов
+   * дома, а готовка — нет. Один общий кэш на то и другое означал бы, что список
+   * покупок не замечает, как разложили пакеты, — и он действительно не замечал,
+   * пока покупка сюда не переехала.
+   */
+  return { ...cooking, purchase: purchaseFor(cooking.demand, options.pantry) }
+}
+
+/** Готовки недели: то, что не зависит от запасов и потому кэшируется. */
+type WeekCooking = Omit<WeekPlan, 'purchase'>
+
+function cookingFor(
+  menu: WeekMenu,
+  household: Household,
+  options: WeekPlanOptions,
+): WeekCooking {
   const cached = fromCache(menu, household, options)
   if (cached) return cached
 
@@ -162,9 +216,51 @@ export function planWeek(
     for (const [id, qty] of source) need(id, qty)
   }
 
-  const result: WeekPlan = { tasks, byKey, demand, missing }
+  const result: WeekCooking = { tasks, byKey, demand, missing }
   toCache(menu, household, options, result)
   return result
+}
+
+/**
+ * Покупка: сначала свести потребность всей недели, потом решить про упаковки.
+ *
+ * Порядок здесь и есть смысл: расход считается по готовкам, а фасовка — по
+ * неделе. Если решать про упаковки на уровне готовки, две готовки по 250 г
+ * превращаются в две пачки, хотя на неделю нужна одна.
+ */
+export function purchaseFor(
+  demand: Map<string, number>,
+  pantry: Pantry | undefined,
+): Map<string, PurchaseLine> {
+  const lines = new Map<string, PurchaseLine>()
+  for (const [ingredientId, needed] of demand) {
+    const ing = INGREDIENT_BY_ID[ingredientId]
+    if (!ing) continue
+    // То, что уже лежит дома, покупать не нужно. Считаем до округления: 700 г
+    // риса в запасе — это 700 г, которых нет в чеке, а не «есть немного».
+    const fromStock = pantry ? Math.min(needed, stockOf(pantry, ingredientId)) : 0
+    const rest = Math.max(0, needed - fromStock)
+    const toBuy = ing.unit === 'pcs' ? Math.ceil(rest) : Math.ceil(rest / 10) * 10
+    // закрыто запасом целиком — упаковку не открываем
+    const pack =
+      rest > 0 ? packPlan(ing, rest) : { packSize: 0, packs: 0, parts: [], buy: 0, leftover: 0 }
+    const price = ing.unit === 'pcs' ? ing.price * pack.buy : (ing.price * pack.buy) / 1000
+    lines.set(ingredientId, {
+      ingredientId,
+      needed,
+      fromStock,
+      toBuy,
+      buy: pack.buy,
+      packSize: pack.packSize,
+      packs: pack.packs,
+      parts: pack.parts,
+      leftover: pack.leftover,
+      price: Math.round(price),
+      // «постоянно есть» — это тот же staple, только выбранный человеком
+      staple: Boolean(ing.staple) || Boolean(pantry && isAlways(pantry, ingredientId)),
+    })
+  }
+  return lines
 }
 
 /*
@@ -172,7 +268,7 @@ export function planWeek(
  * план недели заново. Считать его по три раза на кадр незачем — меню за это
  * время не меняется.
  */
-const cache = new WeakMap<WeekMenu, { sig: string; plan: WeekPlan }>()
+const cache = new WeakMap<WeekMenu, { sig: string; plan: WeekCooking }>()
 
 function signature(household: Household, options: WeekPlanOptions): string {
   const busy = (options.pantry?.freezer ?? []).reduce((sum, f) => sum + f.containers, 0)
@@ -191,7 +287,7 @@ function fromCache(
   menu: WeekMenu,
   household: Household,
   options: WeekPlanOptions,
-): WeekPlan | null {
+): WeekCooking | null {
   const hit = cache.get(menu)
   return hit && hit.sig === signature(household, options) ? hit.plan : null
 }
@@ -200,7 +296,7 @@ function toCache(
   menu: WeekMenu,
   household: Household,
   options: WeekPlanOptions,
-  plan: WeekPlan,
+  plan: WeekCooking,
 ): void {
   cache.set(menu, { sig: signature(household, options), plan })
 }

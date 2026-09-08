@@ -3,12 +3,7 @@ import { recipeById } from '../data/recipeRegistry'
 import type { Household, Pantry, ShoppingLine, WeekMenu } from '../types'
 import { cookTasks } from './menu'
 import type { BatchPreference } from './batch'
-import { isAlways, stockOf } from './pantry'
-import { planWeek } from './weekPlan'
-
-function roundUpTo(value: number, step: number): number {
-  return Math.ceil(value / step) * step
-}
+import { planWeek, purchaseFor } from './weekPlan'
 
 export interface ShoppingList {
   lines: ShoppingLine[]
@@ -23,7 +18,7 @@ export interface ShoppingList {
  * до онбординга. Для настоящей недели это неверный ответ: партия почти всегда
  * больше потребности.
  */
-function demandWithoutHousehold(menu: WeekMenu): Map<string, number> {
+function purchaseWithoutHousehold(menu: WeekMenu, pantry?: Pantry) {
   const needed = new Map<string, number>()
   for (const task of cookTasks(menu)) {
     const recipe = recipeById(task.recipeId)
@@ -32,7 +27,7 @@ function demandWithoutHousehold(menu: WeekMenu): Map<string, number> {
       needed.set(item.ingredientId, (needed.get(item.ingredientId) ?? 0) + item.qty * task.portions)
     }
   }
-  return needed
+  return purchaseFor(needed, pantry)
 }
 
 export function buildShoppingList(
@@ -48,37 +43,32 @@ export function buildShoppingList(
    * пока список считался по потребности, карточка говорила «приготовим 1,2 кг»,
    * а продуктов покупалось на 1,0 кг.
    */
-  const needed = household ? planWeek(menu, household, { pantry, prefer }).demand : demandWithoutHousehold(menu)
+  const purchase = household
+    ? planWeek(menu, household, { pantry, prefer }).purchase
+    : purchaseWithoutHousehold(menu, pantry)
 
   const lines: ShoppingLine[] = []
-  for (const [ingredientId, rawQty] of needed) {
-    const ing = INGREDIENT_BY_ID[ingredientId]
+  for (const line of purchase.values()) {
+    const ing = INGREDIENT_BY_ID[line.ingredientId]
     if (!ing) continue
-    // То, что уже лежит дома, покупать не нужно. Считаем до округления: 700 г
-    // риса в запасе — это 700 г, которых нет в чеке, а не «есть немного».
-    const inStock = pantry ? Math.min(rawQty, stockOf(pantry, ingredientId)) : 0
-    const restQty = Math.max(0, rawQty - inStock)
-    const neededQty = ing.unit === 'pcs' ? Math.ceil(restQty) : roundUpTo(restQty, 10)
-    let buy = neededQty
-    let packs: ShoppingLine['packs']
-    if (ing.pack && ing.pack > 0) {
-      const count = Math.ceil(neededQty / ing.pack)
-      buy = count * ing.pack
-      if (count > 1) packs = { count, size: ing.pack }
-    }
-    const price = ing.unit === 'pcs' ? ing.price * buy : (ing.price * buy) / 1000
     lines.push({
-      ingredientId,
+      ingredientId: line.ingredientId,
       name: ing.name,
       category: ing.category,
       unit: ing.unit,
-      needed: neededQty,
-      buy,
-      packs,
-      price: Math.round(price),
-      // «постоянно есть» — это тот же staple, только выбранный человеком
-      staple: Boolean(ing.staple) || Boolean(pantry && isAlways(pantry, ingredientId)),
-      fromStock: inStock > 0 ? Math.round(inStock) : undefined,
+      needed: line.toBuy,
+      buy: line.buy,
+      /*
+       * Показываем фасовку только там, где она есть: «11 уп. по 1 шт» про яйца
+       * — это не подсказка, а шум. Штучное считается штуками, а не упаковками.
+       */
+      packs:
+        line.parts.some((p) => p.size > 1) && (line.parts.length > 1 || line.packs > 1)
+          ? line.parts.map((p) => ({ count: p.count, size: p.size }))
+          : undefined,
+      price: line.price,
+      staple: line.staple,
+      fromStock: line.fromStock > 0 ? Math.round(line.fromStock) : undefined,
     })
   }
 

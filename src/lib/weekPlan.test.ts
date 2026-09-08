@@ -4,11 +4,13 @@ import type { Eater, Household, Kitchen, Recipe, WeekMenu } from '../types'
 import { planBatch } from './batch'
 import { buildWeekMenu, cookTasks, defaultRepeats } from './menu'
 import { cookedGrams } from './nutrition'
-import { CONTAINER_GRAMS, freezerRoomGrams } from './pantry'
+import { CONTAINER_GRAMS, emptyPantry, freezerRoomGrams, setStock } from './pantry'
 import { defaultOils } from './oil'
 import { planWeek } from './weekPlan'
 import { setCustomRecipes } from '../data/recipeRegistry'
 import { deriveRecipeSteps } from './stepDetail'
+import { INGREDIENT_BY_ID } from '../data/ingredients'
+import { packPlan } from './purchase'
 
 const kitchen: Kitchen = {
   burners: 4,
@@ -248,5 +250,82 @@ describe('план недели — единственный расчёт гот
     } finally {
       setCustomRecipes([])
     }
+  })
+})
+
+describe('покупка сводится по неделе, а не по готовке', () => {
+  it('две готовки по полпачки — это одна пачка', () => {
+    /*
+     * Расход считается по готовкам, фасовка — по неделе. Если решать про
+     * упаковки на уровне готовки, две готовки по 250 г превращаются в две
+     * пачки, хотя на неделю нужна одна.
+     */
+    let cheaper = 0
+    let cases = 0
+    for (let seed = 1; seed <= 20; seed++) {
+      const { menu } = buildWeekMenu(household, seed)
+      const week = planWeek(menu, household)
+      for (const [ingredientId, line] of week.purchase) {
+        const ing = INGREDIENT_BY_ID[ingredientId]
+        if (!ing || line.buy <= 0) continue
+        // сколько вышло бы, если бы каждая готовка покупала себе сама
+        let apart = 0
+        for (const cooking of week.tasks) {
+          const qty = cooking.ingredients.get(ingredientId)
+          if (qty) apart += packPlan(ing, qty).buy
+        }
+        if (apart <= 0) continue
+        cases++
+        expect(line.buy, `${ing.name}, неделя ${seed}`).toBeLessThanOrEqual(apart + 1e-9)
+        if (line.buy < apart - 1e-9) cheaper++
+      }
+    }
+    expect(cases).toBeGreaterThan(100)
+    // и это не пустая проверка: по-отдельности вышло бы дороже во многих строках
+    expect(cheaper).toBeGreaterThan(cases / 10)
+  })
+
+  it('запас дома вычитается до решения о фасовке', () => {
+    const { menu } = buildWeekMenu(household, 4)
+    const plain = planWeek(menu, household)
+    const [ingredientId, line] = [...plain.purchase].find(([, l]) => l.buy > 0 && !l.staple)!
+    // кладём домой ровно столько, сколько нужно на неделю
+    const pantry = setStock(emptyPantry(), ingredientId, line.needed, '2026-01-01')
+    const after = planWeek(menu, household, { pantry }).purchase.get(ingredientId)!
+    expect(after.fromStock).toBeCloseTo(line.needed, 5)
+    expect(after.buy).toBe(0)
+    expect(after.toBuy).toBe(0)
+  })
+
+  it('в покупку входят напитки и дополнения, а не только блюда', () => {
+    const withMilk: Household = {
+      ...household,
+      drinks: [
+        {
+          id: 'd1',
+          eaterId: 'e1',
+          kind: 'cappuccino',
+          volumeMl: 250,
+          milkId: 'milk',
+          sugarTsp: 0,
+          syrupMl: 0,
+          perDay: 2,
+          days: [0, 1, 2, 3, 4, 5, 6],
+        },
+      ],
+    }
+    const { menu } = buildWeekMenu(withMilk, 4)
+    const week = planWeek(menu, withMilk)
+    const milk = week.purchase.get('milk')
+    expect(milk, 'молоко для капучино попало в покупку').toBeTruthy()
+    expect(milk!.needed).toBeGreaterThan(0)
+  })
+
+  it('постоянные продукты помечены и не идут в чек', () => {
+    const { menu } = buildWeekMenu(household, 6)
+    const week = planWeek(menu, household, { pantry: emptyPantry() })
+    const staples = [...week.purchase.values()].filter((l) => l.staple)
+    expect(staples.length).toBeGreaterThan(0)
+    for (const line of staples) expect(line.needed).toBeGreaterThan(0)
   })
 })

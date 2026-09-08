@@ -697,7 +697,11 @@ export interface ShoppingLine {
   needed: number
   /** Купить с учётом фасовки. */
   buy: number
-  packs?: { count: number; size: number }
+  /**
+   * Из каких упаковок сложилась покупка. Размеры можно смешивать: в магазине
+   * берут пачку 500 и пачку 600, а не четыре по 600 «потому что делится ровнее».
+   */
+  packs?: { count: number; size: number }[]
   price: number
   staple: boolean
   /** Сколько закрыто запасами дома — покупать это не нужно. */
