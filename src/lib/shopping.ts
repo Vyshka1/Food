@@ -4,6 +4,7 @@ import type { Household, Pantry, ShoppingLine, WeekMenu } from '../types'
 import { cookTasks } from './menu'
 import type { BatchPreference } from './batch'
 import { planWeek, purchaseFor } from './weekPlan'
+import { parseIso } from './day'
 
 export interface ShoppingList {
   lines: ShoppingLine[]
@@ -138,7 +139,7 @@ export function shoppingListText(
 ): string {
   const skip = new Set(opts.atHome)
   const lines = list.lines.filter((l) => !l.staple && !skip.has(l.ingredientId))
-  const start = new Date(opts.weekStart)
+  const start = parseIso(opts.weekStart)
   const end = new Date(start)
   end.setDate(end.getDate() + 6)
   const fmt = (d: Date) => `${d.getDate()}.${String(d.getMonth() + 1).padStart(2, '0')}`

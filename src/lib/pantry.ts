@@ -2,6 +2,7 @@ import type { FreezerItem, Ingredient, Pantry, Recipe, StockItem, WeekMenu } fro
 import { INGREDIENTS, INGREDIENT_BY_ID } from '../data/ingredients'
 import { recipeById } from '../data/recipeRegistry'
 import { freezerDaysOf } from './freezing'
+import { addDays, daysBetween } from './day'
 
 /**
  * Что есть дома.
@@ -156,12 +157,6 @@ export function takeFreezer(pantry: Pantry, recipeId: string, containers = 1): P
   return { ...pantry, freezer }
 }
 
-function daysBetween(from: string, to: string): number {
-  const a = new Date(from)
-  const b = new Date(to)
-  return Math.round((b.getTime() - a.getTime()) / 86400000)
-}
-
 /** Сколько дней осталось контейнеру. Отрицательное — срок вышел. */
 export function daysLeft(item: FreezerItem, today: string): number {
   return item.keepDays - daysBetween(item.cookedAt, today)
@@ -169,9 +164,7 @@ export function daysLeft(item: FreezerItem, today: string): number {
 
 /** Дата, до которой стоит съесть. */
 export function useByDate(item: FreezerItem): string {
-  const d = new Date(item.cookedAt)
-  d.setDate(d.getDate() + item.keepDays)
-  return d.toISOString().slice(0, 10)
+  return addDays(item.cookedAt, item.keepDays)
 }
 
 /**

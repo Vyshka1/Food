@@ -18,6 +18,7 @@ import { thawReminders } from './thaw'
 import { FRY_STEP, optionPieces } from './batch'
 import { planWeek } from './weekPlan'
 import { fryMinutes, pieceCookingOf, useTwoPans } from './pieces'
+import { isoDate, parseIso } from './day'
 
 /**
  * Длительность шага с поправкой на количество порций: ручная работа растёт
@@ -320,7 +321,7 @@ export function buildCookingPlans(
       const result = scheduleSteps(sched, household.kitchen, cooks)
 
       // дата готовки нужна, чтобы посчитать срок годности для этикетки
-      const cookedOn = new Date(menu.weekStart)
+      const cookedOn = parseIso(menu.weekStart)
       cookedOn.setDate(cookedOn.getDate() + cookDay)
 
       const freeze: FreezeTask[] = tasks
@@ -341,7 +342,7 @@ export function buildCookingPlans(
             afterStep: info?.afterStep,
             thaw: info?.thaw ?? 'fridge',
             thawHours: info?.thawHours ?? 12,
-            useBy: useBy.toISOString().slice(0, 10),
+            useBy: isoDate(useBy),
             label: containerLabel(title, containers, useBy),
           }
         })

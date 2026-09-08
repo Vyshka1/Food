@@ -43,11 +43,7 @@ import {
 } from './lib/attendance'
 import { setCustomRecipes, setOilChoice } from './data/recipeRegistry'
 import { decodeProfile } from './lib/transfer'
-
-/** Сегодняшняя дата одной строкой: одно место вместо пяти одинаковых выражений. */
-function todayIso(): string {
-  return new Date().toISOString().slice(0, 10)
-}
+import { mondayOf, today as todayIso } from './lib/day'
 
 const STORAGE_KEY = 'menu-nedelya.v1'
 /** Ключ до переименования проекта: читаем один раз, чтобы не потерять анкету. */
@@ -85,12 +81,7 @@ const emptyState: AppState = {
   cookEvents: [],
 }
 
-export function mondayOf(date = new Date()): string {
-  const d = new Date(date)
-  const diff = (d.getDay() + 6) % 7
-  d.setDate(d.getDate() - diff)
-  return d.toISOString().slice(0, 10)
-}
+export { mondayOf }
 
 export function newEater(partial: Partial<Eater> = {}): Eater {
   return {

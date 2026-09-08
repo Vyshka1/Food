@@ -15,6 +15,8 @@ import type { Reminder } from '../lib/reminders'
 
 export type NotifyState = 'unsupported' | 'default' | 'granted' | 'denied'
 
+import { today as todayIso } from '../lib/day'
+
 const SEEN_KEY = 'food.reminders.seen'
 
 function seenToday(): Set<string> {
@@ -23,7 +25,7 @@ function seenToday(): Set<string> {
       date?: string
       ids?: string[]
     }
-    const today = new Date().toISOString().slice(0, 10)
+    const today = todayIso()
     return raw.date === today ? new Set(raw.ids ?? []) : new Set()
   } catch {
     return new Set()
@@ -34,7 +36,7 @@ function remember(ids: Set<string>): void {
   try {
     localStorage.setItem(
       SEEN_KEY,
-      JSON.stringify({ date: new Date().toISOString().slice(0, 10), ids: [...ids] }),
+      JSON.stringify({ date: todayIso(), ids: [...ids] }),
     )
   } catch {
     // приватный режим — переживём без памяти о показанном

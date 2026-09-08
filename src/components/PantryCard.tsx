@@ -16,6 +16,7 @@ import { plural, shortDate } from '../lib/format'
 import { useStore } from '../store'
 import { Card } from './ui'
 import { Icon } from './icons'
+import { today as todayIso } from '../lib/day'
 
 /**
  * Что есть дома.
@@ -28,7 +29,7 @@ export function PantryCard() {
   const { pantry, setPantry, menu } = useStore()
   const [adding, setAdding] = useState(false)
   const [query, setQuery] = useState('')
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayIso()
 
   const candidates = INGREDIENTS.filter(
     (i) =>

@@ -3,6 +3,7 @@ import { recipeById } from '../data/recipeRegistry'
 import { plural } from '../lib/format'
 import { useStore } from '../store'
 import { Icon } from './icons'
+import { parseIso } from '../lib/day'
 
 const MONTHS = [
   'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
@@ -10,8 +11,8 @@ const MONTHS = [
 ]
 
 function weekLabel(weekStart: string): string {
-  const start = new Date(weekStart)
-  const end = new Date(weekStart)
+  const start = parseIso(weekStart)
+  const end = parseIso(weekStart)
   end.setDate(end.getDate() + 6)
   return start.getMonth() === end.getMonth()
     ? `${start.getDate()}–${end.getDate()} ${MONTHS[end.getMonth()]}`
