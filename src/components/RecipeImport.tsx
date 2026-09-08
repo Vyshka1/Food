@@ -34,14 +34,13 @@ function IngredientPicker({
     <select value={value} onChange={(e) => onChange(e.target.value)}>
       <option value="">выбрать продукт…</option>
       {CATEGORY_ORDER.filter((c) => INGREDIENTS.some((i) => i.category === c)).map((category) => (
-        <option key={category} disabled>
-          — {CATEGORY_LABEL[category]} —
-        </option>
-      ))}
-      {INGREDIENTS.map((ing) => (
-        <option key={ing.id} value={ing.id}>
-          {ing.name}
-        </option>
+        <optgroup key={category} label={CATEGORY_LABEL[category]}>
+          {INGREDIENTS.filter((i) => i.category === category).map((ing) => (
+            <option key={ing.id} value={ing.id}>
+              {ing.name}
+            </option>
+          ))}
+        </optgroup>
       ))}
     </select>
   )
@@ -69,8 +68,12 @@ export function RecipeImport({
 }) {
   const [text, setText] = useState('')
   const [servings, setServings] = useState<number | null>(null)
-  /** Что человек выбрал сам для строк, которые разбор не узнал. */
-  const [fixed, setFixed] = useState<Record<string, string>>({})
+  /**
+   * Что человек выбрал сам для строк, которые разбор не узнал. Ключ — место
+   * строки в списке, а не её текст: две одинаковые строки в рецепте не редкость,
+   * и по тексту выбор для одной молча применялся к обеим.
+   */
+  const [fixed, setFixed] = useState<Record<number, string>>({})
 
   const draft = useMemo(
     () => (text.trim() ? parseRecipeText(text, servings ? { servings } : {}) : null),
@@ -100,10 +103,12 @@ export function RecipeImport({
 
   // строки, которые человек починил руками, — уже не потеря
   const resolved: RecipeItem[] = draft.unresolved
-    .map((line) => (fixed[line] ? resolveLine(line, fixed[line]) : null))
+    .map((line, index) => (fixed[index] ? resolveLine(line, fixed[index]) : null))
     .filter((item): item is RecipeItem => item !== null)
 
-  const stillLost = draft.unresolved.filter((line) => !fixed[line] || !resolveLine(line, fixed[line]))
+  const stillLost = draft.unresolved
+    .map((line, index) => ({ line, index }))
+    .filter(({ line, index }) => !fixed[index] || !resolveLine(line, fixed[index]))
 
   const items = [...draft.recipe.items]
   for (const item of resolved) {
@@ -143,12 +148,12 @@ export function RecipeImport({
             Эти строки в рецепт не войдут. Если продукт есть в списке — выберите его, и количество
             прочитается из той же строки.
           </p>
-          {stillLost.map((line) => (
-            <div className="field" key={line}>
+          {stillLost.map(({ line, index }) => (
+            <div className="field" key={index}>
               <label>{line}</label>
               <IngredientPicker
-                value={fixed[line] ?? ''}
-                onChange={(id) => setFixed((prev) => ({ ...prev, [line]: id }))}
+                value={fixed[index] ?? ''}
+                onChange={(id) => setFixed((prev) => ({ ...prev, [index]: id }))}
               />
             </div>
           ))}
@@ -209,8 +214,8 @@ export function RecipeImport({
         <div className="warning">
           Посчитали приблизительно — проверьте:
           <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-            {draft.notes.map((note) => (
-              <li key={note}>{note}</li>
+            {draft.notes.map((note, index) => (
+              <li key={index}>{note}</li>
             ))}
           </ul>
         </div>

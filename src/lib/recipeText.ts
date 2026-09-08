@@ -58,9 +58,9 @@ const ENDINGS = [
 function stem(word: string): string {
   const w = word.toLowerCase().replace(/ё/g, 'е').replace(/й/g, 'и')
   for (const end of ENDINGS) {
-    if (w.length - end.length >= 3 && w.endsWith(end)) return squeeze(w.slice(0, -end.length))
+    if (w.length - end.length >= 3 && w.endsWith(end)) return w.slice(0, -end.length)
   }
-  return squeeze(w)
+  return w
 }
 
 /** Слова текста, приведённые к основам. Проценты и скобки в названиях не считаем. */
@@ -68,7 +68,7 @@ function stemsOf(text: string): string[] {
   return text
     .toLowerCase()
     .replace(/ё/g, 'е')
-    .replace(/\d+\s*%|\([^)]*\)/g, ' ')
+    .replace(/\d+(?:[.,]\d+)?\s*%|\([^)]*\)/g, ' ')
     .split(/[^а-я]+/)
     .filter((word) => word.length > 2)
     .map(stem)
@@ -79,9 +79,20 @@ function stemsOf(text: string): string[] {
  * лука» — это лук; «свежего огурца» — огурец.
  */
 const FILLER = [
-  'свеж', 'сушен', 'молот', 'нарезан', 'натерт', 'измельчен', 'очищен', 'отварн',
+  'свеж', 'сушен', 'молот', 'нарезан', 'натерт', 'тертн', 'терт', 'измельчен', 'очищен', 'отварн',
   'мелк', 'крупн', 'средн', 'больш', 'небольш', 'вкус', 'любим', 'домашн', 'готов',
 ]
+
+/**
+ * Слово выбрасывается как описание только если оно не встречается ни в одном
+ * названии продукта. «Крупн» — описание, а «круп» — половина «кукурузной
+ * крупы»; сравнение по началу слова путало их, и крупа превращалась в
+ * консервированную кукурузу впятеро меньшей калорийности.
+ */
+function isFiller(word: string, known: Set<string>): boolean {
+  if (known.has(word)) return false
+  return FILLER.some((f) => close(word, f))
+}
 
 /**
  * Синонимы, которых не возьмёт никакой разбор слов.
@@ -129,6 +140,8 @@ const ALIASES: [words: string, id: string][] = [
 interface Entry {
   id: string
   stems: string[]
+  /** Строка из словаря синонимов, а не название из базы. */
+  alias?: boolean
 }
 
 function buildIndex(): Entry[] {
@@ -138,10 +151,13 @@ function buildIndex(): Entry[] {
     if (!ing.pieceName) continue
     rows.push({ id: ing.id, stems: stemsOf(ing.pieceName[0]) })
   }
+  for (const [words, id] of ALIASES) rows.push({ id, stems: stemsOf(words), alias: true })
   return rows
 }
 
 const INDEX = buildIndex()
+/** Все основы, которые встречаются в названиях продуктов. */
+const KNOWN_STEMS = new Set(INDEX.flatMap((row) => row.stems))
 
 /**
  * Синонимы решают раньше разбора по буквам.
@@ -151,11 +167,20 @@ const INDEX = buildIndex()
  * пишущий в рецепте «перец», имеет в виду чёрный. Такое решение принимается
  * один раз и руками, поэтому словарь идёт первым.
  */
-const ALIAS_INDEX = new Map(ALIASES.map(([words, id]) => [stemsOf(words).sort().join(' '), id]))
 
-/** Основы считаем одинаковыми, если одна начинается с другой: «сливочн» и «сливочно». */
+/**
+ * Основы считаем одинаковыми, если одна начинается с другой («сливочн» и
+ * «сливочно») или если они совпадают после снятия беглой гласной («перц» и
+ * «перец»).
+ *
+ * Беглая гласная снимается здесь, при сравнении, а не в самой основе. Пока она
+ * снималась в основе, правило срабатывало и там, где гласная не беглая:
+ * «порей» превращался в «пр», а «порея» оставалось «поре» — две формы одного
+ * слова переставали совпадать, и лук-порей становился обычным луком.
+ */
 function close(a: string, b: string): boolean {
   if (a === b) return true
+  if (squeeze(a) === squeeze(b)) return true
   return a.length >= 3 && b.length >= 3 && (a.startsWith(b) || b.startsWith(a))
 }
 
@@ -165,37 +190,60 @@ function close(a: string, b: string): boolean {
  * нет вовсе.
  */
 export function findIngredient(text: string): string | null {
-  const words = stemsOf(text).filter((s) => !FILLER.some((f) => close(s, f)))
+  const words = stemsOf(text).filter((s) => !isFiller(s, KNOWN_STEMS))
   if (words.length === 0) return null
 
-  const alias = ALIAS_INDEX.get([...words].sort().join(' '))
-  if (alias) return alias
-
-  let best: { id: string; extra: number } | null = null
-  for (const row of INDEX) {
-    const covered = words.filter((s) => row.stems.some((r) => close(s, r))).length
-    if (covered < words.length) continue
-    // из подходящих берём название с наименьшим числом лишних слов: «перец» —
-    // это чёрный перец, а не болгарский, пока не сказано иначе
-    const extra = row.stems.length - covered
-    if (!best || extra < best.extra) best = { id: row.id, extra }
-  }
-  if (best) return best.id
+  const best = pick(words)
+  if (best) return best
 
   /*
    * Не сошлось целиком — пробуем без одного слова, слева направо. В «помидоры
    * черри» общее слово стоит первым, а уточняющее вторым, и решает именно оно.
-   * Берём только однозначный ответ: угадывать между двумя продуктами нельзя.
+   *
+   * Требование строгое: оставшиеся слова должны покрыть название продукта
+   * целиком, без лишних слов у продукта. Пока хватало однозначности, «перец
+   * горошком» становился зелёным горошком, «лавровый лист» — листовым салатом,
+   * а «сливочное мороженое» — сливочным маслом. Ошибиться продуктом хуже, чем
+   * не узнать его: не узнанное человек увидит, а подменённое — нет.
    */
   for (let skip = 0; skip < words.length; skip += 1) {
     const rest = words.filter((_, i) => i !== skip)
     if (rest.length === 0) continue
-    const found = new Set(
-      INDEX.filter((row) => rest.every((s) => row.stems.some((r) => close(s, r)))).map((r) => r.id),
-    )
-    if (found.size === 1) return [...found][0]
+    const found = pick(rest, true)
+    if (found) return found
   }
   return null
+}
+
+/**
+ * Самое подходящее название.
+ *
+ * Слово из словаря синонимов сильнее слова из базы: «перец» подходит и чёрному,
+ * и болгарскому, и чили одинаково, а человек, пишущий в рецепте «перец», имеет
+ * в виду чёрный. Такое решение принимается один раз и руками.
+ *
+ * `exact` требует, чтобы название продукта было покрыто целиком, без лишних
+ * слов. Это нужно на запасном пути, где одно слово запроса уже отброшено:
+ * иначе «перец горошком» становился зелёным горошком, а «лавровый лист» —
+ * листовым салатом.
+ */
+function pick(words: string[], exact = false): string | null {
+  let best: { id: string; alias: boolean; extra: number } | null = null
+  for (const row of INDEX) {
+    if (!words.every((s) => row.stems.some((r) => close(s, r)))) continue
+    const extra = row.stems.length - words.length
+    if (exact && extra !== 0) continue
+    /*
+     * Меньше лишних слов — точнее попадание. Слово из словаря синонимов решает
+     * при равенстве: «перец» подходит чёрному, болгарскому и чили одинаково, и
+     * выбор между ними сделан руками. Но «помидоров» — это помидор, а не
+     * «помидоры черри»: у названия лишних слов нет, а у синонима есть.
+     */
+    const alias = row.alias === true
+    const better = !best || extra < best.extra || (extra === best.extra && alias && !best.alias)
+    if (better) best = { id: row.id, alias, extra }
+  }
+  return best?.id ?? null
 }
 
 /* ----------------------------------------------------------------- числа */
@@ -234,10 +282,15 @@ export function parseAmount(text: string): { value: number; rest: string } | nul
   const plain = raw.match(/^(\d+(?:[.,]\d+)?)\s*(.*)$/)
   if (plain) {
     const value = Number(plain[1].replace(',', '.'))
-    // «1 1/2 стакана» и «1½»
-    const more = parseAmount(plain[2])
-    if (more && more.value < 1 && /^[½⅓⅔¼¾]|^\d+\s*\//.test(plain[2].trim())) {
-      return { value: value + more.value, rest: more.rest }
+    /*
+     * «1 1/2 стакана» и «1½». Проверяем вид остатка до разбора, а не после:
+     * иначе каждое число в строке вызывало разбор заново, и «1 1 1 1 …»
+     * переполняло стек — а модуль обещает не бросать вовсе.
+     */
+    const tail = plain[2].trim()
+    if (/^[½⅓⅔¼¾]|^\d+\s*\//.test(tail)) {
+      const more = parseAmount(tail)
+      if (more && more.value < 1) return { value: value + more.value, rest: more.rest }
     }
     return { value, rest: plain[2] }
   }
@@ -273,7 +326,7 @@ const MEASURES: [RegExp, Measure][] = [
   [new RegExp(`^(стакан\\S*)${END}`, 'i'), { kind: 'cup' }],
   [new RegExp(`^(щепот\\S*)${END}`, 'i'), { kind: 'pinch' }],
   [new RegExp(`^(пачк\\S*|упаковк\\S*|банк\\S*)${END}`, 'i'), { kind: 'pack' }],
-  [new RegExp(`^(кг|килограмм\\S*)${END}`, 'i'), { kind: 'kilo' }],
+  [new RegExp(`^(кг|кило|килограмм\\S*)${END}`, 'i'), { kind: 'kilo' }],
   [new RegExp(`^(мл|миллилитр\\S*)${END}`, 'i'), { kind: 'milli' }],
   [new RegExp(`^(л\\.?|литр\\S*)${END}`, 'i'), { kind: 'litre' }],
   [new RegExp(`^(гр?\\.?|грамм\\S*)${END}`, 'i'), { kind: 'gram' }],
@@ -337,15 +390,17 @@ export function toBaseQty(
       return null
 
     case 'tbsp': {
-      if (!ing.tbspGrams) return null
-      const grams = value * ing.tbspGrams
-      return weighed ? { qty: grams } : pieces(ing, grams)
+      const { grams: per, guessed } = tbsp(ing)
+      const grams = value * per
+      const note = guessed ? `${ing.name}: ложка взята как ${per} г — проверьте` : undefined
+      return weighed ? { qty: grams, note } : withNote(pieces(ing, grams), note)
     }
     case 'tsp': {
       // чайная ложка — треть столовой; отдельной таблицы в базе нет
-      if (!ing.tbspGrams) return null
-      const grams = (value * ing.tbspGrams) / 3
-      return weighed ? { qty: grams } : pieces(ing, grams)
+      const { grams: per, guessed } = tbsp(ing)
+      const grams = (value * per) / 3
+      const note = guessed ? `${ing.name}: ложка взята как ${per} г — проверьте` : undefined
+      return weighed ? { qty: grams, note } : withNote(pieces(ing, grams), note)
     }
     case 'cup': {
       const perCup = CUP_GRAMS[ing.id] ?? (ing.unit === 'ml' ? CUP_ML : null)
@@ -363,15 +418,42 @@ export function toBaseQty(
       return weighed ? { qty: grams } : pieces(ing, grams)
     }
     case 'pack': {
+      // фасовка задана в базовых единицах продукта: у яиц pack — это десяток
+      // штук, а не десять граммов. Пересчёт через вес давал 0,18 яйца
       if (!ing.pack) return null
-      const grams = value * ing.pack
-      return weighed
-        ? { qty: grams, note: `${ing.name}: пачка взята как ${ing.pack} ${ing.unit === 'ml' ? 'мл' : 'г'}` }
-        : pieces(ing, grams)
+      const unit = ing.unit === 'ml' ? 'мл' : ing.unit === 'pcs' ? 'шт' : 'г'
+      return {
+        qty: value * ing.pack,
+        note: `${ing.name}: пачка взята как ${ing.pack} ${unit}`,
+      }
     }
     case 'base':
       return { qty: value }
   }
+}
+
+/**
+ * Средняя столовая ложка, когда вес именно этой не задан.
+ *
+ * Задан он у четырнадцати продуктов из ста девятнадцати, а «1 ч. л. соли» —
+ * самая частая строка в русских рецептах. Отказываться от неё нельзя: строка
+ * уходила в непонятые, и починить её вручную тоже не получалось — выбор
+ * продукта ничего не менял. Пятнадцать граммов ближе к правде, чем отказ, и об
+ * этом говорится вслух.
+ */
+const TBSP_GUESS = 15
+
+function tbsp(ing: Ingredient): { grams: number; guessed: boolean } {
+  return ing.tbspGrams
+    ? { grams: ing.tbspGrams, guessed: false }
+    : { grams: TBSP_GUESS, guessed: true }
+}
+
+function withNote(
+  result: { qty: number } | null,
+  note: string | undefined,
+): { qty: number; note?: string } | null {
+  return result ? { ...result, note } : null
 }
 
 /** Вес → штуки: у штучных продуктов количество хранится в штуках. */
@@ -396,8 +478,37 @@ const STEP_HEADINGS = /^\s*(приготовлен|способ|шаги|как 
 const STEP_VERBS =
   /обжар|жар|вар|туш|запек|запеч|смеш|нарез|наруб|измельч|добав|влить|всып|посып|посол|довести|поставить|взбить|размя|выложить|остуд|охлад|подава|переме|разогре|прогре|натер|замочи|промы|очист|слить|накры/i
 
+/** В строке есть число с названной мерой: «200 г», «2 ст. л.», «1 кг». */
+function measured(line: string): boolean {
+  const text = line.replace(/\d+(?:[.,]\d+)?\s*%/g, ' ')
+  for (const match of text.matchAll(/(?:\d+(?:[.,]\d+)?|[½⅓⅔¼¾])\s*(\S.*)$/g)) {
+    if (parseMeasure(match[1])) return true
+  }
+  return false
+}
+
+/**
+ * Процент в названии: «Молоко 2,5%», «Сливки 33,5%». Дробную часть надо
+ * вычёркивать вместе с целой — иначе от «2,5%» оставалась пятёрка, и литр
+ * молока превращался в пять миллилитров.
+ */
+const PERCENT = /\d+(?:[.,]\d+)?\s*%/g
+
+/**
+ * Убрать маркер списка.
+ *
+ * Номер пункта отличается от дробного числа тем, что за точкой у него идёт
+ * пробел или буква: «1. Смешать» — пункт, «1.5 стакана» — полтора стакана.
+ * Без этой разницы полтора стакана муки становились пятью.
+ *
+ * Значок перед строкой может быть любым: подписи под роликами начинают строки
+ * не только дефисом, но и эмодзи. Срезаем всё, что не буква и не цифра.
+ */
 function stripBullet(line: string): string {
-  return line.replace(/^\s*[-–—•*·▪]\s*/, '').replace(/^\s*\d+[.)]\s*/, '').trim()
+  return line
+    .replace(/^\s*\d{1,2}[.)](?=\s|[А-Яа-яЁёA-Za-z])\s*/, '')
+    .replace(/^[^\p{L}\p{N}]+/u, '')
+    .trim()
 }
 
 /**
@@ -431,13 +542,27 @@ export function splitSections(text: string): { items: string[]; steps: string[] 
     }
     // заголовков не было: делим по виду строки
     const bare = stripBullet(line)
+    /*
+     * Названная мера решает раньше глагола. «200 г мелко нарезанного лука» —
+     * это продукт, хотя «нарезать» тут есть: двести граммов лука уходили в шаги
+     * и пропадали из состава. А «варить 20 минут» меры не содержит: минуты
+     * мерой продукта не бывают.
+     */
+    if (measured(bare)) {
+      items.push(bare)
+      continue
+    }
     if (STEP_VERBS.test(bare)) {
       steps.push(bare)
       continue
     }
-    const looksLikeItem = bare.length <= 60 && /\d|^пол/i.test(bare)
-    if (looksLikeItem) items.push(bare)
-    else if (bare.length > 25) steps.push(bare)
+    /*
+     * Всё остальное короткое — в состав, даже без числа. «Зелень», «соль»,
+     * «перец» отдельными строками не редкость, а раньше они не проходили ни
+     * одну проверку и просто исчезали.
+     */
+    if (bare.length > 25) steps.push(bare)
+    else items.push(bare)
   }
   return { items, steps }
 }
@@ -456,8 +581,16 @@ export function splitSections(text: string): { items: string[]; steps: string[] 
  * «200 г моркови» разберётся выше. Поэтому малое число без единицы у весового
  * продукта со штучным весом — это штуки.
  */
-function impliedMeasure(ing: Ingredient, rest: string, value: number): Measure {
-  if (ing.unit === 'pcs' || !ing.pieceGrams) return { kind: 'base' }
+function impliedMeasure(ing: Ingredient, rest: string, value: number): Measure | null {
+  if (ing.unit === 'pcs') return { kind: 'base' }
+  if (!ing.pieceGrams) {
+    /*
+     * «2 куриные грудки»: счёт налицо, а сколько весит грудка, база не знает —
+     * и двойка становилась двумя граммами курицы. Двести раз меньше правды, и
+     * на экране это выглядит убедительно. Лучше признать, что не поняли.
+     */
+    return value <= 10 ? null : { kind: 'base' }
+  }
   if (ing.pieceName) {
     const noun = stemsOf(ing.pieceName[0])
     const words = stemsOf(rest)
@@ -475,7 +608,7 @@ export function parseItemLine(line: string): { item: RecipeItem; note?: string }
    * Проценты — часть названия, а не количество: в «Сливки 10% — 200 мл» число
    * стоит дважды, и если взять первое, получатся десять миллилитров сливок.
    */
-  const scrubbed = text.replace(/\d+\s*%/g, ' ')
+  const scrubbed = text.replace(PERCENT, ' ')
 
   /*
    * Количество пишут и до названия, и после: «200 г творога» и «Творог — 200 г»
@@ -521,6 +654,7 @@ export function parseItemLine(line: string): { item: RecipeItem; note?: string }
   }
 
   const measure = parseMeasure(amount.rest)?.measure ?? impliedMeasure(ing, amount.rest, amount.value)
+  if (!measure) return null
   const converted = toBaseQty(ing, amount.value, measure)
   if (!converted) return null
   return { item: { ingredientId, qty: converted.qty }, note: converted.note }
@@ -537,25 +671,45 @@ export function parseItemLine(line: string): { item: RecipeItem; note?: string }
 export function parseItemLines(line: string): {
   items: RecipeItem[]
   notes: string[]
-  ok: boolean
+  /** Части строки, которые остались непонятыми. Пусто — значит ничего не потеряно. */
+  unresolved: string[]
 } {
   const bare = stripBullet(line)
-  // запятая внутри числа не разделитель: «1,5 стакана муки» — это одна строка
-  const parts = bare.split(/,(?!\s*\d)|\s+и\s+/i).map((p) => p.trim()).filter(Boolean)
-  if (parts.length > 1) {
-    const parsed = parts.map((part) => parseItemLine(part))
-    const found = parsed.filter((p): p is NonNullable<typeof p> => p !== null)
-    if (found.length > 1) {
-      return {
-        items: found.map((p) => p.item),
-        notes: found.flatMap((p) => (p.note ? [p.note] : [])),
-        ok: found.length === parts.length,
-      }
+
+  /*
+   * Делим всегда. Раньше деление включалось, только если после него узнавалось
+   * больше одного продукта, — и «200 г творога и 50 г манки» разбиралось
+   * целиком: поиск честно находил творог, а манка исчезала бесследно.
+   *
+   * Запятая внутри числа разделителем не считается: «2,5%» и «1,5 стакана» —
+   * это одно число. Прячем такие запятые перед делением, а не описываем их
+   * заглядыванием вперёд: «1 кг картофеля, 2 моркови» тоже имеет цифру после
+   * запятой, и заглядывание запрещало здесь делить.
+   */
+  const MARK = '\u0000'
+  const parts = bare
+    .replace(/(\d)\s*,\s*(\d)/g, `$1${MARK}$2`)
+    .split(/,|\s+и\s+/i)
+    .map((p) => p.replace(new RegExp(MARK, 'g'), ',').trim())
+    .filter(Boolean)
+
+  const items: RecipeItem[] = []
+  const notes: string[] = []
+  const lost: string[] = []
+  for (const part of parts) {
+    const parsed = parseItemLine(part)
+    if (parsed) {
+      items.push(parsed.item)
+      if (parsed.note) notes.push(parsed.note)
+    } else if (/[а-яё]{3}/i.test(part)) {
+      // часть без единого слова терять нечего: это остатки пунктуации
+      lost.push(part)
     }
   }
-  const single = parseItemLine(bare)
-  if (!single) return { items: [], notes: [], ok: false }
-  return { items: [single.item], notes: single.note ? [single.note] : [], ok: true }
+
+  // не разобралось ничего — показываем строку целиком, так понятнее
+  if (items.length === 0 && lost.length > 0) return { items: [], notes: [], unresolved: [bare] }
+  return { items, notes, unresolved: lost }
 }
 
 /**
@@ -568,12 +722,23 @@ export function parseItemLines(line: string): {
 export function resolveLine(line: string, ingredientId: string): RecipeItem | null {
   const ing = INGREDIENT_BY_ID[ingredientId]
   if (!ing) return null
-  const text = stripBullet(line).replace(/\d+\s*%/g, ' ').replace(/\s+/g, ' ').trim()
+  const text = stripBullet(line).replace(PERCENT, ' ').replace(/\s+/g, ' ').trim()
   const at = text.search(/[\d½⅓⅔¼¾]|пол[а-я]/i)
-  if (at < 0) return null
+
+  /*
+   * Числа в строке нет: «ванилин по вкусу», «щепотка соли». Раньше здесь был
+   * отказ, и выбор продукта на экране ничего не менял — строка навсегда
+   * оставалась в непонятых. А это самый частый вид непонятой строки.
+   */
+  if (at < 0) {
+    const pinch = toBaseQty(ing, 1, { kind: 'pinch' })
+    return pinch ? { ingredientId, qty: pinch.qty } : null
+  }
+
   const amount = parseAmount(text.slice(at))
   if (!amount) return null
-  const measure = parseMeasure(amount.rest)?.measure ?? impliedMeasure(ing, amount.rest, amount.value)
+  const measure =
+    parseMeasure(amount.rest)?.measure ?? impliedMeasure(ing, amount.rest, amount.value) ?? { kind: 'base' as const }
   const converted = toBaseQty(ing, amount.value, measure)
   return converted ? { ingredientId, qty: converted.qty } : null
 }
@@ -659,7 +824,7 @@ export function parseRecipeText(text: string, options: ParseOptions = {}): Recip
 
   for (const line of itemLines) {
     const parsed = parseItemLines(line)
-    if (!parsed.ok) unresolved.push(line)
+    unresolved.push(...parsed.unresolved)
     for (const item of parsed.items) {
       // количества в тексте — на всё блюдо, а в рецепте они на одну порцию
       byIngredient.set(
