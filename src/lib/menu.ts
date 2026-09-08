@@ -21,7 +21,7 @@ import { mulberry32 } from './random'
 import { plural } from './format'
 import { drinkNorms, drinksOvershoot, foodNorm } from './drinks'
 import { containersOn, fedEaters, isFed, slotLabel, takeawayEaters } from './attendance'
-import { parseIso } from './day'
+import { addDays, daysBetween } from './day'
 
 export const WEEKDAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 /**
@@ -689,11 +689,7 @@ export interface BuildOptions {
 
 /** Сколько дней осталось контейнеру к тому дню, когда его собираются съесть. */
 function freezerDaysLeft(item: FreezerItem, today: string, day: number): number {
-  const cooked = parseIso(item.cookedAt)
-  const eat = parseIso(today)
-  eat.setDate(eat.getDate() + day)
-  const age = Math.round((eat.getTime() - cooked.getTime()) / 86400000)
-  return item.keepDays - age
+  return item.keepDays - daysBetween(item.cookedAt, addDays(today, day))
 }
 
 export function buildWeekMenu(

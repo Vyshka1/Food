@@ -81,7 +81,6 @@ const emptyState: AppState = {
   cookEvents: [],
 }
 
-export { mondayOf }
 
 export function newEater(partial: Partial<Eater> = {}): Eater {
   return {

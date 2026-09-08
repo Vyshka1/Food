@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Reminder } from '../lib/reminders'
+import { today as todayIso } from '../lib/day'
 
 /**
  * Системные уведомления.
@@ -14,8 +15,6 @@ import type { Reminder } from '../lib/reminders'
  */
 
 export type NotifyState = 'unsupported' | 'default' | 'granted' | 'denied'
-
-import { today as todayIso } from '../lib/day'
 
 const SEEN_KEY = 'food.reminders.seen'
 

@@ -32,10 +32,23 @@ export function today(now: Date = new Date()): string {
   return isoDate(now)
 }
 
-/** Разбор `YYYY-MM-DD` в местную полночь. */
+/**
+ * Разбор `YYYY-MM-DD` в местную полночь.
+ *
+ * Строго: на мусоре падает с внятной ошибкой, а не подставляет число. Первая
+ * версия была снисходительной, и это выходило хуже молчания — пустая строка
+ * превращалась в 1900 год, а строка с временем в `Invalid Date`, после чего
+ * все сравнения с ней становились ложными и просроченный контейнер тихо
+ * исчезал из напоминаний. Дата, которую не удалось прочитать, должна остановить
+ * расчёт, а не отравить его.
+ */
 export function parseIso(iso: string): Date {
-  const [year, month, day] = iso.split('-').map(Number)
-  return new Date(year, (month ?? 1) - 1, day ?? 1)
+  const match = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(iso ?? '')
+  if (!match) throw new Error(`не дата: ${JSON.stringify(iso)}`)
+  const [, year, month, day] = match
+  const date = new Date(Number(year), Number(month) - 1, Number(day))
+  if (Number.isNaN(date.getTime())) throw new Error(`не дата: ${iso}`)
+  return date
 }
 
 /** Понедельник той недели, в которую попадает дата. */

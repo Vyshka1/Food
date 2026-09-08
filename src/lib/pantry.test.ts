@@ -5,6 +5,7 @@ import { recipeById } from '../data/recipeRegistry'
 import { buildWeekMenu, defaultRepeats } from './menu'
 import { buildShoppingList } from './shopping'
 import { defaultOils } from './oil'
+import { addDays } from './day'
 import {
   addFreezer,
   addStock,
@@ -184,9 +185,8 @@ describe('морозилка', () => {
 
   it('и то, что пора съесть, видно отдельно', () => {
     const pantry = addFreezer(emptyPantry(), recipe(), 1, 1, '2026-01-01')
-    const soon = new Date('2026-01-01')
-    soon.setDate(soon.getDate() + pantry.freezer[0].keepDays - 3)
-    expect(expiring(pantry, soon.toISOString().slice(0, 10))).toHaveLength(1)
+    const soon = addDays('2026-01-01', pantry.freezer[0].keepDays - 3)
+    expect(expiring(pantry, soon)).toHaveLength(1)
     expect(expiring(pantry, '2026-01-02')).toHaveLength(0)
   })
 })

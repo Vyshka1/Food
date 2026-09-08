@@ -91,22 +91,65 @@ describe('сдвиг и разность дней', () => {
   })
 })
 
+describe('разбор не выдумывает дат', () => {
+  it('мусор останавливает расчёт, а не отравляет его', () => {
+    /*
+     * Снисходительный разбор оказался хуже молчания: пустая строка давала 1900
+     * год, строка с временем — Invalid Date, после чего все сравнения с ней
+     * становились ложными и просроченный контейнер тихо исчезал из
+     * напоминаний. Такое лучше заметить сразу.
+     */
+    for (const bad of ['', '2026', '2026-09', 'вчера', '2026-09-09T12:00:00Z', '2026-13-40x']) {
+      expect(() => parseIso(bad), JSON.stringify(bad)).toThrow()
+    }
+    expect(() => parseIso(undefined as unknown as string)).toThrow()
+    // а неполные, но однозначные числа читаются
+    expect(parseIso('2026-9-9')).toEqual(parseIso('2026-09-09'))
+  })
+})
+
 describe('в приложении нет всемирных дат', () => {
-  it('никто не считает календарный день через toISOString', () => {
+  it('никто не считает календарный день через всемирное время', () => {
     /*
      * Единственный способ не завести это заново: у экранов тестов нет, а
-     * выражение соблазнительно короткое. Модуль дат себя не проверяет — он про
-     * это и рассказывает.
+     * выражения соблазнительно короткие. Сторожим обе стороны — и печать даты,
+     * и разбор строки: `new Date('2026-01-05')` это гринвичская полночь, то
+     * есть в минусовых поясах предыдущий день.
      */
     const sources = import.meta.glob('../**/*.{ts,tsx}', {
       query: '?raw',
       import: 'default',
       eager: true,
     }) as Record<string, string>
-    const guilty = Object.entries(sources).filter(
-      ([path, text]) =>
-        !path.includes('/day.') && !path.includes('.test.') && /toISOString\(\)\.slice/.test(text),
-    )
-    expect(guilty.map(([path]) => path)).toEqual([])
+    // проверка не должна молча опустеть, если glob однажды перестанет работать
+    expect(Object.keys(sources).length).toBeGreaterThan(40)
+    expect(Object.keys(sources).some((p) => p.endsWith('/store.tsx'))).toBe(true)
+
+    const forbidden: [RegExp, string][] = [
+      [/toISOString\(\)\s*\.\s*(slice|substring|substr)/, 'дата из toISOString'],
+      [/toISOString\(\)\s*\.\s*split\(/, 'дата из toISOString'],
+      [/getUTC(FullYear|Month|Date|Day)\b/, 'всемирные части даты'],
+      [/new Date\(\s*['"`]\d{4}-\d{2}-\d{2}/, "разбор 'YYYY-MM-DD' через new Date"],
+    ]
+    const guilty: string[] = []
+    for (const [path, text] of Object.entries(sources)) {
+      // сам модуль дат про это и рассказывает, а тесты вправе показывать «как было»
+      if (path.includes('/day.') || path.includes('.test.')) continue
+      for (const [pattern, what] of forbidden) {
+        if (pattern.test(text)) guilty.push(`${path}: ${what}`)
+      }
+    }
+    expect(guilty).toEqual([])
+  })
+
+  it('и сторож не пропустит, если это вернуть', () => {
+    // проверка самой проверки: шаблоны действительно ловят прежний код
+    const patterns = [
+      /toISOString\(\)\s*\.\s*(slice|substring|substr)/,
+      /new Date\(\s*['"`]\d{4}-\d{2}-\d{2}/,
+    ]
+    const wasBroken = "const today = new Date().toISOString().slice(0, 10)\nnew Date('2026-01-05')"
+    expect(patterns.some((p) => p.test(wasBroken))).toBe(true)
+    expect(patterns.every((p) => p.test(wasBroken))).toBe(true)
   })
 })
