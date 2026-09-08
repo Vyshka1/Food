@@ -138,13 +138,17 @@ describe('buildShoppingList', () => {
     weekStart: '2026-09-07',
   }
 
-  it('покупаем не меньше, чем нужно по рецептам, и кратно фасовке', () => {
+  it('покупаем не меньше, чем нужно по рецептам, и целыми упаковками', () => {
     const { menu } = buildWeekMenu(household, 42)
     const { lines, total } = buildShoppingList(menu)
     expect(lines.length).toBeGreaterThan(5)
     for (const line of lines) {
       expect(line.buy).toBeGreaterThanOrEqual(line.needed)
-      if (line.packs) expect(line.buy).toBe(line.packs.count * line.packs.size)
+      // размеры можно смешивать: пачка 500 и пачка 600 — это тоже целые упаковки
+      if (line.packs) {
+        const fromPacks = line.packs.reduce((sum, p) => sum + p.count * p.size, 0)
+        expect(fromPacks, line.name).toBe(line.buy)
+      }
     }
     expect(total).toBeGreaterThan(0)
   })

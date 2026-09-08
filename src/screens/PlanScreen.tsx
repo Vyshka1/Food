@@ -47,14 +47,19 @@ export function PlanScreen({
 }: {
   onCookNow: (plan: CookingPlan, cookNames: string[]) => void
 }) {
-  const { household, menu } = useStore()
+  const { household, menu, pantry } = useStore()
   const [startHour, setStartHour] = useState(11)
   const [activeDay, setActiveDay] = useState<number | null>(null)
   /** Готовим одна или вдвоём — это второй повар в расписании, а не оформление. */
   const [cooks, setCooks] = useState(1)
+  /*
+   * Кладовую передаём обязательно. Без неё расписание считало партии по пустой
+   * морозилке, а карточка того же блюда — по настоящей: два экрана про одну
+   * готовку расходились в числе изделий и во времени.
+   */
   const plans = useMemo(
-    () => (menu && household ? buildCookingPlans(menu, household, cooks) : []),
-    [menu, household, cooks],
+    () => (menu && household ? buildCookingPlans(menu, household, cooks, pantry) : []),
+    [menu, household, cooks, pantry],
   )
 
   if (!household || !menu) return null

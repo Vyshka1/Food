@@ -12,22 +12,27 @@ import type {
   MenuEntry,
   MenuGoal,
   OilChoice,
+  CookEvent,
   Pantry,
   RepeatRules,
   Recipe,
   WeekMenu,
   WeekRecord,
 } from './types'
-import { buildWeekMenu, cookTasks, defaultRepeats, replaceEntryWith, totalPortions } from './lib/menu'
+import {
+  buildWeekMenu,
+  cookTaskId,
+  defaultRepeats,
+  replaceEntryWith,
+  totalPortions,
+} from './lib/menu'
 import type { BuildOptions } from './lib/menu'
 import { defaultOils } from './lib/oil'
+import { emptyPantry, storePurchase, takeFreezer } from './lib/pantry'
 import {
-  addFreezer,
-  consumeRecipe,
-  emptyPantry,
-  storePurchase,
-  takeFreezer,
-} from './lib/pantry'
+  completeCookTask as completeFact,
+  undoCookTask as undoFact,
+} from './lib/cookFact'
 import { buildShoppingList } from './lib/shopping'
 import {
   ATTENDANCE_TEMPLATES,
@@ -36,8 +41,13 @@ import {
   mealPlaceOf,
   nextPlace,
 } from './lib/attendance'
-import { recipeById, setCustomRecipes, setOilChoice } from './data/recipeRegistry'
+import { setCustomRecipes, setOilChoice } from './data/recipeRegistry'
 import { decodeProfile } from './lib/transfer'
+
+/** Сегодняшняя дата одной строкой: одно место вместо пяти одинаковых выражений. */
+function todayIso(): string {
+  return new Date().toISOString().slice(0, 10)
+}
 
 const STORAGE_KEY = 'menu-nedelya.v1'
 /** Ключ до переименования проекта: читаем один раз, чтобы не потерять анкету. */
@@ -58,6 +68,8 @@ export interface AppState {
   customRecipes: Recipe[]
   /** Прошлые недели: удачную можно повторить, не собирая заново. */
   history: WeekRecord[]
+  /** Что уже приготовлено: снимок списанного, а не производная от плана. */
+  cookEvents: CookEvent[]
 }
 
 const emptyState: AppState = {
@@ -70,6 +82,7 @@ const emptyState: AppState = {
   warnings: [],
   customRecipes: [],
   history: [],
+  cookEvents: [],
 }
 
 export function mondayOf(date = new Date()): string {
@@ -152,7 +165,7 @@ function menuFor(
   return buildWeekMenu(household, seed, keep, {
     ...options,
     freezer: pantry.freezer,
-    today: new Date().toISOString().slice(0, 10),
+    today: todayIso(),
   })
 }
 
@@ -172,6 +185,10 @@ interface Store extends AppState {
   applyAttendanceTemplate: (eaterId: string, templateId: string) => void
   copyAttendanceDay: (eaterId: string, day: number) => void
   setEntryStatus: (entryId: string, status: EntryStatus | null) => void
+  /** Отметить готовку сделанной. Идемпотентно: второе нажатие ничего не меняет. */
+  completeCookTask: (taskId: string) => void
+  /** Снять отметку о готовке и вернуть продукты по снимку. */
+  undoCookTask: (taskId: string) => void
   rateRecipe: (eaterId: string, recipeId: string, value: 1 | -1 | 0) => void
   archiveWeek: () => void
   repeatWeek: (recordId: string) => void
@@ -224,14 +241,15 @@ function migrateKitchen(kitchen: Kitchen & { hasOven?: boolean }): Kitchen {
 /** Сколько недель храним: localStorage не резиновый, а меню весит немало. */
 const MAX_HISTORY = 12
 
-function makeRecord(menu: WeekMenu): WeekRecord {
+function makeRecord(menu: WeekMenu, cookEvents: CookEvent[] = []): WeekRecord {
   const count = (status: string) => menu.entries.filter((e) => e.status === status).length
   return {
     id: `${menu.weekStart}-${menu.seed}`,
     weekStart: menu.weekStart,
     savedAt: new Date().toISOString(),
     menu,
-    cooked: count('cooked'),
+    // приготовленное считаем по фактам готовки этой недели, а не по отметкам
+    cooked: cookEvents.filter((e) => e.taskId.startsWith(`${menu.weekStart}|`)).length,
     eaten: count('eaten'),
     skipped: count('skipped'),
     total: menu.entries.length,
@@ -267,6 +285,42 @@ function load(): AppState {
     setCustomRecipes(state.customRecipes)
     // кладовой раньше не было: заводим её из базовых продуктов
     if (!state.pantry) state.pantry = emptyPantry()
+    /*
+     * Раньше «приготовлено» было отметкой на записи меню, а продукты
+     * списывались тут же. Восстановить снимок списанного задним числом нельзя,
+     * но и списывать второй раз нельзя тем более: заводим факт готовки с
+     * пустым списком — он говорит «это уже сделано», и повторное нажатие
+     * ничего не спишет.
+     */
+    if (state.menu) {
+      const legacy = state.menu.entries.filter(
+        (e) => (e.status as string | undefined) === 'cooked',
+      )
+      if (legacy.length > 0) {
+        const known = new Set(state.cookEvents.map((e) => e.taskId))
+        const restored: CookEvent[] = []
+        for (const entry of legacy) {
+          const taskId = cookTaskId(state.menu.weekStart, entry.recipeId, entry.cookDay)
+          if (known.has(taskId)) continue
+          known.add(taskId)
+          restored.push({
+            taskId,
+            at: state.menu.weekStart,
+            recipeId: entry.recipeId,
+            servings: 0,
+            cookedGrams: 0,
+            used: [],
+          })
+        }
+        state.cookEvents = [...state.cookEvents, ...restored]
+        state.menu = {
+          ...state.menu,
+          entries: state.menu.entries.map((e) =>
+            (e.status as string | undefined) === 'cooked' ? { ...e, status: undefined } : e,
+          ),
+        }
+      }
+    }
     // меню, собранные до появления личных порций, пересобираем на том же seed
     const outdated = state.menu?.entries.some((e) => !Array.isArray(e.portions))
     if (state.household && state.menu && outdated) {
@@ -279,10 +333,13 @@ function load(): AppState {
     if (state.household && state.menu && state.menu.weekStart !== monday) {
       const household = { ...state.household, weekStart: monday }
       const { menu, warnings } = menuFor(household, Math.floor(Math.random() * 1e9), [], state.pantry)
-      const history = [makeRecord(state.menu), ...state.history]
+      const history = [makeRecord(state.menu, state.cookEvents), ...state.history]
         .filter((r, i, all) => all.findIndex((x) => x.id === r.id) === i)
         .slice(0, MAX_HISTORY)
-      return { ...state, household, menu, warnings, history, bought: [] }
+      // факты готовки живут столько же, сколько недели, к которым относятся
+      const weeks = new Set([menu.weekStart, ...history.map((r) => r.weekStart)])
+      const cookEvents = state.cookEvents.filter((e) => weeks.has(e.taskId.split('|')[0]))
+      return { ...state, household, menu, warnings, history, cookEvents, bought: [] }
     }
     return state
   } catch {
@@ -328,7 +385,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const storeBought = useCallback(() => {
     setState((prev) => {
       if (!prev.menu) return prev
-      const today = new Date().toISOString().slice(0, 10)
+      const today = todayIso()
       const list = buildShoppingList(prev.menu, prev.household ?? undefined, prev.pantry)
       const lines = list.lines.filter(
         (l) => !l.staple && prev.bought.includes(l.ingredientId),
@@ -512,11 +569,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
-  /** План и факт: «приготовлено», «съедено», «пропущено» или снять отметку. */
+  /**
+   * Состояние приёма пищи: съедено, пропущено или отметка снята.
+   *
+   * Про готовку здесь ничего нет. Одна готовка закрывает несколько приёмов, и
+   * продукты списываются один раз на всю готовку — см. completeCookTask.
+   */
   const setEntryStatus = useCallback((entryId: string, status: EntryStatus | null) => {
     setState((prev) => {
       if (!prev.menu) return prev
       const entry = prev.menu.entries.find((e) => e.id === entryId)
+      if (!entry) return prev
       const menu: WeekMenu = {
         ...prev.menu,
         entries: prev.menu.entries.map((e) =>
@@ -524,24 +587,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ),
       }
       let pantry = prev.pantry
-      const recipe = entry ? recipeById(entry.recipeId) : undefined
-      const today = new Date().toISOString().slice(0, 10)
-      // Отметки «приготовлено» и «съедено» — это то, что реально произошло на
-      // кухне, и запасы должны за этим следовать. Иначе «700 г риса» лежали бы
-      // в списке вечно и каждую неделю вычитались из закупки заново.
-      if (entry && recipe && status === 'cooked' && entry.status !== 'cooked') {
-        pantry = consumeRecipe(pantry, recipe, totalPortions(entry))
-        const task = cookTasks(menu).find(
-          (t) => t.recipeId === entry.recipeId && t.cookDay === entry.cookDay,
-        )
-        if (task && task.freezerPortions > 0) {
-          pantry = addFreezer(pantry, recipe, 1, task.freezerPortions, today)
-        }
-      }
-      // Достали заготовку и съели — контейнера больше нет. Именно заготовку с
-      // прошлых недель: блюдо, которое приготовили в понедельник и доедают в
-      // среду, тоже помечено морозилкой, но в кладовой его никогда не было.
-      if (entry && status === 'eaten' && entry.fromFreezer) {
+      /*
+       * Единственное, что этот вызов делает с кладовой: достали заготовку с
+       * прошлой недели и съели — контейнера больше нет. Это свойство именно
+       * этого приёма пищи, а не готовки: у записи из морозилки готовки нет
+       * вовсе. Блюдо, приготовленное в понедельник и доедаемое в среду, тоже
+       * помечено морозилкой, но в кладовой его никогда не было.
+       */
+      if (status === 'eaten' && entry.status !== 'eaten' && entry.fromFreezer) {
         // контейнеров ровно столько, сколько ушло на стол: обед на двоих —
         // это чаще два контейнера, и списывать один значит держать в кладовой
         // еду, которой там уже нет
@@ -551,6 +604,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         pantry = takeFreezer(pantry, entry.recipeId, containers)
       }
       return { ...prev, menu, pantry }
+    })
+  }, [])
+
+  /**
+   * Отметить готовку сделанной. Вся арифметика — в lib/cookFact: она меняет
+   * запасы, и проверять её надо без экрана.
+   */
+  const completeCookTask = useCallback((taskId: string) => {
+    setState((prev) => {
+      if (!prev.menu || !prev.household) return prev
+      const facts = completeFact(prev, prev.menu, prev.household, taskId, todayIso())
+      return facts === prev ? prev : { ...prev, ...facts }
+    })
+  }, [])
+
+  /** Снять отметку о готовке и вернуть продукты по снимку. */
+  const undoCookTask = useCallback((taskId: string) => {
+    setState((prev) => {
+      const facts = undoFact(prev, taskId, todayIso())
+      return facts === prev ? prev : { ...prev, ...facts }
     })
   }, [])
 
@@ -627,7 +700,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setCustomRecipes(payload.customRecipes)
     const { menu, warnings } = buildWeekMenu(payload.household, Math.floor(Math.random() * 1e9), [], {
       freezer: [],
-      today: new Date().toISOString().slice(0, 10),
+      today: todayIso(),
     })
     setState((prev) => ({
       ...prev,
@@ -669,7 +742,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const archiveWeek = useCallback(() => {
     setState((prev) => {
       if (!prev.menu || prev.menu.entries.length === 0) return prev
-      return { ...prev, history: [makeRecord(prev.menu), ...prev.history].slice(0, MAX_HISTORY) }
+      return {
+        ...prev,
+        history: [makeRecord(prev.menu, prev.cookEvents), ...prev.history].slice(0, MAX_HISTORY),
+      }
     })
   }, [])
 
@@ -724,6 +800,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       applyAttendanceTemplate,
       copyAttendanceDay,
       setEntryStatus,
+      completeCookTask,
+      undoCookTask,
       rateRecipe,
       archiveWeek,
       repeatWeek,
@@ -754,6 +832,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       applyAttendanceTemplate,
       copyAttendanceDay,
       setEntryStatus,
+      completeCookTask,
+      undoCookTask,
       rateRecipe,
       archiveWeek,
       repeatWeek,

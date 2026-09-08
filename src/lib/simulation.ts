@@ -1,15 +1,12 @@
-import type { FreezerItem, Household, Pantry, WeekMenu } from '../types'
+import type { FreezerItem, Household, Pantry } from '../types'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { recipeById } from '../data/recipeRegistry'
 import { buildWeekMenu, cookTasks, dayNorms, dayTotals } from './menu'
 import { buildCookingPlans } from './cookingPlan'
 import { buildShoppingList } from './shopping'
-import { portionWeight } from './nutrition'
-import type { BatchPlan } from './batch'
-import { planWeekBatches } from './weekBatch'
+import { cookedGrams as cookedGramsOf } from './nutrition'
+import { cookedStats, planWeek } from './weekPlan'
 import type { BatchPreference } from './batch'
-import { drinkShopping } from './drinks'
-import { extraShopping } from './extras'
 import { CONTAINER_GRAMS, emptyPantry, freezerRoomGrams } from './pantry'
 import { freezerDaysOf } from './freezing'
 import { purchaseInfo } from './purchase'
@@ -71,6 +68,10 @@ export interface WeekReport {
   wastedItems: string[]
   /** Что взяли из морозилки вместо готовки. */
   takenFromFreezer: string[]
+  /** Сколько готовой еды достали из морозилки на стол, г. */
+  thawedGrams: number
+  /** Сколько заготовок пропало по сроку, г. */
+  wastedFrozenGrams: number
   cookedGrams: number
   eatenGrams: number
   frozenGrams: number
@@ -106,32 +107,6 @@ function lotsValue(lots: Lot[]): number {
 }
 
 /**
- * Что уходит в еду за неделю: продукты блюд, напитков и дополнений.
- *
- * Доли рецепта берём из того же плана партий, что и закупка: если покупать по
- * потребности, а готовить партией, разница берётся из воздуха, и «дешёвый»
- * вариант оказывается дешёвым только на бумаге.
- */
-function weekConsumption(
-  menu: WeekMenu,
-  household: Household,
-  plans: Map<string, BatchPlan>,
-): Map<string, number> {
-  const used = new Map<string, number>()
-  const add = (id: string, qty: number) => used.set(id, (used.get(id) ?? 0) + qty)
-  for (const task of cookTasks(menu)) {
-    const recipe = recipeById(task.recipeId)
-    if (!recipe) continue
-    const servings = plans.get(task.key)?.chosen.servings ?? task.portions
-    for (const item of recipe.items) add(item.ingredientId, item.qty * servings)
-  }
-  for (const source of [drinkShopping(household), extraShopping(household)]) {
-    for (const [id, qty] of source) add(id, qty)
-  }
-  return used
-}
-
-/**
  * Стратегия недели — то, ради чего этот замер и делается.
  *
  *   balanced — как сейчас: партия по цене ошибки, меню видит морозилку;
@@ -140,6 +115,31 @@ function weekConsumption(
  *
  * Ни одна из них не отменяет правил: партия по-прежнему не может быть меньше
  * кастрюли или больше формы, а меню — оставить кого-то без ужина.
+ *
+ * Перемерено после того, как расчёт стал единым: потребность в готовом весе,
+ * фасовка на неделю, КБЖУ по фактической партии. В неделю, 12 недель × 12
+ * прогонов, семья из двоих. Рычагов у стратегии два, и меряются они по
+ * отдельности: подбор блюд (goal) и размер партии (batch).
+ *
+ *                          касса  выброш  готовим  по меню  хвосты  из мороз  белок  блюд
+ *   сбалансированно         6975     468    20.91    19.71     573      0.60   1.04    24
+ *   экономия: только меню   5174     367    20.22    18.48     765      0.85   0.96    21
+ *   экономия: только партия 7131     409    21.34    20.13    1040      0.18   1.04    22
+ *   экономия целиком        5186     312    20.34    18.91    1126      0.35   0.97    20
+ *   впрок                   7324     437    22.22    19.31    1659      1.08   1.03    24
+ *
+ * Вывод прежний и стал только резче. Экономия работает целиком за счёт подбора
+ * блюд; партийный рычаг сам по себе дороже сбалансированного на 156 ₽/нед.
+ * «Поменьше готовить» на деле означает «никогда не недобрать»: цена ошибки
+ * допускает недобор в сорок граммов, а `min` обязан закрыть потребность и
+ * потому округляет вверх — и варит больше, а не меньше.
+ *
+ * Платит экономия не деньгами: белок 96% нормы вместо 104%, по меню на столе
+ * на 1.2 кг меньше (семья добирает это хвостами — их вдвое больше), и разных
+ * блюд за двенадцать недель 20 вместо 24.
+ *
+ * «Впрок» покупает почти вдвое больше приёмов пищи из морозилки (1.08 против
+ * 0.60) за 349 ₽/нед и 1.7 кг еды в неделю, которую доедают сверх нормы.
  */
 export type Strategy = 'balanced' | 'save' | 'stockUp'
 
@@ -211,7 +211,6 @@ export function simulate(household: Household, options: SimulationOptions): Simu
       freezer: [],
     }
 
-    const batch = options.batch !== false
     const strategy = options.strategy ?? 'balanced'
     const wantsBatch = options.only !== 'goal'
     const wantsGoal = options.only !== 'batch'
@@ -242,11 +241,12 @@ export function simulate(household: Household, options: SimulationOptions): Simu
 
     // то, что достали из морозилки, оттуда и исчезает
     const takenFromFreezer: string[] = []
+    let thawedGrams = 0
     for (const entry of menu.entries) {
       if (!entry.fromFreezer) continue
       const recipe = recipeById(entry.recipeId)
       if (!recipe) continue
-      let left = portionWeight(recipe, entry.portions.reduce((s, p) => s + p.factor, 0))
+      let left = cookedGramsOf(recipe, entry.portions.reduce((s, p) => s + p.factor, 0))
       takenFromFreezer.push(recipe.title)
       for (const lot of frozen) {
         if (lot.recipeId !== recipe.id || left <= 0) continue
@@ -256,6 +256,7 @@ export function simulate(household: Household, options: SimulationOptions): Simu
         lot.containers = Math.max(0, Math.ceil((lot.grams - take) / CONTAINER_GRAMS))
         lot.grams -= take
         left -= take
+        thawedGrams += take
       }
       frozen = frozen.filter((f) => f.grams > 1)
     }
@@ -279,13 +280,13 @@ export function simulate(household: Household, options: SimulationOptions): Simu
     }))
     const freeRoom = freezerRoomGrams(household.kitchen, pantry)
 
-    // Партии на всю неделю сразу: место в морозилке одно на всех, и делится
-    // оно в порядке готовки. Этот же план идёт и в закупку, и в расход.
-    const plans = batch
-      ? planWeekBatches(cooked, household, { pantry, prefer })
-      : new Map<string, BatchPlan>()
-
-    const list = buildShoppingList(cooked, batch ? household : undefined, pantry, prefer)
+    /*
+     * План недели считается один раз и служит всему: по нему закупаются, по
+     * нему же готовят и списывают. Симуляция ценна ровно настолько, насколько
+     * она повторяет приложение, — поэтому своего расчёта у неё быть не должно.
+     */
+    const plan = planWeek(cooked, household, { pantry, prefer })
+    const list = buildShoppingList(cooked, household, pantry, prefer)
 
     // 1. покупка: то, что не закрыто запасом, приезжает домой целыми упаковками
     let checkout = 0
@@ -296,7 +297,7 @@ export function simulate(household: Household, options: SimulationOptions): Simu
     }
 
     // 2. готовка: списываем из кладовой то, что ушло в еду
-    const consumption = weekConsumption(cooked, household, plans)
+    const consumption = plan.demand
     let used = 0
     for (const [id, qty] of consumption) {
       if (always.has(id) || INGREDIENT_BY_ID[id]?.staple) continue
@@ -324,13 +325,11 @@ export function simulate(household: Household, options: SimulationOptions): Simu
     let servedGrams = 0
     let wastedOverflow = 0
     let overflowGrams = 0
-    for (const task of cookTasks(cooked)) {
-      const recipe = recipeById(task.recipeId)
-      if (!recipe) continue
-      const demand = portionWeight(recipe, task.portions)
-      const plan = plans.get(task.key) ?? null
-      const servings = plan ? plan.chosen.servings : task.portions
-      const yieldGrams = plan ? plan.chosen.yieldGrams : demand
+    for (const cooking of plan.tasks) {
+      const recipe = cooking.recipe
+      const demand = cooking.neededGrams
+      const servings = cooking.servings
+      const yieldGrams = cooking.cookedGrams
       cookedGrams += yieldGrams
       /*
        * Куда что делось, берём из того же плана партий, по которому и
@@ -340,12 +339,12 @@ export function simulate(household: Household, options: SimulationOptions): Simu
        */
       const keeps = recipe.freezable && household.kitchen.hasFreezer
       const roomLeft = Math.max(0, freeRoom - frozenGrams)
-      const canFreeze = keeps ? Math.min(plan ? plan.chosen.freezeGrams : 0, roomLeft) : 0
+      const canFreeze = keeps ? Math.min(cooking.placement.freezeGrams, roomLeft) : 0
       // хвост в порцию семья доедает — это добавка, а не потеря
-      const eatenHere = Math.min(yieldGrams, demand) + (plan ? plan.chosen.tailGrams : 0)
+      const eatenHere = Math.min(yieldGrams, demand) + cooking.placement.tailGrams
       servedGrams += Math.min(yieldGrams, demand)
       eatenGrams += eatenHere
-      tailGrams += plan ? plan.chosen.tailGrams : 0
+      tailGrams += cooking.placement.tailGrams
       const nowhere = Math.max(0, yieldGrams - eatenHere - canFreeze)
       if (nowhere > 0) {
         // не влезло: считаем это потерей, а не бесплатной едой
@@ -368,7 +367,7 @@ export function simulate(household: Household, options: SimulationOptions): Simu
           cookedWeek: week,
           keepDays: freezerDaysOf(recipe, 'cooked'),
           containers,
-          portionsEach: canFreeze / containers / Math.max(1, portionWeight(recipe, 1)),
+          portionsEach: canFreeze / containers / Math.max(1, cookedGramsOf(recipe, 1)),
         })
       }
     }
@@ -396,10 +395,12 @@ export function simulate(household: Household, options: SimulationOptions): Simu
     lots = keep
 
     const keepFrozen: FrozenLot[] = []
+    let wastedFrozenGrams = 0
     for (const lot of frozen) {
       if ((week - lot.cookedWeek + 1) * 7 > lot.keepDays) {
         wasted += lot.value
         wastedFrozen += lot.value
+        wastedFrozenGrams += lot.grams
         wastedItems.push(`${recipeById(lot.recipeId)?.title ?? lot.recipeId} (морозилка)|${Math.round(lot.value)}`)
       } else {
         keepFrozen.push(lot)
@@ -410,6 +411,8 @@ export function simulate(household: Household, options: SimulationOptions): Simu
     // цена стратегии не только в деньгах: сколько раз вставать к плите и
     // насколько меню попадает в норму
     const cookingPlans = buildCookingPlans(cooked, household, 1, pantry)
+    // калории считаем по фактически приготовленным партиям, а не по составу
+    const actual = cookedStats(plan, pantry)
     let worstDeviation = 0
     let protein = 0
     let proteinNorm = 0
@@ -419,7 +422,7 @@ export function simulate(household: Household, options: SimulationOptions): Simu
       for (const eater of household.eaters) {
         const norms = dayNorms(household, day, eater.id)
         if (norms.kcal <= 0) continue
-        const fact = dayTotals(cooked, day, eater.id)
+        const fact = dayTotals(cooked, day, eater.id, actual)
         worstDeviation = Math.max(worstDeviation, Math.abs(fact.kcal / norms.kcal - 1))
         protein += fact.protein
         proteinNorm += norms.protein
@@ -448,6 +451,8 @@ export function simulate(household: Household, options: SimulationOptions): Simu
       wastedFrozen: Math.round(wastedFrozen),
       wastedItems,
       takenFromFreezer,
+      thawedGrams: Math.round(thawedGrams),
+      wastedFrozenGrams: Math.round(wastedFrozenGrams),
       cookedGrams: Math.round(cookedGrams),
       eatenGrams: Math.round(eatenGrams),
       frozenGrams: Math.round(frozenGrams),

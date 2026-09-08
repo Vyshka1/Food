@@ -13,7 +13,12 @@ export function ShoppingModeScreen({ onExit }: { onExit: () => void }) {
   const [shareNote, setShareNote] = useState('')
   useKeepAwake()
 
-  const list = useMemo(() => (menu ? buildShoppingList(menu, household ?? undefined, pantry) : null), [menu, household])
+  // pantry в зависимостях обязателен: без него режим магазина показывал
+  // количества, посчитанные до того, как покупки разложили по кладовой
+  const list = useMemo(
+    () => (menu ? buildShoppingList(menu, household ?? undefined, pantry) : null),
+    [menu, household, pantry],
+  )
   if (!menu || !list) return null
 
   const skip = new Set(atHome)

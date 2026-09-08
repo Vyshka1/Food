@@ -118,7 +118,10 @@ export function ProductsScreen({ onShoppingMode }: { onShoppingMode: () => void 
                     {line.packs && (
                       <span className="muted small">
                         {' '}
-                        × {line.packs.count} уп. по {formatQty(line.packs.size, line.unit)}
+                        ×{' '}
+                        {line.packs
+                          .map((p) => `${p.count} уп. по ${formatQty(p.size, line.unit)}`)
+                          .join(' + ')}
                       </span>
                     )}
                   </b>

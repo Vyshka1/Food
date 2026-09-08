@@ -1,7 +1,6 @@
 import type {
   Eater,
   Household,
-  Ingredient,
   MenuEntry,
   Norms,
   Pantry,
@@ -11,12 +10,12 @@ import type {
 } from '../types'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { recipeById } from '../data/recipeRegistry'
-import { portionOf, totalPortions } from './menu'
-import { portionWeight, recipeStats } from './nutrition'
+import { cookTaskId, portionOf, totalPortions } from './menu'
+import { cookedGrams, recipeStats, statsOf } from './nutrition'
 import { FREEZE_MIN_GRAMS } from './batch'
-import { planWeekBatches } from './weekBatch'
-import type { BatchPlan } from './batch'
-import { packPlan, purchaseInfo } from './purchase'
+import { planWeek } from './weekPlan'
+import type { TaskPlan } from './weekPlan'
+import { purchaseInfo } from './purchase'
 import { householdGrams } from './measures'
 import { fryMinutes, loads as loadCount, pieceCookingOf, useTwoPans } from './pieces'
 import { FRY_STEP } from './batch'
@@ -33,11 +32,6 @@ import { scaledMinutes } from './cookingPlan'
  * цена и раскладка по людям. Что не разошлось по тарелкам — уходит в
  * морозилку, и сумма сходится: выход = распределено + заморожено + остаток.
  */
-
-/** Ниже этого веса остаток проще досыпать в блюдо, чем куда-то девать. */
-const ABSORB_MAX_G = 30
-/** …или если это меньше двадцатой части упаковки. */
-const ABSORB_MAX_SHARE = 0.05
 
 export interface CardRow {
   day: number
@@ -133,7 +127,8 @@ export interface CookCard {
   leftovers: CardLeftover[]
   reason: string
   alternatives: CardAlternative[]
-  plan: BatchPlan | null
+  /** Готовка целиком, как её посчитал план недели. */
+  plan: TaskPlan | null
   /** Как это жарится: сколько заходов и сколько это минут. */
   loads?: { count: number; perLoad: number; minutes: number; twoPans: boolean }
   /**
@@ -153,7 +148,7 @@ export interface CookCard {
 }
 
 /** Сколько изделий выходит из выбранной партии. Только у проверенных блюд. */
-function piecesOf(plan: BatchPlan | null): number | undefined {
+function piecesOf(plan: TaskPlan | null): number | undefined {
   if (!plan || plan.batch.source !== 'verified' || !plan.batch.yieldPieces) return undefined
   return Math.max(1, Math.round(plan.batch.yieldPieces * plan.chosen.scale))
 }
@@ -183,31 +178,6 @@ export function splitPieces(needs: number[], total: number): number[] {
 }
 
 /** Что ещё на неделе тратит этот продукт — кроме этой готовки. */
-function usedElsewhere(menu: WeekMenu, ingredientId: string, skip: Set<string>): number {
-  let qty = 0
-  for (const entry of menu.entries) {
-    if (skip.has(entry.id)) continue
-    const item = recipeById(entry.recipeId)?.items.find((i) => i.ingredientId === ingredientId)
-    if (item) qty += item.qty * totalPortions(entry)
-  }
-  return qty
-}
-
-/**
- * Мелкий хвост упаковки: его проще досыпать в блюдо, чем куда-то девать.
- *
- * У штучного порог свой и жёсткий: остаток меньше штуки — это не остаток, а
- * дробь. Полторы луковицы не бывает: вторую кладут целиком, и именно её надо
- * считать и в КБЖУ, и в цене, иначе состав карточки расходится с её же
- * калориями.
- */
-function absorbable(ing: Ingredient, leftover: number, packSize: number): boolean {
-  if (leftover <= 0) return false
-  if (ing.unit === 'pcs') return leftover < 1
-  if (ing.staple) return false
-  const limit = Math.max(ABSORB_MAX_G, packSize * ABSORB_MAX_SHARE)
-  return leftover <= limit
-}
 
 export function cookCard(
   menu: WeekMenu,
@@ -224,17 +194,19 @@ export function cookCard(
     .sort((a, b) => a.day - b.day)
 
   const demandFactor = entries.reduce((sum, e) => sum + totalPortions(e), 0)
-  const neededGrams = portionWeight(recipe, demandFactor)
 
-  // Партия — из общего плана недели: место в морозилке одно на всю неделю,
-  // и делят его все готовки, а не каждая по отдельности.
+  /*
+   * Карточка ничего не считает сама: всё берётся из плана недели — того же,
+   * по которому закупаются продукты и строится расписание. Считать здесь
+   * заново значит завести второй ответ на тот же вопрос, а расходиться они
+   * начинают ровно в тот день, когда один из них поправят.
+   */
+  const week = planWeek(menu, household, { pantry })
   const plan =
-    planWeekBatches(menu, household, { pantry }).get(`${entry.recipeId}|${entry.cookDay}`) ?? null
-
-  // Сколько реально ставим на плиту. Всё остальное в карточке считается
-  // отсюда — иначе продукты, КБЖУ и «приготовим» разойдутся между собой.
-  const servings = plan ? plan.chosen.servings : demandFactor
-  const cookGrams = plan ? plan.chosen.yieldGrams : neededGrams
+    week.byKey.get(cookTaskId(menu.weekStart, entry.recipeId, entry.cookDay)) ?? null
+  const neededGrams = plan ? plan.neededGrams : cookedGrams(recipe, demandFactor)
+  const servings = plan ? plan.servings : demandFactor
+  const cookGrams = plan ? plan.cookedGrams : neededGrams
   const cookPieces = piecesOf(plan)
   const pieceGrams = cookPieces ? Math.round(cookGrams / cookPieces) : undefined
 
@@ -313,7 +285,7 @@ export function cookCard(
    */
   const restGrams = Math.max(0, cookGrams - placedGrams)
   const canFreeze = recipe.freezable && household.kitchen.hasFreezer
-  const freezeGrams = canFreeze ? Math.min(restGrams, plan?.chosen.freezeGrams ?? restGrams) : 0
+  const freezeGrams = canFreeze ? Math.min(restGrams, plan?.placement.freezeGrams ?? restGrams) : 0
   const eatSoonGrams = Math.min(restGrams - freezeGrams, FREEZE_MIN_GRAMS)
   const freezePieces =
     cookPieces && freezeGrams > 0
@@ -322,7 +294,6 @@ export function cookCard(
   const unplacedGrams = restGrams - freezeGrams - eatSoonGrams
 
   // продукты и остатки упаковок
-  const skip = new Set(entries.map((e) => e.id))
   const items: CardItem[] = []
   const leftovers: CardLeftover[] = []
   let usedPrice = 0
@@ -332,33 +303,29 @@ export function cookCard(
     const ing = INGREDIENT_BY_ID[item.ingredientId]
     if (!ing) continue
     const exactHere = item.qty * servings
-    const exactOther = usedElsewhere(menu, item.ingredientId, skip)
-    const totalNeed = exactHere + exactOther
-    const stock = pantry?.stock.find((s) => s.ingredientId === item.ingredientId)?.qty ?? 0
-    const toBuy = Math.max(0, totalNeed - stock)
-    // имя нарочно не plan: выше в функции уже есть план партии, и путать их
-    // на ровном месте не стоит
-    const pack = ing.staple ? null : packPlan(ing, toBuy)
-    const bought = pack?.buy ?? 0
+    /*
+     * Покупку берём из плана недели, а не считаем по этому блюду: фасовка —
+     * решение недельное. Две готовки по 250 г — это одна пачка 500 г, и
+     * карточка должна объяснять именно ту пачку, которая попала в список
+     * покупок. Заодно сюда попадает молоко для капучино: раньше карточка
+     * видела только блюда и на молоке не сходилась.
+     */
+    const line = week.purchase.get(item.ingredientId)
+    const totalNeed = line?.needed ?? exactHere
+    const exactOther = Math.max(0, totalNeed - exactHere)
+    const stock = line?.fromStock ?? 0
+    const bought = ing.staple ? 0 : (line?.buy ?? 0)
     const available = bought + stock
-    const rawLeft = Math.max(0, available - totalNeed)
 
     /*
-     * Сколько продукта уходит именно в это блюдо.
+     * Сколько продукта уходит именно в это блюдо — из плана недели.
      *
-     * Штучное считается целыми: пятый банан открывают здесь, даже если в
-     * блюдо идёт его половина, — иначе состав карточки («5 шт») расходится с
-     * её же разбором упаковки («4 шт сюда»). Весовое округляем вверх только
-     * на мелкий хвост: двадцать граммов муки некуда девать, а в тесте они
-     * растворятся.
+     * Целые штуки и пристроенные хвосты упаковок считаются там: хвост один на
+     * неделю, а блюд с этим продуктом бывает несколько, и пока карточка решала
+     * это сама, один остаток попадал в состав двух блюд сразу.
      */
-    const absorbed =
-      ing.unit === 'pcs'
-        ? Math.ceil(exactHere - 1e-9) - exactHere
-        : absorbable(ing, rawLeft, pack?.packSize || bought)
-          ? rawLeft
-          : 0
-    const qty = exactHere + absorbed
+    const qty = plan?.ingredients.get(item.ingredientId) ?? exactHere
+    const absorbed = plan?.absorbed.get(item.ingredientId) ?? 0
 
     items.push({ ingredientId: ing.id, name: ing.name, unit: ing.unit, qty, absorbed })
     usedPrice += ing.unit === 'pcs' ? ing.price * qty : (ing.price * qty) / 1000
@@ -398,24 +365,9 @@ export function cookCard(
     })
   }
 
-  // КБЖУ считаем по тем же продуктам, что и показываем: иначе калории в
-  // карточке не сходятся с её же составом
-  const stats: Norms = { kcal: 0, protein: 0, fat: 0, carbs: 0, fiber: 0 }
-  for (const item of items) {
-    const ing = INGREDIENT_BY_ID[item.ingredientId]
-    if (!ing) continue
-    const factor = ing.unit === 'pcs' ? item.qty : item.qty / 100
-    stats.kcal += ing.kcal * factor
-    stats.protein += ing.protein * factor
-    stats.fat += ing.fat * factor
-    stats.carbs += ing.carbs * factor
-    stats.fiber += ing.fiber * factor
-  }
-  stats.kcal = Math.round(stats.kcal)
-  stats.protein = Math.round(stats.protein)
-  stats.fat = Math.round(stats.fat)
-  stats.carbs = Math.round(stats.carbs)
-  stats.fiber = Math.round(stats.fiber * 10) / 10
+  // КБЖУ — той партии, которую и готовим: тот же состав, что показан выше, и
+  // то же число, что уйдёт в дневной итог
+  const stats: Norms = plan ? plan.stats : statsOf(items)
 
   // Альтернативы человек читает как «а если приготовить больше или меньше».
   // Значит и говорить надо результатом: сколько выйдет и что с этим будет, —

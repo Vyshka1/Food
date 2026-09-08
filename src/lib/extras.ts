@@ -1,5 +1,5 @@
 import type { DailyExtra, ExtraKind, Household, MealSlot, Norms } from '../types'
-import { INGREDIENT_BY_ID } from '../data/ingredients'
+import { statsOf } from './nutrition'
 
 /**
  * Ежедневные дополнения к столу.
@@ -114,26 +114,7 @@ export interface ExtraStats extends Norms {
 
 /** Ккал, БЖУ, клетчатка и цена одного дополнения. */
 export function extraStats(extra: DailyExtra): ExtraStats {
-  const acc = { kcal: 0, protein: 0, fat: 0, carbs: 0, fiber: 0, price: 0 }
-  for (const { ingredientId, qty } of extraIngredients(extra)) {
-    const ing = INGREDIENT_BY_ID[ingredientId]
-    if (!ing) continue
-    const factor = ing.unit === 'pcs' ? qty : qty / 100
-    acc.kcal += ing.kcal * factor
-    acc.protein += ing.protein * factor
-    acc.fat += ing.fat * factor
-    acc.carbs += ing.carbs * factor
-    acc.fiber += ing.fiber * factor
-    acc.price += ing.unit === 'pcs' ? ing.price * qty : (ing.price * qty) / 1000
-  }
-  return {
-    kcal: Math.round(acc.kcal),
-    protein: Math.round(acc.protein),
-    fat: Math.round(acc.fat),
-    carbs: Math.round(acc.carbs),
-    fiber: Math.round(acc.fiber * 10) / 10,
-    price: Math.round(acc.price),
-  }
+  return statsOf(extraIngredients(extra))
 }
 
 export function extraOn(extra: DailyExtra, day: number): boolean {

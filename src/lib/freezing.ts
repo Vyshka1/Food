@@ -4,10 +4,7 @@ import type {
   Recipe,
   RecipeStep,
   ThawMethod,
-  ThawReminder,
-  WeekMenu,
 } from '../types'
-import { recipeById } from '../data/recipeRegistry'
 
 /**
  * Как блюдо ведёт себя в морозилке.
@@ -147,37 +144,4 @@ export function containerLabel(title: string, containers: number, useBy: Date): 
 /** Проверка на консистентность: у блюда с мясом сырьё морозится в холодильник. */
 export function isSafeThaw(info: FreezingInfo): boolean {
   return info.stage !== 'raw' || info.thaw === 'fridge'
-}
-
-/**
- * Когда доставать заготовки из морозилки.
- *
- * Блюдо, которое едят в четверг, должно попасть в холодильник в среду
- * вечером — иначе в четверг его придётся размораживать в спешке или греть
- * из камня. Раньше приложение об этом молчало.
- */
-export function thawReminders(menu: WeekMenu): ThawReminder[] {
-  const reminders: ThawReminder[] = []
-  const seen = new Set<string>()
-  for (const entry of menu.entries) {
-    if (entry.storage !== 'freezer') continue
-    const recipe = recipeById(entry.recipeId)
-    const info = recipe?.freezing
-    if (!recipe || !info || info.thawHours <= 0) continue
-    // за 12 часов — значит накануне вечером; за пару часов — в тот же день
-    const day = info.thawHours >= 8 ? entry.day - 1 : entry.day
-    if (day < 0) continue
-    const key = `${entry.recipeId}:${day}:${entry.day}`
-    if (seen.has(key)) continue
-    seen.add(key)
-    reminders.push({
-      recipeId: recipe.id,
-      title: recipe.title,
-      day,
-      forDay: entry.day,
-      method: info.thaw,
-      hours: info.thawHours,
-    })
-  }
-  return reminders.sort((a, b) => a.day - b.day || a.forDay - b.forDay)
 }

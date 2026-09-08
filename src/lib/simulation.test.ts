@@ -5,7 +5,7 @@ import { defaultOils } from './oil'
 import { simulate } from './simulation'
 import { RECIPES } from '../data/recipes'
 import { planBatch } from './batch'
-import { portionWeight } from './nutrition'
+import { cookedGrams } from './nutrition'
 
 const kitchen: Kitchen = {
   burners: 4,
@@ -103,6 +103,30 @@ describe('симуляция сходится сама с собой', () => {
     }
   })
 
+  it('замороженное возвращается на стол, а не исчезает', () => {
+    /*
+     * Заготовка имеет смысл, только если её потом едят. Проверяем и то, что
+     * счёт сходится (положили = достали + пропало + лежит), и то, что она
+     * действительно возвращается: замер по 12 прогонам на 20 недель — съедено
+     * 71% замороженного, пропало по сроку 16%, осталось лежать 13%.
+     */
+    const long = simulate(household, { weeks: 20 })
+    const froze = long.weeks.reduce((s, w) => s + w.frozenGrams, 0)
+    const thawed = long.weeks.reduce((s, w) => s + w.thawedGrams, 0)
+    const spoiled = long.weeks.reduce((s, w) => s + w.wastedFrozenGrams, 0)
+    const left = long.weeks[long.weeks.length - 1].freezerGramsEnd
+
+    expect(froze).toBeGreaterThan(1000)
+    // сходится: из морозилки ничего не исчезает и в ней ничего не заводится
+    expect(Math.abs(froze - (thawed + spoiled + left))).toBeLessThanOrEqual(
+      Math.max(50, froze * 0.02),
+    )
+    // и возвращается: больше половины замороженного съедено
+    expect(thawed / froze).toBeGreaterThan(0.5)
+    // а пропадает по сроку — меньшая часть
+    expect(spoiled / froze).toBeLessThan(0.3)
+  })
+
   it('кладовая переходит между неделями, а не обнуляется', () => {
     for (let i = 1; i < result.weeks.length; i++) {
       expect(result.weeks[i].stockStart).toBe(result.weeks[i - 1].stockEnd)
@@ -149,7 +173,7 @@ describe('стратегии выбирают из одного и того же
     let maxGrams = 0
     for (const recipe of RECIPES) {
       for (const portions of [2, 3, 4, 6]) {
-        const neededGrams = portionWeight(recipe, portions)
+        const neededGrams = cookedGrams(recipe, portions)
         const ctx = { neededGrams, hasFreezer: true, freezerRoomGrams: 1200 }
         const cost = planBatch(recipe, ctx)
         const min = planBatch(recipe, { ...ctx, prefer: 'min' })
@@ -174,7 +198,7 @@ describe('стратегии выбирают из одного и того же
 
   it('«минимальная» никогда не оставляет стол голодным', () => {
     for (const recipe of RECIPES) {
-      const neededGrams = portionWeight(recipe, 4)
+      const neededGrams = cookedGrams(recipe, 4)
       const ctx = { neededGrams, hasFreezer: true, freezerRoomGrams: 1200 }
       const cost = planBatch(recipe, ctx)
       const min = planBatch(recipe, { ...ctx, prefer: 'min' })
@@ -188,7 +212,7 @@ describe('стратегии выбирают из одного и того же
 
   it('«впрок» не берёт того, что некуда деть', () => {
     for (const recipe of RECIPES) {
-      const neededGrams = portionWeight(recipe, 3)
+      const neededGrams = cookedGrams(recipe, 3)
       // морозилки нет: складывать излишек некуда
       const max = planBatch(recipe, {
         neededGrams,

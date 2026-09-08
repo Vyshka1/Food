@@ -1,5 +1,6 @@
 import type { OilChoice, Recipe } from '../types'
 import { RECIPES, RECIPE_BY_ID } from './recipes'
+import { normalizeRecipe } from './normalize'
 import { applyOils, defaultOils } from '../lib/oil'
 
 /**
@@ -17,14 +18,7 @@ let oils: OilChoice = defaultOils()
 let adapted: Recipe[] | null = null
 let adaptedById = new Map<string, Recipe>()
 
-/**
- * Список собирается лениво, при первом обращении.
- *
- * Строить его в момент загрузки модуля нельзя: data/recipes собирает разметку
- * заморозки и партий через lib/freezing, тот тянет реестр обратно, и на этом
- * круге RECIPES ещё пуст. Ленивое построение разрывает круг без танцев с
- * порядком импортов.
- */
+/** Список собирается лениво, при первом обращении, и кэшируется до изменений. */
 function ensure(): Recipe[] {
   if (!adapted) rebuild()
   return adapted!
@@ -35,9 +29,18 @@ function rebuild(): void {
   adaptedById = new Map(adapted.map((r) => [r.id, r]))
 }
 
+/**
+ * Свои рецепты проходят ту же нормализацию, что и встроенные.
+ *
+ * Редактор сохраняет то, что написал человек: состав, шаги, слоты. Прибор,
+ * активное время, разметку заморозки и производственную партию дописывает
+ * normalizeRecipe. Без этого своё блюдо приходило в подбор без партии, и весь
+ * расчёт сваливался на запасной путь «партии нет — считаем по потребности
+ * меню»: своё блюдо считалось иначе, чем встроенное.
+ */
 export function setCustomRecipes(list: Recipe[]): void {
-  customRecipes = list
-  customById = new Map(list.map((r) => [r.id, r]))
+  customRecipes = list.map(normalizeRecipe)
+  customById = new Map(customRecipes.map((r) => [r.id, r]))
   rebuild()
 }
 

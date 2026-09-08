@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { RECIPES, RECIPE_BY_ID } from '../data/recipes'
-import { INGREDIENT_BY_ID } from '../data/ingredients'
+import { INGREDIENTS, INGREDIENT_BY_ID } from '../data/ingredients'
 import { buildOption, planBatch, yieldLabel } from './batch'
 import { leftoverAdvice, packPlan, purchaseInfo } from './purchase'
-import { portionWeight, recipeStats } from './nutrition'
+import { cookedGrams, recipeStats } from './nutrition'
 
 const CONTEXT = { neededGrams: 1080, hasFreezer: true, freezerRoomGrams: 4000 }
 
@@ -134,7 +134,7 @@ describe('выбор партии', () => {
       if (!batch || batch.reason !== 'anchor-pack' || !batch.anchorIngredientId) continue
       for (const portions of [2, 3, 4, 6]) {
         for (const freezerRoomGrams of [0, 1200, 4000]) {
-          const neededGrams = portionWeight(recipe, portions)
+          const neededGrams = cookedGrams(recipe, portions)
           const plan = planBatch(recipe, { neededGrams, hasFreezer: true, freezerRoomGrams })
           const line = plan?.chosen.packs.find((l) => l.ingredientId === batch.anchorIngredientId)
           if (!line) continue
@@ -145,8 +145,18 @@ describe('выбор партии', () => {
       }
     }
     expect(cases).toBeGreaterThan(100)
-    // измерено: пачка в ноль в 54% случаев, средний остаток 72 г
-    expect(whole / cases).toBeGreaterThan(0.5)
+    /*
+     * Измерено: пачка в ноль в 45% случаев, средний остаток 79 г. Было 54% и
+     * 72 г, пока потребность считалась в сыром весе: она была завышена, партия
+     * чаще дотягивала до целой пачки, и «хорошая» цифра держалась на лишней
+     * готовке. С честной потребностью еды нужно меньше, и половина упаковки
+     * выбирается чаще — сырой остаток фарша при этом морозится, в отличие от
+     * лишнего готового блюда.
+     *
+     * Вес сырого остатка в модели стоимости с тех пор не перемерялся: это
+     * последний шаг переработки, после того как расчёт станет единым.
+     */
+    expect(whole / cases).toBeGreaterThan(0.4)
     expect(leftover / cases).toBeLessThan(100)
   })
 
@@ -160,7 +170,7 @@ describe('выбор партии', () => {
     for (const recipe of RECIPES) {
       for (const portions of [2, 4, 6]) {
         for (const freezerRoomGrams of [0, 1200, 4000]) {
-          const neededGrams = portionWeight(recipe, portions)
+          const neededGrams = cookedGrams(recipe, portions)
           const plan = planBatch(recipe, { neededGrams, hasFreezer: true, freezerRoomGrams })
           if (!plan) continue
           const o = plan.chosen
@@ -336,5 +346,48 @@ describe('проверенные вручную партии', () => {
       }
       if (batch.reason === 'anchor-pack') expect(batch.anchorIngredientId, recipe.title).toBeTruthy()
     }
+  })
+})
+
+describe('фасовка', () => {
+  it('размеры можно смешивать, и берётся наименьший остаток', () => {
+    /*
+     * В магазине берут пачку 500 и пачку 600, а не четыре по 600 «потому что
+     * делится ровнее». Пока выбирался один размер на всю покупку, на мясе и
+     * рыбе набегало 65 ₽ в неделю лишнего.
+     */
+    const tuna = INGREDIENT_BY_ID['tuna_canned']
+    const sizes = purchaseInfo(tuna).packSizes
+    expect(sizes.length).toBeGreaterThan(1)
+
+    // 740 г — это ровно четыре банки по 185, а не 600 + 185 с остатком 45
+    const exact = packPlan(tuna, 740)
+    expect(exact.buy).toBe(740)
+    expect(exact.leftover).toBe(0)
+
+    // 580 закрывается парой 400 + 185: остаток 5 г вместо 20 у одной пачки 600
+    const mixedPlan = packPlan(tuna, 580)
+    expect(mixedPlan.buy).toBe(585)
+    expect(mixedPlan.parts.map((p) => p.size).sort((a, b) => a - b)).toEqual([185, 400])
+  })
+
+  it('покупка складывается из целых упаковок и закрывает потребность', () => {
+    for (const ing of INGREDIENTS) {
+      for (const needed of [1, 37, 180, 250, 499, 740, 1310]) {
+        const plan = packPlan(ing, needed)
+        expect(plan.buy, `${ing.name} на ${needed}`).toBeGreaterThanOrEqual(needed)
+        const fromParts = plan.parts.reduce((sum, p) => sum + p.count * p.size, 0)
+        if (plan.parts.length > 0) expect(fromParts, ing.name).toBe(plan.buy)
+        expect(plan.leftover).toBeCloseTo(plan.buy - needed, 6)
+      }
+    }
+  })
+
+  it('весовой продукт упаковками не считается', () => {
+    const loose = INGREDIENTS.find((i) => purchaseInfo(i).form === 'weight')!
+    const plan = packPlan(loose, 333)
+    expect(plan.parts).toEqual([])
+    expect(plan.packSize).toBe(0)
+    expect(plan.buy).toBe(340)
   })
 })

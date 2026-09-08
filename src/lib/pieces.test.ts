@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import type { Kitchen, PieceCooking } from '../types'
 import { RECIPES } from '../data/recipes'
-import { convenientCount, fryMinutes, loadLabel, loads, sizeOptions, useTwoPans } from './pieces'
+import {
+  convenientCount,
+  fryMinutes,
+  loadLabel,
+  loads,
+  pieceCookingOf,
+  sizeOptions,
+  useTwoPans,
+} from './pieces'
 import { planBatch, optionPieces } from './batch'
 import { buildCookingPlans } from './cookingPlan'
 import { buildWeekMenu, defaultRepeats } from './menu'
 import { defaultOils } from './oil'
+import { planWeek } from './weekPlan'
 import type { Eater, Household } from '../types'
 
 const pan: PieceCooking = { perLoad: 5, loadMinutes: 4, sizes: [12, 16, 20, 24, 30], max: 30 }
@@ -128,18 +137,50 @@ describe('база размечена', () => {
 })
 
 describe('план готовки считает жарку заходами', () => {
-  it('время штучного блюда растёт с числом изделий', () => {
-    const small = buildCookingPlans(buildWeekMenu(household, 5).menu, household)
-    const big = buildCookingPlans(
-      buildWeekMenu({ ...household, eaters: [...household.eaters, eater('e3'), eater('e4')] }, 5)
-        .menu,
-      { ...household, eaters: [...household.eaters, eater('e3'), eater('e4')] },
-    )
-    const fryMinutesOf = (plans: ReturnType<typeof buildCookingPlans>) =>
-      plans
-        .flatMap((p) => p.steps)
-        .filter((s) => /жарить|обжарить/i.test(s.text))
-        .reduce((sum, s) => sum + (s.end - s.start), 0)
-    expect(fryMinutesOf(big)).toBeGreaterThanOrEqual(fryMinutesOf(small))
+  it('время жарки в расписании растёт вместе с числом изделий', () => {
+    /*
+     * Раньше здесь сравнивались два разных меню — на двоих и на четверых, — и
+     * проверка держалась на том, что в большем меню случайно окажется не
+     * меньше жареного. Это про подбор блюд, а не про жарку: стоило поменять вес
+     * в подборе, и «время жарки» падало, хотя жарка считается ровно так же.
+     *
+     * Считаем то, что и хотели: в одном и том же плане шаг жарки занимает
+     * столько, сколько заходов нужно на его изделия.
+     */
+    const { menu } = buildWeekMenu(household, 5)
+    const plans = buildCookingPlans(menu, household)
+    const week = planWeek(menu, household)
+    let checked = 0
+    for (const plan of plans) {
+      for (const step of plan.steps) {
+        if (!/жарить|обжарить/i.test(step.text)) continue
+        const cooking = week.tasks.find(
+          (t) => t.task.recipeId === step.recipeId && t.task.cookDay === plan.cookDay,
+        )
+        const piece = cooking && pieceCookingOf(cooking.recipe)
+        if (!cooking || !piece) continue
+        const pieces = optionPieces(cooking.batch, cooking.chosen.scale)
+        if (!pieces) continue
+        const pans = useTwoPans(pieces, piece, household.kitchen) ? 2 : 1
+        expect(step.end - step.start, `${cooking.recipe.title}, ${pieces} шт`).toBe(
+          fryMinutes(pieces, piece, pans),
+        )
+        checked++
+      }
+    }
+    expect(checked, 'нашлись жареные штучные блюда').toBeGreaterThan(0)
+  })
+
+  it('и растёт монотонно: больше изделий — не меньше времени', () => {
+    for (const recipe of RECIPES) {
+      const piece = pieceCookingOf(recipe)
+      if (!piece) continue
+      let previous = 0
+      for (const pieces of piece.sizes) {
+        const minutes = fryMinutes(pieces, piece, 1)
+        expect(minutes, `${recipe.title}, ${pieces} шт`).toBeGreaterThanOrEqual(previous)
+        previous = minutes
+      }
+    }
   })
 })

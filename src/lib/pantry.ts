@@ -118,6 +118,7 @@ export function addFreezer(
   containers: number,
   portionsEach: number,
   today: string,
+  stats?: FreezerItem['stats'],
 ): Pantry {
   if (containers <= 0) return pantry
   const item: FreezerItem = {
@@ -128,6 +129,7 @@ export function addFreezer(
     cookedAt: today,
     // морозим уже готовое: контейнер с ужином, а не сырой фарш
     keepDays: freezerDaysOf(recipe, 'cooked'),
+    stats,
   }
   const existing = pantry.freezer.find((f) => f.recipeId === recipe.id && f.cookedAt === today)
   const freezer = existing

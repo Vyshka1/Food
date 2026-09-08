@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react'
 import { recipeById } from '../data/recipeRegistry'
 import { ENTRY_STATUS, MEAL_SLOTS } from '../types'
 import type { MenuEntry } from '../types'
-import { WEEKDAYS, dayNorms, dayTotals, fedEaters, portionOf, takeawayEaters, totalPortions } from '../lib/menu'
+import { WEEKDAYS, cookTaskId, dayNorms, dayTotals, fedEaters, portionOf, takeawayEaters, totalPortions } from '../lib/menu'
 import { drinkNorms } from '../lib/drinks'
 import { extraNorms, extraStats, extraSummary, extrasAt } from '../lib/extras'
-import { portionWeight, recipeStats } from '../lib/nutrition'
+import { cookedGrams, recipeStats } from '../lib/nutrition'
+import { cookedStats, planWeek } from '../lib/weekPlan'
 import { useStore } from '../store'
 import { CalorieRing, Card, Warnings } from '../components/ui'
 import { RecipeSheet } from '../components/RecipeSheet'
@@ -31,7 +32,19 @@ function todayIndex(weekStart: string): number {
 }
 
 export function MenuScreen() {
-  const { household, menu, warnings, swapDish, banRecipe, togglePin, setEntryStatus } =
+  const {
+    household,
+    menu,
+    warnings,
+    pantry,
+    cookEvents,
+    swapDish,
+    banRecipe,
+    togglePin,
+    setEntryStatus,
+    completeCookTask,
+    undoCookTask,
+  } =
     useStore()
   const [day, setDay] = useState(() => (menu ? todayIndex(menu.weekStart) : 0))
   const [openEntry, setOpenEntry] = useState<MenuEntry | null>(null)
@@ -49,9 +62,15 @@ export function MenuScreen() {
     () => (household ? dayNorms(household, day, eater?.id) : null),
     [household, day, eater],
   )
+  // калории дня считаются по фактически приготовленным партиям: досыпанный в
+  // блюдо остаток упаковки — это съеденные калории, и прятать их нечестно
+  const actual = useMemo(
+    () => (menu && household ? cookedStats(planWeek(menu, household, { pantry }), pantry) : undefined),
+    [menu, household, pantry],
+  )
   const totals = useMemo(
-    () => (menu ? dayTotals(menu, day, eater?.id) : null),
-    [menu, day, eater],
+    () => (menu ? dayTotals(menu, day, eater?.id, actual) : null),
+    [menu, day, eater, actual],
   )
   /**
    * Напитки показываем отдельной строкой, а не подмешиваем в еду: человек
@@ -284,6 +303,9 @@ export function MenuScreen() {
               const badge = entry.fromFreezer
                 ? { label: 'готово, из морозилки', cls: 'badge badge--freezer' }
                 : STORAGE_BADGE[entry.storage]
+              // отметка о готовке — свойство всей готовки, а не этой записи
+              const taskId = cookTaskId(menu.weekStart, entry.recipeId, entry.cookDay)
+              const cooked = cookEvents.some((e) => e.taskId === taskId)
               return (
                 <div
                   className="dish dish--row"
@@ -299,7 +321,7 @@ export function MenuScreen() {
                         {eater && factor === 0
                           ? 'ест не дома'
                           : eater
-                            ? `${portionWeight(recipe, factor)} г · ${Math.round(stats.kcal * factor)} ккал`
+                            ? `${cookedGrams(recipe, factor)} г · ${Math.round(stats.kcal * factor)} ккал`
                             : `на всех: ${Math.round(stats.kcal * factor)} ккал · ≈ ${Math.round(stats.price * factor)} ₽`}
                       </span>
                       <br />
@@ -326,6 +348,23 @@ export function MenuScreen() {
                     <Icon name="pin" size={18} />
                   </button>
                   <div className="dish__status">
+                    {/*
+                      «Приготовлено» — про всю готовку сразу: одно блюдо
+                      закрывает несколько приёмов, а продукты списываются один
+                      раз. «Съедено» и «пропущено» — про эту тарелку.
+                    */}
+                    {!entry.fromFreezer && (
+                      <button
+                        data-on={cooked}
+                        onClick={() => (cooked ? undoCookTask(taskId) : completeCookTask(taskId))}
+                        title="Приготовлено"
+                        aria-label={`${recipe.title}: приготовлено`}
+                        aria-pressed={cooked}
+                      >
+                        <Icon name="pot" size={15} />
+                        <span>Приготовлено</span>
+                      </button>
+                    )}
                     {ENTRY_STATUS.map((st) => (
                       <button
                         key={st.id}
