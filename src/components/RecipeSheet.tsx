@@ -11,7 +11,7 @@ import type { CardLeftover } from '../lib/cookCard'
 import { householdQty } from '../lib/measures'
 import { batchReasonText } from '../lib/batch'
 import { formatQty } from '../lib/shopping'
-import { daysLeft, useByDate } from '../lib/pantry'
+import { daysLeft, expiresOn } from '../lib/pantry'
 import { recipeStats } from '../lib/nutrition'
 import { useStore } from '../store'
 import { Sheet } from './ui'
@@ -133,7 +133,7 @@ function FreezerMealSheet({
         {soonest && (
           <div className="ing-line">
             <span className="muted">Годно до</span>
-            <b>{shortDate(useByDate(soonest))}</b>
+            <b>{shortDate(expiresOn(soonest))}</b>
           </div>
         )}
         <p className="hint" style={{ marginBottom: 0 }}>

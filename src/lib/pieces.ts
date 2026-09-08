@@ -32,7 +32,7 @@ export function fryMinutes(pieces: number, cooking: PieceCooking, pans = 1): num
  * Можно ли и стоит ли ставить вторую сковороду. Одна конфорка — нельзя; два
  * захода и так недолго, а вот с четырёх начинает иметь смысл.
  */
-export function useTwoPans(pieces: number, cooking: PieceCooking, kitchen: Kitchen): boolean {
+export function needsTwoPans(pieces: number, cooking: PieceCooking, kitchen: Kitchen): boolean {
   return kitchen.burners >= 2 && loads(pieces, cooking) >= 4
 }
 
