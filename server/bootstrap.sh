@@ -87,6 +87,31 @@ npm test
 VITE_EXTRACT_URL=/api npm run build
 [ -f "$DIR/dist/index.html" ] || fail "сборка не создала dist/index.html"
 
+# Сервер, где уже стоит Traefik.
+#
+# Порты 80 и 443 заняты им, и отбирать их нельзя: за Traefik стоят другие сайты,
+# и остановка положила бы их все. Такое приложение живёт контейнером за ним —
+# Traefik же и сертификат выпустит, а nginx и служба на хосте не понадобятся.
+#
+# Проверка идёт до установки службы нарочно: иначе на такой машине оказалось бы
+# две копии одной службы — одна под systemd, другая в контейнере.
+if docker network inspect proxy >/dev/null 2>&1 && ss -tlnp 2>/dev/null | grep -qE ':80 '; then
+  step "Порты держит Traefik — идём через контейнеры"
+  # если от прежней попытки осталась служба на хосте, она тут лишняя
+  if systemctl is-enabled --quiet food-extract 2>/dev/null; then
+    systemctl disable --now food-extract
+    echo "   служба на хосте выключена: её место занял контейнер"
+  fi
+  cd "$DIR"
+  DOMAIN="$DOMAIN" docker compose up -d --build
+  sleep 3
+  docker compose ps
+  printf '\n\033[32mГотово. Приложение: https://%s\033[0m\n' "$DOMAIN"
+  echo "Traefik выпустит сертификат сам, это занимает до минуты."
+  echo "Обновлять потом: cd $DIR && sudo ./server/deploy.sh"
+  exit 0
+fi
+
 step "Служба food-extract"
 id -u food-extract >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin food-extract
 cat > /etc/systemd/system/food-extract.service <<UNIT

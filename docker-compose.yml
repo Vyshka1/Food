@@ -1,0 +1,53 @@
+# Приложение и служба разбора ссылок за общим Traefik.
+#
+# Разметка скопирована с соседних проектов этого сервера (см. lesnaya-wp):
+# сеть proxy, входная точка websecure, распознаватель сертификатов myresolver.
+# Traefik сам выпустит и продлит сертификат — certbot и nginx на хосте не нужны.
+#
+#   docker compose up -d --build
+#
+# DOMAIN можно переопределить: DOMAIN=food.altum-it.ru docker compose up -d
+
+services:
+  # Раздаёт собранное приложение и передаёт /api/ службе. Обе половины на одном
+  # адресе — тогда браузер не считает их разными сайтами, и настройки между
+  # доменами не нужны вовсе.
+  food-web:
+    image: nginx:alpine
+    container_name: food-web
+    restart: unless-stopped
+    volumes:
+      - ./dist:/usr/share/nginx/html:ro
+      - ./server/nginx.docker.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - proxy
+      - food
+    depends_on:
+      - food-extract
+    labels:
+      traefik.enable: "true"
+      traefik.docker.network: proxy
+      traefik.http.routers.food.entrypoints: websecure
+      traefik.http.routers.food.rule: Host(`${DOMAIN:-food.altum-it.ru}`)
+      traefik.http.routers.food.tls: "true"
+      traefik.http.routers.food.tls.certresolver: myresolver
+      traefik.http.services.food.loadbalancer.server.port: "80"
+
+  # Открывает ссылку и отдаёт текст рецепта. Наружу не смотрит вовсе: сети
+  # proxy у неё нет, попасть к ней можно только изнутри, через food-web.
+  food-extract:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    image: food-extract
+    container_name: food-extract
+    restart: unless-stopped
+    networks:
+      - food
+    labels:
+      traefik.enable: "false"
+
+networks:
+  proxy:
+    external: true
+  food:
