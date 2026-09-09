@@ -45,30 +45,47 @@ function mealsLabel(meals: number, plates: number): string {
  * остаток считается только тогда, когда для него есть конкретное блюдо или
  * конкретное действие.
  */
+/**
+ * Одна строка «что станет с упаковкой».
+ *
+ * Было три строки на продукт, шесть продуктов — стена текста, в которой не
+ * найти главного. И главное там не находилось вовсе: «320 г в другие блюда» не
+ * отвечает на вопрос «в какие», а именно его человек и задаёт, глядя на
+ * непочатую пачку.
+ *
+ * Осталось две строки: сколько уходит сюда и куда денется остальное — с
+ * названиями блюд. Остаток в пределах округления не называется: «4 г останется,
+ * использовать за 5 дней» — издевательство, а не совет.
+ */
 function LeftoverLine({ line }: { line: CardLeftover }) {
   const parts = [`${formatQty(line.usedHere, line.unit)} сюда`]
-  if (line.usedElsewhere > 0) parts.push(`${formatQty(line.usedElsewhere, line.unit)} в другие блюда`)
-  const source =
-    line.fromStock > 0
-      ? `дома ${formatQty(line.fromStock, line.unit)}${line.bought > 0 ? `, купить ${formatQty(line.bought, line.unit)}` : ''}`
-      : `куплено ${formatQty(line.bought, line.unit)}`
-  const placed =
+  if (line.usedElsewhere > 0) {
+    // названия в кавычках: тогда именительный падеж рядом с «в» не режет глаз
+    const named = line.elsewhere.slice(0, 2).map((t) => `«${t}»`).join(', ')
+    const more = line.elsewhere.length - 2
+    parts.push(
+      named
+        ? `${formatQty(line.usedElsewhere, line.unit)} в ${named}${more > 0 ? ` и ещё ${more}` : ''}`
+        : `${formatQty(line.usedElsewhere, line.unit)} в другие блюда`,
+    )
+  }
+
+  const rest =
     line.placed?.kind === 'absorbed'
-      ? 'без остатка — хвост упаковки ушёл в это блюдо'
-      : line.placed?.kind === 'freeze'
-        ? `${formatQty(line.left, line.unit)} — заморозить сырым`
-        : line.left > 0
-          ? line.days > 30
-            ? `${formatQty(line.left, line.unit)} останется в запасе`
-            : `${formatQty(line.left, line.unit)} останется · использовать за ${line.days} дн`
-          : ''
+      ? 'без остатка'
+      : line.restNegligible
+        ? ''
+        : line.placed?.kind === 'freeze'
+          ? `${formatQty(line.left, line.unit)} заморозить сырым`
+          : line.days > 30
+            ? `${formatQty(line.left, line.unit)} в запас`
+            : `${formatQty(line.left, line.unit)} на ${line.days} дн`
+  if (rest) parts.push(rest)
+
   return (
     <div className="leftover">
       <span className="leftover__name">{line.name}</span>
-      <span className="muted small">
-        {source}: {parts.join(', ')}
-      </span>
-      {placed && <span className="leftover__rest small">{placed}</span>}
+      <span className="muted small">{parts.join(' · ')}</span>
     </div>
   )
 }

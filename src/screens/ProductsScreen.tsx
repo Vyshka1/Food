@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { CATEGORY_LABEL, CATEGORY_ORDER } from '../data/ingredients'
 import type { IngredientCategory, ShoppingLine } from '../types'
 import { buildShoppingList, formatQty, weekSpending } from '../lib/shopping'
+import { leftoverWorthTelling } from '../lib/purchase'
 import { useStore } from '../store'
 import { Card } from '../components/ui'
 import { Icon } from '../components/icons'
@@ -14,10 +15,9 @@ import { PantryCard } from '../components/PantryCard'
  */
 function leftover(line: ShoppingLine): string | null {
   const rest = line.buy - line.needed
-  if (line.staple || rest <= 0) return null
-  // мелочь в пределах округления остатком не считается
-  const share = rest / Math.max(1, line.buy)
-  if (share < 0.15 || (line.unit !== 'pcs' && rest < 40)) return null
+  if (line.staple) return null
+  // правило одно на всё приложение — то же, что в карточке блюда
+  if (!leftoverWorthTelling(rest, line.buy, line.unit)) return null
   return formatQty(rest, line.unit)
 }
 

@@ -1,4 +1,4 @@
-import type { Ingredient, PurchaseInfo, SaleForm } from '../types'
+import type { Ingredient, PurchaseInfo, SaleForm, Unit } from '../types'
 
 /**
  * Как продукт продаётся и что делать со вскрытым остатком.
@@ -225,4 +225,22 @@ export function absorbable(ing: Ingredient, leftover: number, packSize: number):
   if (ing.staple) return false
   const limit = Math.max(ABSORB_MAX_G, packSize * ABSORB_MAX_SHARE)
   return leftover <= limit
+}
+
+/**
+ * Стоит ли вообще говорить об остатке упаковки.
+ *
+ * Правило одно на всё приложение: и список покупок, и карточка блюда молчат об
+ * одном и том же. Четыре грамма лука — не остаток, а разность округлений, и
+ * «использовать за 5 дней» про них звучит издевательски.
+ *
+ * Два условия, потому что «мало» бывает разным: сорок граммов мало само по
+ * себе, а сто граммов от двух килограммов мало относительно. Штучное меряется
+ * только долей: одно яйцо из десяти — настоящий остаток.
+ */
+export function leftoverWorthTelling(rest: number, bought: number, unit: Unit): boolean {
+  if (rest <= 0) return false
+  const share = rest / Math.max(1, bought)
+  if (share < 0.15) return false
+  return unit === 'pcs' || rest >= 40
 }

@@ -1,3 +1,4 @@
+import type { MenuEntry } from '../types'
 import { MEAL_SLOTS } from '../types'
 import { WEEKDAYS, cookTasks, dayNorms, dayTotals, fedEaters } from '../lib/menu'
 import { recipeById } from '../data/recipeRegistry'
@@ -18,7 +19,16 @@ import { Icon } from './icons'
  * Считает она не сама: те же функции библиотеки, что и дневной экран и
  * карточка блюда. Вторая раскладка не должна означать второй арифметики.
  */
-export function WeekBoard({ onOpenDay, day }: { onOpenDay: (day: number) => void; day: number }) {
+export function WeekBoard({
+  onOpenDay,
+  onOpenEntry,
+  day,
+}: {
+  onOpenDay: (day: number) => void
+  /** Нажали на блюдо — открываем его карточку, как и на дневном экране. */
+  onOpenEntry: (entry: MenuEntry) => void
+  day: number
+}) {
   const { household, menu, pantry } = useStore()
   if (!household || !menu) return null
 
@@ -87,7 +97,8 @@ export function WeekBoard({ onOpenDay, day }: { onOpenDay: (day: number) => void
                     <button
                       className="board__dish"
                       key={entry.id}
-                      onClick={() => onOpenDay(index)}
+                      onClick={() => onOpenEntry(entry)}
+                      title={`${recipe.title} — открыть карточку`}
                       data-eaten={entry.status === 'eaten'}
                       data-skipped={entry.status === 'skipped'}
                     >
