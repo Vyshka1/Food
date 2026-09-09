@@ -52,6 +52,12 @@ export function MenuScreen() {
     useStore()
   const [day, setDay] = useState(() => (menu ? todayIndex(menu.weekStart) : 0))
   const [openEntry, setOpenEntry] = useState<MenuEntry | null>(null)
+
+  /** Открыть день: и с недельных карточек, и с заголовка столбца на доске. */
+  const openDay = (d: number) => {
+    setDay(d)
+    setWeekView(false)
+  }
   const [note, setNote] = useState('')
   const [replacing, setReplacing] = useState<MenuEntry | null>(null)
   const [rebuilding, setRebuilding] = useState(false)
@@ -186,13 +192,12 @@ export function MenuScreen() {
             * Считают обе одними и теми же функциями библиотеки: вторая
             * раскладка не должна означать второй арифметики.
             */}
-          <WeekBoard day={day} onOpenDay={setDay} />
-          <WeekOverview
-            onOpenDay={(d) => {
-              setDay(d)
-              setWeekView(false)
-            }}
+          <WeekBoard
+            day={day}
+            onOpenDay={openDay}
+            onOpenEntry={setOpenEntry}
           />
+          <WeekOverview onOpenDay={openDay} />
         </>
       )}
 

@@ -9,6 +9,7 @@ import { defaultOils } from './oil'
 import { addStock, emptyPantry } from './pantry'
 import { householdGrams } from './measures'
 import { cookCard, splitPieces } from './cookCard'
+import { leftoverWorthTelling } from './purchase'
 
 const kitchen: Kitchen = {
   burners: 4,
@@ -403,6 +404,52 @@ describe('остаток, который стоит называть', () => {
     for (const card of allCards()) {
       if (card.unplacedGrams === 0) continue
       expect(card.unplacedGrams, card.recipe.title).toBeGreaterThanOrEqual(50)
+    }
+  })
+})
+
+/*
+ * Блок «что станет с упаковками» отвечал на вопрос «сколько», но не на вопрос
+ * «куда»: «320 г в другие блюда» — именно то, что человек и спрашивает, глядя
+ * на непочатую пачку. И занимал три строки на продукт при шести продуктах.
+ */
+describe('что станет с упаковками', () => {
+  it('называет блюда, в которые уйдёт остальное', () => {
+    let checked = 0
+    for (const card of allCards()) {
+      for (const line of card.leftovers) {
+        if (line.usedElsewhere <= 0) continue
+        checked += 1
+        // «в другие блюда» без имён допустимо только там, где продукт уходит
+        // не в блюда (напитки, дополнения к дню)
+        for (const title of line.elsewhere) expect(title.length, card.recipe.title).toBeGreaterThan(0)
+        // само это блюдо в список чужих не попадает
+        expect(line.elsewhere, card.recipe.title).not.toContain(card.recipe.title)
+      }
+    }
+    expect(checked).toBeGreaterThan(0)
+  })
+
+  it('остаток в пределах округления не называется', () => {
+    // «4 г лука останется, использовать за 5 дней» — издевательство, а не совет
+    for (const card of allCards()) {
+      for (const line of card.leftovers) {
+        if (line.left > 0 && line.left < 40 && line.unit !== 'pcs') {
+          expect(line.restNegligible, `${card.recipe.title}: ${line.name} ${line.left}`).toBe(true)
+        }
+      }
+    }
+  })
+
+  it('и правило то же, что в списке покупок', () => {
+    // одно правило на всё приложение: экраны не должны молчать о разном
+    for (const card of allCards()) {
+      for (const line of card.leftovers) {
+        const bought = line.bought + line.fromStock
+        expect(line.restNegligible, `${card.recipe.title}: ${line.name}`).toBe(
+          !leftoverWorthTelling(line.left, bought, line.unit),
+        )
+      }
     }
   })
 })

@@ -33,7 +33,7 @@ import { FREEZE_MIN_GRAMS } from './batch'
 const TAIL_MIN_GRAMS = 50
 import { planWeek } from './weekPlan'
 import type { TaskPlan } from './weekPlan'
-import { purchaseInfo } from './purchase'
+import { leftoverWorthTelling, purchaseInfo } from './purchase'
 import { householdGrams } from './measures'
 import { fryMinutes, loads as loadCount, pieceCookingOf, needsTwoPans } from './pieces'
 import { FRY_STEP } from './batch'
@@ -93,11 +93,18 @@ export interface CardLeftover {
   fromStock: number
   usedHere: number
   usedElsewhere: number
+  /**
+   * В какие именно блюда недели уйдёт остальное. «В другие блюда» — не ответ
+   * на вопрос «куда»: человек хочет знать, увидит ли он этот продукт снова.
+   */
+  elsewhere: string[]
   /** Сколько останется на самом деле. */
   left: number
   /** Куда пристроен остаток. null — никуда, и это честнее, чем выдумать. */
   placed: LeftoverPlacement
   days: number
+  /** Остаток есть, но он в пределах округления — называть его не стоит. */
+  restNegligible: boolean
 }
 
 export interface CardAlternative {
@@ -386,6 +393,10 @@ export function cookCard(
     const other = availableR - usedHere - left
     if (left <= 0 && absorbed <= 0) continue
     const info = purchaseInfo(ing)
+    // какие блюда недели заберут остальное — по тому же плану, что и закупка
+    const elsewhere = week.tasks
+      .filter((t) => t.task.recipeId !== entry.recipeId && (t.ingredients.get(ing.id) ?? 0) > 0)
+      .map((t) => t.recipe.title)
     leftovers.push({
       ingredientId: ing.id,
       name: ing.name,
@@ -394,7 +405,9 @@ export function cookCard(
       fromStock: stockR,
       usedHere,
       usedElsewhere: other,
+      elsewhere: [...new Set(elsewhere)],
       left,
+      restNegligible: !leftoverWorthTelling(left, availableR, ing.unit),
       // Пристроенным остаток считается только тогда, когда для него есть
       // конкретное действие. «Куда-нибудь денется» — это не план.
       placed: left <= 0 ? { kind: 'absorbed' } : info.rawFreezable ? { kind: 'freeze' } : null,
