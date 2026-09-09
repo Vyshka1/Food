@@ -2112,3 +2112,157 @@ select {
     align-self: center;
   }
 }
+
+/* Заглушка вместо фотографии блюда */
+.dish-tile {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  color: var(--green-dark);
+}
+
+.dish-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ─────────────────────────────────────────────── неделя доской (монитор) ── */
+.board {
+  display: none;
+}
+
+@media (min-width: 900px) {
+  .board {
+    display: grid;
+    /* столбец под названия приёмов пищи плюс семь дней */
+    grid-template-columns: 96px repeat(7, minmax(0, 1fr));
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .board__row {
+    display: contents;
+  }
+
+  .board__day {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 8px 4px;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background: var(--card-soft);
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .board__day[data-active='true'] {
+    background: var(--green-soft);
+    border-color: var(--green);
+    color: var(--green-dark);
+  }
+
+  .board__day-name {
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .board__day-num {
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--ink);
+  }
+
+  .board__cook {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    color: var(--green-dark);
+  }
+
+  .board__day-kcal {
+    font-size: 11px;
+  }
+
+  .board__slot {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding-top: 10px;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--muted);
+  }
+
+  .board__cell {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 96px;
+    padding: 6px;
+    border-radius: var(--radius-md);
+    background: var(--card);
+    border: 1px solid var(--line);
+  }
+
+  .board__cell[data-active='true'] {
+    border-color: var(--green);
+  }
+
+  .board__dish {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    border: none;
+    background: transparent;
+    padding: 0;
+    text-align: center;
+    font-size: 12px;
+    line-height: 1.25;
+    color: var(--ink);
+  }
+
+  .board__dish[data-eaten='true'] {
+    opacity: 0.55;
+  }
+
+  .board__dish[data-skipped='true'] {
+    opacity: 0.4;
+    text-decoration: line-through;
+  }
+
+  .board__dish-title {
+    /* длинные названия не должны растягивать столбец */
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .board__from-freezer {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    color: var(--muted);
+  }
+
+  .board__empty {
+    margin: auto;
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  /* семь карточек по дням — раскладка для телефона */
+  .week-view {
+    display: none;
+  }
+}

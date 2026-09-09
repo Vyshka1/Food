@@ -12,6 +12,7 @@ import { CalorieRing, Card, Warnings } from '../components/ui'
 import { RecipeSheet } from '../components/RecipeSheet'
 import { RebuildSheet } from '../components/RebuildSheet'
 import { WeekOverview } from '../components/WeekOverview'
+import { WeekBoard } from '../components/WeekBoard'
 import { TodayCard } from '../components/TodayCard'
 import { Icon } from '../components/icons'
 import { DishThumb } from '../components/DishImage'
@@ -178,12 +179,21 @@ export function MenuScreen() {
       </div>
 
       {weekView && (
-        <WeekOverview
-          onOpenDay={(d) => {
-            setDay(d)
-            setWeekView(false)
-          }}
-        />
+        <>
+          {/*
+            * Две раскладки одной недели: доска на мониторе, семь карточек на
+            * телефоне. Показывается ровно одна — какая, решают стили по ширине.
+            * Считают обе одними и теми же функциями библиотеки: вторая
+            * раскладка не должна означать второй арифметики.
+            */}
+          <WeekBoard day={day} onOpenDay={setDay} />
+          <WeekOverview
+            onOpenDay={(d) => {
+              setDay(d)
+              setWeekView(false)
+            }}
+          />
+        </>
       )}
 
       {!weekView && (
