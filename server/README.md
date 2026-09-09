@@ -41,6 +41,50 @@ curl -fsSL https://raw.githubusercontent.com/Vyshka1/Food/main/server/bootstrap.
 изменения, прогоняет проверки, собирает и перезапускает службу; если проверки не
 прошли, сборка не заменится.
 
+## Чтобы сервер обновлялся сам
+
+После первой установки выкладку можно не делать руками вовсе: `.github/workflows/server.yml`
+заходит на сервер и запускает `deploy.sh` каждый раз, когда в `main` появляется
+что-то новое, а потом проверяет, что сайт и служба отвечают.
+
+Нужно завести доступ — один раз. **Закрытый ключ вставляется только в поле
+секрета в настройках репозитория.** Не в переписку, не в файл проекта: секреты
+GitHub хранит зашифрованными и вырезает из вывода сборки, а всё остальное — нет.
+
+На сервере:
+
+```bash
+# 1. Пользователь для выкладки и ключ для него
+sudo adduser --disabled-password --gecos "" deploy
+sudo mkdir -p /home/deploy/.ssh && sudo chmod 700 /home/deploy/.ssh
+
+# на своей машине: ssh-keygen -t ed25519 -f deploy_key -N ""
+# открытую половину (deploy_key.pub) положить сюда:
+sudo nano /home/deploy/.ssh/authorized_keys
+sudo chown -R deploy:deploy /home/deploy/.ssh && sudo chmod 600 /home/deploy/.ssh/authorized_keys
+
+# 2. Разрешить ему одну команду без пароля — только её
+echo 'deploy ALL=(root) NOPASSWD: /opt/food/server/deploy.sh' \
+  | sudo tee /etc/sudoers.d/food-deploy
+sudo chmod 440 /etc/sudoers.d/food-deploy
+sudo visudo -c
+```
+
+В GitHub, Settings → Secrets and variables → Actions → New repository secret:
+
+| Секрет | Значение |
+|---|---|
+| `SSH_HOST` | `food.altum-it.ru` |
+| `SSH_USER` | `deploy` |
+| `SSH_KEY` | содержимое `deploy_key` целиком, вместе со строками BEGIN и END |
+| `SSH_PORT` | только если SSH не на 22 |
+
+Пока секретов нет, выкладка просто пропускается — сборка от этого не краснеет.
+
+Права у этого доступа узкие нарочно: пользователь `deploy` может запустить одну
+команду от root и больше ничего. Отозвать — удалить строку из
+`authorized_keys` на сервере.
+
 ### Если что-то пошло не так
 
 | что видно | что это значит |

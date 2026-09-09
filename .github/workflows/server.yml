@@ -1,0 +1,80 @@
+name: Deploy to server
+
+# Обновляет приложение на своём сервере, когда в main появляется что-то новое.
+#
+# Подключиться к серверу из сессии, где я работаю, нельзя: наружу выпускаются
+# только 80 и 443. А раннер GitHub может — поэтому выкладку делает он, а не
+# человек руками.
+#
+# Что нужно один раз завести в Settings → Secrets and variables → Actions:
+#   SSH_HOST  адрес сервера, например food.altum-it.ru
+#   SSH_USER  пользователь, от которого заходить
+#   SSH_KEY   закрытый ключ этого пользователя, целиком
+#   SSH_PORT  порт SSH, если не 22 (необязательно)
+#
+# Ключ вставляется в поле секрета в настройках репозитория — и больше никуда.
+# В переписку, в файл проекта и в вывод сборки он не попадает.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Две выкладки разом сталкивались бы на сервере, поэтому по одной за раз
+concurrency:
+  group: server-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Проверить, что доступ к серверу настроен
+        id: ready
+        env:
+          HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          if [ -z "$HOST" ]; then
+            echo "Секреты доступа не заведены — выкладка на сервер пропущена."
+            echo "Как их завести, написано в server/README.md."
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Ключ
+        if: steps.ready.outputs.ok == 'true'
+        env:
+          KEY: ${{ secrets.SSH_KEY }}
+          HOST: ${{ secrets.SSH_HOST }}
+          PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          # Запоминаем ключ сервера заранее: без этого пришлось бы отключить
+          # проверку подлинности, а это ровно та дыра, ради которой её и завели
+          ssh-keyscan -p "${PORT:-22}" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Обновить сервер
+        if: steps.ready.outputs.ok == 'true'
+        env:
+          HOST: ${{ secrets.SSH_HOST }}
+          USER_NAME: ${{ secrets.SSH_USER }}
+          PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          ssh -i ~/.ssh/id_deploy -p "${PORT:-22}" -o BatchMode=yes \
+            "$USER_NAME@$HOST" 'sudo /opt/food/server/deploy.sh'
+
+      - name: Проверить, что сайт жив
+        if: steps.ready.outputs.ok == 'true'
+        env:
+          HOST: ${{ secrets.SSH_HOST }}
+        run: |
+          # Обе половины: страница и служба. Зелёная выкладка, после которой
+          # сайт не отвечает, — это не зелёная выкладка
+          for path in "/" "/api/health"; do
+            code=$(curl -fsS -o /dev/null -w '%{http_code}' "https://$HOST$path") \
+              || { echo "не отвечает: $path"; exit 1; }
+            echo "$path → $code"
+          done
