@@ -9,6 +9,7 @@ import { newStep, withDerivedDetail } from '../lib/stepDetail'
 import { plural } from '../lib/format'
 import { useStore } from '../store'
 import { Card, Chip, Field, Section, Stepper, Switch } from '../components/ui'
+import { RecipeImport } from '../components/RecipeImport'
 import { Icon, recipeIcon } from '../components/icons'
 
 const STATIONS: { id: Station; label: string }[] = [
@@ -338,7 +339,33 @@ function Editor({
 export function MyRecipesScreen({ onBack }: { onBack: () => void }) {
   const { customRecipes, saveCustomRecipe, deleteCustomRecipe, household } = useStore()
   const [editing, setEditing] = useState<Recipe | null>(null)
+  const [importing, setImporting] = useState(false)
   const targets = useMemo(() => (household ? slotTargets(household) : {}), [household])
+
+  if (importing) {
+    return (
+      <div className="app">
+        <button
+          className="btn btn--ghost btn--small"
+          style={{ marginTop: 16 }}
+          onClick={() => setImporting(false)}
+        >
+          <Icon name="back" size={15} /> Назад
+        </button>
+        <div className="screen-title">Вставить рецепт</div>
+        <div className="screen-sub">
+          Скопируйте текст рецепта — откуда угодно — и вставьте сюда.
+        </div>
+        <RecipeImport
+          onCancel={() => setImporting(false)}
+          onReady={(recipe) => {
+            setImporting(false)
+            setEditing(recipe)
+          }}
+        />
+      </div>
+    )
+  }
 
   if (editing) {
     return (
@@ -412,6 +439,10 @@ export function MyRecipesScreen({ onBack }: { onBack: () => void }) {
 
       <button className="btn" style={{ marginTop: 12 }} onClick={() => setEditing(emptyRecipe())}>
         + Добавить рецепт
+      </button>
+
+      <button className="btn btn--soft" style={{ marginTop: 8 }} onClick={() => setImporting(true)}>
+        Вставить текстом
       </button>
 
       <p className="hint">

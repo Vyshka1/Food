@@ -1,0 +1,61 @@
+# Приложение и служба разбора ссылок на одном адресе.
+#
+# Один адрес — это не только удобство. Пока приложение жило на GitHub Pages, а
+# служба на своём домене, браузер считал их разными сайтами: нужен был список
+# разрешённых источников, предварительные запросы и отдельный сертификат. Здесь
+# ничего этого нет: запрос к /api/ идёт на тот же адрес, что и сама страница.
+#
+# Положить как /etc/nginx/sites-available/food.altum-it.ru и включить:
+#   sudo ln -s /etc/nginx/sites-available/food.altum-it.ru /etc/nginx/sites-enabled/
+#   sudo nginx -t && sudo systemctl reload nginx
+#   sudo certbot --nginx -d food.altum-it.ru
+#
+# certbot сам добавит сюда строки про сертификат и перенаправление с http.
+
+server {
+    listen 80;
+    server_name food.altum-it.ru;
+
+    root /opt/food/dist;
+    index index.html;
+
+    # Служба разбора ссылок. Слушает только на 127.0.0.1 — снаружи к ней
+    # напрямую не достучаться, всё идёт через nginx.
+    location /api/ {
+        proxy_pass http://127.0.0.1:8080/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # ходить по чужой ссылке может быть долго, особенно через yt-dlp
+        proxy_read_timeout 60s;
+    }
+
+    # Файлы сборки названы по содержимому: имя меняется вместе с содержимым,
+    # поэтому их можно держать в кэше сколько угодно.
+    location /assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+
+    # А эти два — никогда. Страница и служебный воркер решают, какая версия
+    # приложения открылась: закэшируй их — и обновление не дойдёт до человека
+    # вовсе, а он будет видеть старое приложение и не понимать почему.
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+    location = /sw.js {
+        add_header Cache-Control "no-cache";
+    }
+
+    # Приложение одностраничное: любой адрес отдаёт ту же страницу
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Заголовки, которые ничего не стоят и закрывают известные глупости
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "same-origin" always;
+
+    client_max_body_size 1m;
+}

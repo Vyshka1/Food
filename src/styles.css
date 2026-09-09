@@ -278,7 +278,8 @@ select {
 }
 
 .field input,
-.field select {
+.field select,
+.field textarea {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   padding: 12px 14px;
@@ -287,9 +288,16 @@ select {
 }
 
 .field input:focus,
-.field select:focus {
+.field select:focus,
+.field textarea:focus {
   outline: 2px solid var(--green-soft);
   border-color: var(--green);
+}
+
+.field textarea {
+  font: inherit;
+  line-height: 1.45;
+  resize: vertical;
 }
 
 .segmented {

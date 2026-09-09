@@ -87,6 +87,36 @@ export function Field({
   )
 }
 
+/**
+ * Многострочное поле. `Field` его не умеет, а рецепт, вставленный из подписи
+ * под роликом, — это два десятка строк.
+ */
+export function TextArea({
+  label,
+  value,
+  onChange,
+  placeholder,
+  rows = 10,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  placeholder?: string
+  rows?: number
+}) {
+  return (
+    <div className="field">
+      <label>{label}</label>
+      <textarea
+        value={value}
+        rows={rows}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </div>
+  )
+}
+
 export function Segmented<T extends string>({
   options,
   value,
