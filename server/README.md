@@ -16,14 +16,37 @@ GitHub Pages, а служба на своём домене, браузер сч�
 Служба ничего не хранит и ничего не знает о людях: получила ссылку — вернула
 текст.
 
-## Как выложить — одной командой
+## Два способа, скрипт выбирает сам
 
-На чистом Debian или Ubuntu:
+**Если на сервере уже стоит Traefik** (порты 80 и 443 заняты им, за ним другие
+сайты) — приложение живёт контейнерами за ним. Разметка в `docker-compose.yml`
+скопирована с соседних проектов: сеть `proxy`, входная точка `websecure`,
+распознаватель `myresolver`. Traefik сам выпустит и продлит сертификат, nginx на
+хосте не нужен вовсе.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Vyshka1/Food/main/server/bootstrap.sh \
-  | sudo EMAIL=вы@почта.ru bash
+cd /opt/food && DOMAIN=food.altum-it.ru docker compose up -d --build
 ```
+
+**Если порты свободны** — nginx на хосте, служба под systemd, сертификат от
+certbot. Это то, что делает скрипт установки ниже.
+
+Отбирать порты у Traefik нельзя ни в коем случае: с ним лягут все сайты,
+которые за ним стоят.
+
+## Как выложить — одной командой
+
+На чистом Debian или Ubuntu, от root, **одной строкой**:
+
+```bash
+apt-get update && apt-get install -y curl && curl -fsSL https://raw.githubusercontent.com/Vyshka1/Food/main/server/bootstrap.sh -o /tmp/bootstrap.sh && EMAIL=вы@почта.ru bash /tmp/bootstrap.sh
+```
+
+Три вещи здесь не для красоты. `curl` на минимальных образах не установлен, и
+без первой половины команда обрывается на первом же шаге. Скачивание отдельно
+от запуска: если файл придёт не целиком, `bash` не станет выполнять половину
+скрипта. И одна строка без переносов — многострочную вставку часть терминалов
+портит служебными символами, и получается `bash~: command not found`.
 
 Скрипт ставит Node, nginx и certbot, забирает проект в `/opt/food`, собирает
 приложение, заводит службу, настраивает сайт и выпускает сертификат. Запускать
@@ -40,6 +63,50 @@ curl -fsSL https://raw.githubusercontent.com/Vyshka1/Food/main/server/bootstrap.
 Обновление потом — одна команда: `sudo ./server/deploy.sh`. Он забирает
 изменения, прогоняет проверки, собирает и перезапускает службу; если проверки не
 прошли, сборка не заменится.
+
+## Чтобы сервер обновлялся сам
+
+После первой установки выкладку можно не делать руками вовсе: `.github/workflows/server.yml`
+заходит на сервер и запускает `deploy.sh` каждый раз, когда в `main` появляется
+что-то новое, а потом проверяет, что сайт и служба отвечают.
+
+Нужно завести доступ — один раз. **Закрытый ключ вставляется только в поле
+секрета в настройках репозитория.** Не в переписку, не в файл проекта: секреты
+GitHub хранит зашифрованными и вырезает из вывода сборки, а всё остальное — нет.
+
+На сервере:
+
+```bash
+# 1. Пользователь для выкладки и ключ для него
+sudo adduser --disabled-password --gecos "" deploy
+sudo mkdir -p /home/deploy/.ssh && sudo chmod 700 /home/deploy/.ssh
+
+# на своей машине: ssh-keygen -t ed25519 -f deploy_key -N ""
+# открытую половину (deploy_key.pub) положить сюда:
+sudo nano /home/deploy/.ssh/authorized_keys
+sudo chown -R deploy:deploy /home/deploy/.ssh && sudo chmod 600 /home/deploy/.ssh/authorized_keys
+
+# 2. Разрешить ему одну команду без пароля — только её
+echo 'deploy ALL=(root) NOPASSWD: /opt/food/server/deploy.sh' \
+  | sudo tee /etc/sudoers.d/food-deploy
+sudo chmod 440 /etc/sudoers.d/food-deploy
+sudo visudo -c
+```
+
+В GitHub, Settings → Secrets and variables → Actions → New repository secret:
+
+| Секрет | Значение |
+|---|---|
+| `SSH_HOST` | `food.altum-it.ru` |
+| `SSH_USER` | `deploy` |
+| `SSH_KEY` | содержимое `deploy_key` целиком, вместе со строками BEGIN и END |
+| `SSH_PORT` | только если SSH не на 22 |
+
+Пока секретов нет, выкладка просто пропускается — сборка от этого не краснеет.
+
+Права у этого доступа узкие нарочно: пользователь `deploy` может запустить одну
+команду от root и больше ничего. Отозвать — удалить строку из
+`authorized_keys` на сервере.
 
 ### Если что-то пошло не так
 

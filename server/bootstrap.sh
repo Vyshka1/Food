@@ -38,7 +38,7 @@ fi
 step "Пакеты"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq curl git nginx ca-certificates >/dev/null
+apt-get install -y -qq curl git nginx ca-certificates iproute2 >/dev/null
 
 # Node 22: службе хватило бы восемнадцатой, но сборка прогоняет тесты, а им
 # нужна двадцать вторая
@@ -86,6 +86,31 @@ npm test
 # служба живёт по тому же адресу, что и приложение, поэтому путь относительный
 VITE_EXTRACT_URL=/api npm run build
 [ -f "$DIR/dist/index.html" ] || fail "сборка не создала dist/index.html"
+
+# Сервер, где уже стоит Traefik.
+#
+# Порты 80 и 443 заняты им, и отбирать их нельзя: за Traefik стоят другие сайты,
+# и остановка положила бы их все. Такое приложение живёт контейнером за ним —
+# Traefik же и сертификат выпустит, а nginx и служба на хосте не понадобятся.
+#
+# Проверка идёт до установки службы нарочно: иначе на такой машине оказалось бы
+# две копии одной службы — одна под systemd, другая в контейнере.
+if docker network inspect proxy >/dev/null 2>&1 && ss -tlnp 2>/dev/null | grep -qE ':80 '; then
+  step "Порты держит Traefik — идём через контейнеры"
+  # если от прежней попытки осталась служба на хосте, она тут лишняя
+  if systemctl is-enabled --quiet food-extract 2>/dev/null; then
+    systemctl disable --now food-extract
+    echo "   служба на хосте выключена: её место занял контейнер"
+  fi
+  cd "$DIR"
+  DOMAIN="$DOMAIN" docker compose up -d --build
+  sleep 3
+  docker compose ps
+  printf '\n\033[32mГотово. Приложение: https://%s\033[0m\n' "$DOMAIN"
+  echo "Traefik выпустит сертификат сам, это занимает до минуты."
+  echo "Обновлять потом: cd $DIR && sudo ./server/deploy.sh"
+  exit 0
+fi
 
 step "Служба food-extract"
 id -u food-extract >/dev/null 2>&1 || useradd --system --no-create-home --shell /usr/sbin/nologin food-extract
@@ -141,7 +166,21 @@ ln -sfn "$SITE" "/etc/nginx/sites-enabled/$DOMAIN"
 # сайт по умолчанию перехватывает запросы, если наш не совпал по имени
 [ -e /etc/nginx/sites-enabled/default ] && rm -f /etc/nginx/sites-enabled/default
 nginx -t || fail "nginx не принял конфиг"
-systemctl reload nginx
+
+# nginx после установки не запущен, и перезагружать тогда нечего. А если он не
+# запускается вовсе — почти всегда потому, что порт 80 уже занят другим
+# веб-сервером. Молчать об этом нельзя: сообщение systemd об этом не говорит.
+if systemctl is-active --quiet nginx; then
+  systemctl reload nginx
+else
+  if ! systemctl enable --now nginx 2>/dev/null || ! systemctl is-active --quiet nginx; then
+    echo
+    echo "   nginx не запустился. Кто занимает порты 80 и 443:"
+    ss -tlnp 2>/dev/null | grep -E ':80 |:443 ' || echo "   (ss не установлен: apt-get install -y iproute2)"
+    echo
+    fail "порт 80 занят другим веб-сервером — остановите его (systemctl stop ИМЯ) или настройте сайт в нём, а не в nginx"
+  fi
+fi
 echo "   включён"
 
 if [ "$SKIP_CERT" = "1" ]; then
