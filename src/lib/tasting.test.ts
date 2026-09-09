@@ -52,6 +52,25 @@ describe('колода для примерки вкусов', () => {
     }
   })
 
+  it('кунжут исключается — он прячется в хумусе и посыпках', () => {
+    /*
+     * Кунжут — один из основных регулируемых аллергенов и в ЕС, и в США, а до
+     * недавнего времени исключить его в приложении было нечем: продукт в базе
+     * есть, а аллергена не было вовсе.
+     */
+    const withAllergy = family({ eaters: [newEater({ id: 'e1', allergies: ['sesame'] })] })
+    const deck = tastingDeck(withAllergy, { size: 200, recipes: RECIPES })
+    for (const recipe of deck) {
+      expect(
+        recipe.items.map((i) => i.ingredientId),
+        recipe.title,
+      ).not.toContain('sesame')
+    }
+    // и без аллергии кунжутные блюда никуда не деваются
+    const all = tastingDeck(family(), { size: 200, recipes: RECIPES })
+    expect(all.some((r) => r.items.some((i) => i.ingredientId === 'sesame'))).toBe(true)
+  })
+
   it('арахис — отдельная аллергия, и это не описка в базе', () => {
     /*
      * Выглядит как дыра, но верно: арахис бобовое, и аллергия на него — не то

@@ -171,7 +171,11 @@ export const INGREDIENTS: Ingredient[] = [
     allergens: ['peanut'],
     pack: 300,
   }),
-  ing('sesame', 'Кунжут', 'g', 'nuts', [573, 17.7, 49.7, 23.4, 11.8], 700, { pack: 100, tbspGrams: 10 }),
+  ing('sesame', 'Кунжут', 'g', 'nuts', [573, 17.7, 49.7, 23.4, 11.8], 700, {
+    allergens: ['sesame'],
+    pack: 100,
+    tbspGrams: 10,
+  }),
   ing('pumpkin_seeds', 'Тыквенные семечки', 'g', 'nuts', [559, 30.2, 49, 10.7, 6.0], 900, { pack: 150 }),
 
   // Бакалея
