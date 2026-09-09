@@ -1945,3 +1945,170 @@ select {
   border-color: var(--warn);
   color: var(--warn);
 }
+
+/* ───────────────────────────────────────────────────────────── компьютер ──
+ *
+ * До сих пор приложение было ровно мобильным: 520 пикселей по центру, а на
+ * мониторе 1440 — узкая полоса с пустотой по бокам. Ширину использует не
+ * украшение, а работа: на телефоне между «что сегодня едим» и «сколько это
+ * стоит» два касания, на мониторе это может быть один взгляд.
+ *
+ * Порог 900 px выбран по устройству, а не по вкусу: до него живут телефоны и
+ * планшеты стоймя, и одноколоночная раскладка там правильнее любой другой.
+ * Ниже этого порога всё остаётся ровно как было.
+ */
+
+/* Боковая навигация. На телефоне её нет вовсе — там внизу панель вкладок. */
+.sidenav {
+  display: none;
+  position: fixed;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 232px;
+  flex-direction: column;
+  gap: 4px;
+  padding: 24px 16px;
+  border-right: 1px solid var(--line);
+  background: var(--card-soft);
+  z-index: 15;
+}
+
+.sidenav__brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.15;
+  color: var(--green-dark);
+  margin-bottom: 22px;
+  padding: 0 10px;
+}
+
+.sidenav button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  font-size: 15px;
+  color: var(--ink);
+  text-align: left;
+  width: 100%;
+}
+
+.sidenav button:hover {
+  background: var(--card);
+}
+
+.sidenav button[data-active='true'] {
+  background: var(--green-soft);
+  color: var(--green-dark);
+  font-weight: 600;
+}
+
+@media (min-width: 900px) {
+  .app {
+    /* нижней панели больше нет — и запас под неё не нужен */
+    padding: 24px 28px 40px;
+    margin-left: 232px;
+    max-width: 1024px;
+  }
+
+  /*
+   * Панель вкладок — только для пальца. На мониторе она отнимает низ экрана и
+   * заставляет вести курсор вниз, хотя слева места сколько угодно.
+   */
+  .tabbar {
+    display: none;
+  }
+
+  .sidenav {
+    display: flex;
+  }
+}
+
+@media (min-width: 1280px) {
+  .app {
+    max-width: 1180px;
+  }
+}
+
+/* День: одна колонка на телефоне, две на мониторе */
+.day-layout {
+  display: flex;
+  flex-direction: column;
+}
+
+/*
+ * На узком экране рейка идёт первой — ровно там, где эти карточки были до
+ * появления двух колонок. Переставлять их в разметке было нельзя: телефон
+ * остаётся главным устройством, и его порядок первичен.
+ */
+.day-rail {
+  order: -1;
+}
+
+@media (min-width: 900px) {
+  .day-layout {
+    display: grid;
+    /* меню не уже 700 px, рейка 340 — числа из разбора макетов */
+    grid-template-columns: minmax(0, 1fr) 340px;
+    gap: 20px;
+    align-items: start;
+  }
+
+  /*
+   * Место указано явно, а не порядком в разметке: рейка идёт первой, потому
+   * что на телефоне эти карточки стоят выше блюд, — но на мониторе она правая.
+   * Без явного размещения сетка ставит по порядку, и блюда уезжают в узкую
+   * колонку, а сводка занимает широкую.
+   */
+  .day-main {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .day-rail {
+    grid-column: 2;
+    grid-row: 1;
+    order: 0;
+    position: sticky;
+    /* рейка остаётся на виду, пока листаешь блюда: калории и стоимость
+       нужны как раз в тот момент, когда смотришь на еду */
+    top: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /*
+   * Заголовок дня не должен растягиваться на всю ширину. Переключатель из двух
+   * кнопок шириной в метр — не «использовали место», а «не знали, что с ним
+   * делать»: чем шире строка, тем труднее её прочесть.
+   */
+  .week-strip,
+  .screen-sub,
+  .day-head > .segmented,
+  .app > .segmented {
+    max-width: 760px;
+  }
+
+  /*
+   * В рейке 340 px кольцо и подписи рядом не помещаются: «Углеводы 241 / 251 г
+   * 96%» переносится посреди числа. Ставим друг под другом — места хватает, и
+   * читается лучше, чем втиснутое в строку.
+   */
+  .day-rail .ring-row {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+
+  .day-rail .ring-row > :first-child {
+    align-self: center;
+  }
+}

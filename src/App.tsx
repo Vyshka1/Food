@@ -99,6 +99,30 @@ function Shell() {
       )}
       {tab === 'recipes' && <MyRecipesScreen onBack={() => setTab('profile')} />}
 
+      {/*
+        * Две навигации, а не одна на все случаи. Внизу целятся пальцем, и там
+        * она уместна; на мониторе та же панель отнимала бы низ экрана и
+        * заставляла вести курсор вниз, хотя слева места сколько угодно.
+        * Показывается ровно одна — какая, решает ширина, а не устройство:
+        * телефон боком и планшет стоймя ведут себя как им удобнее.
+        */}
+      <nav className="sidenav">
+        <div className="sidenav__brand">
+          <Icon name="leaf" size={22} />
+          Домашнее меню
+        </div>
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            data-active={tab === t.id || (tab === 'recipes' && t.id === 'profile')}
+            onClick={() => setTab(t.id)}
+          >
+            <Icon name={t.icon} size={20} />
+            {t.label}
+          </button>
+        ))}
+      </nav>
+
       <nav className="tabbar">
         <div className="tabbar__inner">
           {TABS.map((t) => (

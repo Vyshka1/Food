@@ -212,11 +212,19 @@ export function MenuScreen() {
 
       <Warnings items={warnings} />
 
-      <TodayCard day={day} />
+      {/*
+        * Две колонки на мониторе и одна на телефоне — одна и та же разметка.
+        * Порядок блоков на телефоне менять нельзя, а в двух колонках он другой,
+        * поэтому решает размещение, а не перестановка: на узком экране рейка
+        * встаёт первой через `order`, на широком — уходит вправо.
+        */}
+      <div className="day-layout">
+        <aside className="day-rail">
+          <TodayCard day={day} />
 
-      {note && <div className="shop__note">{note}</div>}
+          {note && <div className="shop__note">{note}</div>}
 
-      <Card>
+          <Card>
         <div className="ring-row">
           <CalorieRing {...totals} label={`из ${norms.kcal} ккал`} />
           <div style={{ flex: 1 }}>
@@ -267,8 +275,10 @@ export function MenuScreen() {
             </div>
           </div>
         </div>
-      </Card>
+          </Card>
+        </aside>
 
+        <div className="day-main">
       {MEAL_SLOTS.filter((m) => household.meals.includes(m.id)).map((meal) => {
         const entries = menu.entries.filter((e) => e.day === day && e.slot === meal.id)
         const fed = fedEaters(household, day, meal.id)
@@ -407,6 +417,8 @@ export function MenuScreen() {
           </div>
         )
       })}
+        </div>
+      </div>
       </>
       )}
 
