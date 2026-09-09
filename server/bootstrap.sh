@@ -38,7 +38,7 @@ fi
 step "Пакеты"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-apt-get install -y -qq curl git nginx ca-certificates >/dev/null
+apt-get install -y -qq curl git nginx ca-certificates iproute2 >/dev/null
 
 # Node 22: службе хватило бы восемнадцатой, но сборка прогоняет тесты, а им
 # нужна двадцать вторая
@@ -141,7 +141,21 @@ ln -sfn "$SITE" "/etc/nginx/sites-enabled/$DOMAIN"
 # сайт по умолчанию перехватывает запросы, если наш не совпал по имени
 [ -e /etc/nginx/sites-enabled/default ] && rm -f /etc/nginx/sites-enabled/default
 nginx -t || fail "nginx не принял конфиг"
-systemctl reload nginx
+
+# nginx после установки не запущен, и перезагружать тогда нечего. А если он не
+# запускается вовсе — почти всегда потому, что порт 80 уже занят другим
+# веб-сервером. Молчать об этом нельзя: сообщение systemd об этом не говорит.
+if systemctl is-active --quiet nginx; then
+  systemctl reload nginx
+else
+  if ! systemctl enable --now nginx 2>/dev/null || ! systemctl is-active --quiet nginx; then
+    echo
+    echo "   nginx не запустился. Кто занимает порты 80 и 443:"
+    ss -tlnp 2>/dev/null | grep -E ':80 |:443 ' || echo "   (ss не установлен: apt-get install -y iproute2)"
+    echo
+    fail "порт 80 занят другим веб-сервером — остановите его (systemctl stop ИМЯ) или настройте сайт в нём, а не в nginx"
+  fi
+fi
 echo "   включён"
 
 if [ "$SKIP_CERT" = "1" ]; then
