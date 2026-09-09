@@ -275,10 +275,15 @@ export function RecipeSheet({
             </b>
           </div>
         )}
-        {card.eatSoonGrams > 0 && (
+        {card.eatSoonGrams > 0 && !card.eatSoonNegligible && (
           <div className="ing-line">
             <span className="muted">Останется</span>
-            <b>{card.eatSoonGrams} г — доесть в ближайшие дни</b>
+            <b>
+              {card.eatSoonPieces
+                ? `${card.eatSoonPieces} ${plural(card.eatSoonPieces, pieceName ?? ['шт', 'шт', 'шт'])}`
+                : `${card.eatSoonGrams} г`}{' '}
+              — доесть в ближайшие дни
+            </b>
           </div>
         )}
         {card.unplacedGrams > 0 && (

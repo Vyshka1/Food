@@ -359,3 +359,50 @@ describe('три числа про деньги', () => {
     expect(stocked.checkout).toBeLessThan(empty.checkout)
   })
 })
+
+/*
+ * Карточка писала «останется 2 г — доесть в ближайшие дни». Двух граммов никто
+ * не доедает, а у штучного блюда их и не бывает: котлета либо есть, либо нет.
+ * Такой остаток берётся из округления модели партии, а не с плиты.
+ */
+describe('остаток, который стоит называть', () => {
+  it('мелочь помечена мелочью, а не выдана за еду', () => {
+    /*
+     * Карточка писала «останется 2 г — доесть в ближайшие дни». Двух граммов
+     * никто не доедает, а у штучного блюда их и не бывает: котлета либо есть,
+     * либо нет. Такой остаток берётся из округления модели партии, а не с плиты.
+     */
+    for (const card of allCards()) {
+      if (card.eatSoonGrams === 0) continue
+      const floor = card.cookPieces ? card.cookGrams / card.cookPieces : 50
+      expect(card.eatSoonNegligible, `${card.recipe.title}: ${card.eatSoonGrams} г`).toBe(
+        card.eatSoonGrams < floor,
+      )
+    }
+  })
+
+  it('но из расчёта не пропадает: иначе еда потеряется в отчёте', () => {
+    // ровно это поймала проверка сходимости, когда я спрятала хвост в самом
+    // расчёте, а не на экране
+    for (const card of allCards()) {
+      if (!card.eatSoonNegligible) continue
+      expect(card.eatSoonGrams, card.recipe.title).toBeGreaterThan(0)
+    }
+  })
+
+  it('у штучного блюда остаток называется штуками', () => {
+    for (const card of allCards()) {
+      if (!card.cookPieces || card.eatSoonNegligible || card.eatSoonGrams === 0) continue
+      expect(card.eatSoonPieces, card.recipe.title).toBeGreaterThanOrEqual(1)
+    }
+  })
+
+  it('и мелочь не всплывает как «некуда убрать»', () => {
+    // иначе правка ничего бы не изменила: два грамма переехали бы из одной
+    // строки в другую, ещё и с более тревожной подписью
+    for (const card of allCards()) {
+      if (card.unplacedGrams === 0) continue
+      expect(card.unplacedGrams, card.recipe.title).toBeGreaterThanOrEqual(50)
+    }
+  })
+})

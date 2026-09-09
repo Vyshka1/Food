@@ -1829,3 +1829,119 @@ select {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+
+/* Примерка вкусов: стопка карточек, которые тянут в стороны */
+.taste {
+  padding-bottom: 8px;
+}
+
+.taste-stack {
+  position: relative;
+  height: 400px;
+  margin: 8px 0 16px;
+}
+
+.taste-card {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 0.07);
+  /* палец тянет карточку, а не прокручивает страницу */
+  touch-action: none;
+  user-select: none;
+  cursor: grab;
+}
+
+.taste-card:active {
+  cursor: grabbing;
+}
+
+/* следующая карточка выглядывает из-под текущей: видно, что впереди ещё есть */
+.taste-card--behind {
+  transform: scale(0.96) translateY(10px);
+  opacity: 0.55;
+  pointer-events: none;
+  box-shadow: none;
+}
+
+.taste-card__art {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--card-soft);
+  color: var(--green);
+}
+
+.taste-card__art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.taste-card__body {
+  padding: 14px 16px 16px;
+}
+
+.taste-card__title {
+  font-size: 19px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+/* Штамп поверх карточки, пока её тянут: решение видно до того, как отпустил */
+.taste-card__stamp {
+  position: absolute;
+  top: 18px;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-weight: 700;
+  text-transform: lowercase;
+  border: 2px solid currentColor;
+}
+
+.taste-card__stamp[data-verdict='like'] {
+  left: 18px;
+  transform: rotate(-8deg);
+  color: var(--green);
+}
+
+.taste-card__stamp[data-verdict='dislike'] {
+  right: 18px;
+  transform: rotate(8deg);
+  color: var(--warn);
+}
+
+.taste-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.taste-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: var(--card);
+  font-weight: 600;
+  font-size: 15px;
+}
+
+.taste-btn[data-kind='like'] {
+  border-color: var(--green);
+  color: var(--green);
+}
+
+.taste-btn[data-kind='dislike'] {
+  border-color: var(--warn);
+  color: var(--warn);
+}

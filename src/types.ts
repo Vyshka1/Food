@@ -9,6 +9,7 @@ export type Allergen =
   | 'eggs'
   | 'fish'
   | 'soy'
+  | 'sesame'
 
 export const ALLERGENS: { id: Allergen; label: string; emoji: string }[] = [
   { id: 'nuts', label: 'Орехи', emoji: '🌰' },
@@ -19,6 +20,12 @@ export const ALLERGENS: { id: Allergen; label: string; emoji: string }[] = [
   { id: 'eggs', label: 'Яйца', emoji: '🥚' },
   { id: 'fish', label: 'Рыба', emoji: '🐟' },
   { id: 'soy', label: 'Соя', emoji: '🫘' },
+  /*
+   * Кунжут — один из основных регулируемых аллергенов и в ЕС, и в США, а
+   * прятаться он умеет: хумус, посыпка, соусы. До сих пор исключить его в
+   * приложении было нечем.
+   */
+  { id: 'sesame', label: 'Кунжут', emoji: '🥯' },
 ]
 
 /** «Не люблю» — мягкое ограничение: учитывается тегами продуктов. */

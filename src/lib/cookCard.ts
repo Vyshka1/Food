@@ -13,6 +13,24 @@ import { recipeById } from '../data/recipeRegistry'
 import { cookTaskId, portionOf, totalPortions } from './menu'
 import { cookedGrams, recipeStats, statsOf } from './nutrition'
 import { FREEZE_MIN_GRAMS } from './batch'
+
+/**
+ * Ниже какого остатка о нём не стоит говорить.
+ *
+ * Меньше пятидесяти граммов готового блюда — это ложка, а не «доесть в
+ * ближайшие дни»: такой остаток берётся из округления модели партии, а не с
+ * плиты. У штучных блюд порог очевиднее и берётся сам собой — одна штука:
+ * котлета либо есть, либо нет.
+ *
+ * Замер на 327 карточках: строка «останется» показывалась на 202 из них, и 76
+ * раз — с числом меньше пятидесяти граммов, вплоть до двух. То есть каждая
+ * третья такая строка была бессмыслицей.
+ *
+ * Порог намеренно низкий. Спрятать настоящий остаток хуже, чем показать
+ * глуповатую строку: забытая еда пропадает, а лишняя строка только раздражает.
+ * Проба с четвертью порции прятала и честные сто граммов — отвергнута.
+ */
+const TAIL_MIN_GRAMS = 50
 import { planWeek } from './weekPlan'
 import type { TaskPlan } from './weekPlan'
 import { purchaseInfo } from './purchase'
@@ -115,6 +133,14 @@ export interface CookCard {
   freezePieces?: number
   /** Хвост в порцию: не заготовка, но и не потеря — доедается за пару дней. */
   eatSoonGrams: number
+  /** Тот же остаток штуками, если блюдо считается штуками. */
+  eatSoonPieces?: number
+  /**
+   * Остаток есть, но говорить о нём нечего: он меньше штуки у штучного блюда
+   * или меньше ложки у весового. В расчёте он остаётся — из отчёта еда
+   * пропадать не должна, — а на экране такой строки быть не надо.
+   */
+  eatSoonNegligible: boolean
   /** Ни в тарелки, ни в морозилку, ни на доесть. */
   unplacedGrams: number
   items: CardItem[]
@@ -289,6 +315,19 @@ export function cookCard(
     cookPieces && freezeGrams > 0
       ? Math.max(0, Math.round((freezeGrams / Math.max(1, cookGrams)) * cookPieces))
       : undefined
+  /*
+   * Остаток остаётся в расчёте как есть — иначе не сойдётся равенство «выход =
+   * распределено + заморожено + доесть + непристроенное», и еда потеряется в
+   * отчёте. А вот называть его вслух стоит не всегда: карточка честно писала
+   * «останется 2 г — доесть в ближайшие дни». Два грамма никто не доедает, а у
+   * штучного блюда их и не бывает — котлета либо есть, либо нет.
+   */
+  const tailFloor = pieceGrams ?? TAIL_MIN_GRAMS
+  const eatSoonNegligible = eatSoonGrams > 0 && eatSoonGrams < tailFloor
+  const eatSoonPieces =
+    cookPieces && pieceGrams && eatSoonGrams >= pieceGrams
+      ? Math.max(1, Math.round(eatSoonGrams / pieceGrams))
+      : undefined
   const unplacedGrams = restGrams - freezeGrams - eatSoonGrams
 
   // продукты и остатки упаковок
@@ -412,6 +451,8 @@ export function cookCard(
     meals: entries.length,
     freezeGrams,
     eatSoonGrams,
+    eatSoonPieces,
+    eatSoonNegligible,
     freezePieces,
     unplacedGrams,
     items,

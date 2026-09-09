@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { ALLERGENS, DISLIKES, MEAL_SLOTS } from '../types'
 import type { Activity, Allergen, Eater, Goal, Household, MealSlot, Sex } from '../types'
 import { ACTIVITY_LABEL, GOAL_LABEL, dailyNorm } from '../lib/nutrition'
@@ -7,9 +7,12 @@ import { defaultHousehold, newEater } from '../store'
 import { CalorieRing, Card, Chip, Field, Section, Segmented } from '../components/ui'
 import { Icon } from '../components/icons'
 import { KitchenEditor } from '../components/KitchenEditor'
+import { SwipeDeck } from '../components/SwipeDeck'
+import { applyTastes, tastingDeck } from '../lib/tasting'
+import type { TasteResult } from '../lib/tasting'
 import { MACRO_COLOR } from '../lib/palette'
 
-const STEPS = ['Состав семьи', 'Аллергии и вкусы', 'Режим питания', 'Кухня', 'Готово']
+const STEPS = ['Состав семьи', 'Аллергии и вкусы', 'Что нравится', 'Режим питания', 'Кухня', 'Готово']
 
 interface Props {
   initial?: Household | null
@@ -23,6 +26,10 @@ export function Onboarding({ initial, onDone, onCancel }: Props) {
   const [activeEaterId, setActiveEaterId] = useState(household.eaters[0]?.id ?? '')
   const [customAllergen, setCustomAllergen] = useState('')
   const [customDislike, setCustomDislike] = useState('')
+  /** Зерно колоды: одно на всю анкету, чтобы карточки не перетасовывались. */
+  const [deckSeed] = useState(() => Math.floor(Math.random() * 1e9))
+  /** Сколько карточек человек уже разобрал — для подписи и кнопки «дальше». */
+  const [tasted, setTasted] = useState(0)
 
   const activeEater = household.eaters.find((e) => e.id === activeEaterId) ?? household.eaters[0]
 
@@ -49,7 +56,26 @@ export function Onboarding({ initial, onDone, onCancel }: Props) {
   }
 
   const canNext =
-    step !== 2 || (household.meals.length > 0 && household.cookingDays.length > 0)
+    step !== 3 || (household.meals.length > 0 && household.cookingDays.length > 0)
+
+  /*
+   * Колода собирается один раз на едока и на состав анкеты: пересобирать её на
+   * каждый свайп значит тасовать карточки под рукой у человека.
+   */
+  const deck = useMemo(
+    () => (activeEater ? tastingDeck(household, { eaterId: activeEater.id, seed: deckSeed }) : []),
+    // намеренно не следим за household целиком: колода не должна меняться от
+    // собственных оценок, которые мы же в неё и записываем
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [activeEater?.id, deckSeed],
+  )
+
+  const rateOne = (recipeId: string, verdict: TasteResult['verdict']) => {
+    if (!activeEater) return
+    setTasted((n) => n + 1)
+    if (verdict === 'skip') return
+    setHousehold((h) => applyTastes(h, activeEater.id, [{ recipeId, verdict }]))
+  }
 
   return (
     <div className="app">
@@ -294,7 +320,50 @@ export function Onboarding({ initial, onDone, onCancel }: Props) {
         </>
       )}
 
-      {step === 2 && (
+      {step === 2 && activeEater && (
+        <>
+          <div className="screen-sub" style={{ marginTop: -4 }}>
+            {household.eaters.length > 1 ? `Вкусы: ${activeEater.name}. ` : ''}
+            Пролистайте блюда — меню соберётся под то, что нравится. Можно пропустить
+            и оценивать потом, из карточек блюд.
+            {tasted > 0 && ` Разобрано: ${tasted}.`}
+          </div>
+
+          {household.eaters.length > 1 && (
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
+              {household.eaters.map((eater) => (
+                <Chip
+                  key={eater.id}
+                  active={eater.id === activeEaterId}
+                  onClick={() => {
+                    setActiveEaterId(eater.id)
+                    setTasted(0)
+                  }}
+                >
+                  {eater.name}
+                </Chip>
+              ))}
+            </div>
+          )}
+
+          {deck.length === 0 ? (
+            <Card>
+              <p className="muted" style={{ margin: 0 }}>
+                Все блюда уже оценены — здесь больше нечего спрашивать.
+              </p>
+            </Card>
+          ) : (
+            <SwipeDeck
+              key={`${activeEater.id}-${deckSeed}`}
+              recipes={deck}
+              onVerdict={rateOne}
+              onDone={() => undefined}
+            />
+          )}
+        </>
+      )}
+
+      {step === 3 && (
         <>
           <Section title="Приёмы пищи" icon="menu">
             <div className="chips">
@@ -345,7 +414,7 @@ export function Onboarding({ initial, onDone, onCancel }: Props) {
         </>
       )}
 
-      {step === 3 && (
+      {step === 4 && (
         <Section title="Что на кухне" icon="kitchen">
           <p className="hint" style={{ marginTop: 0 }}>
             От этого зависит план готовки: приборы — это ресурс расписания, и от них зависит,
@@ -360,7 +429,7 @@ export function Onboarding({ initial, onDone, onCancel }: Props) {
         </Section>
       )}
 
-      {step === 4 && (
+      {step === 5 && (
         <>
           <Card>
             <div className="row row--between" style={{ marginBottom: 10 }}>
