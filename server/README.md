@@ -18,12 +18,17 @@ GitHub Pages, а служба на своём домене, браузер сч�
 
 ## Как выложить — одной командой
 
-На чистом Debian или Ubuntu:
+На чистом Debian или Ubuntu, от root, **одной строкой**:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Vyshka1/Food/main/server/bootstrap.sh \
-  | sudo EMAIL=вы@почта.ru bash
+apt-get update && apt-get install -y curl && curl -fsSL https://raw.githubusercontent.com/Vyshka1/Food/main/server/bootstrap.sh -o /tmp/bootstrap.sh && EMAIL=вы@почта.ru bash /tmp/bootstrap.sh
 ```
+
+Три вещи здесь не для красоты. `curl` на минимальных образах не установлен, и
+без первой половины команда обрывается на первом же шаге. Скачивание отдельно
+от запуска: если файл придёт не целиком, `bash` не станет выполнять половину
+скрипта. И одна строка без переносов — многострочную вставку часть терминалов
+портит служебными символами, и получается `bash~: command not found`.
 
 Скрипт ставит Node, nginx и certbot, забирает проект в `/opt/food`, собирает
 приложение, заводит службу, настраивает сайт и выпускает сертификат. Запускать
