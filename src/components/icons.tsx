@@ -1,4 +1,4 @@
-import type { Recipe } from '../types'
+import type { DrinkKind, ExtraKind, Recipe } from '../types'
 
 /**
  * Одна система контурных иконок вместо эмодзи: у эмодзи в каждой ОС свой стиль,
@@ -33,6 +33,7 @@ export type IconName =
   | 'check'
   | 'close'
   | 'back'
+  | 'forward'
   | 'alert'
   | 'party'
   | 'pin'
@@ -40,6 +41,17 @@ export type IconName =
   | 'thumbDown'
   | 'history'
   | 'repeat'
+  | 'phone'
+  | 'laptop'
+  | 'shield'
+  | 'cup'
+  | 'glass'
+  | 'bread'
+  | 'nuts'
+  | 'yogurt'
+  | 'cheese'
+  | 'home'
+  | 'bag'
 
 const PATHS: Record<IconName, string> = {
   // навигация
@@ -74,6 +86,7 @@ const PATHS: Record<IconName, string> = {
   check: 'M5 12.5 9.5 17 19 7',
   close: 'M6 6l12 12M18 6 6 18',
   back: 'M15 5l-7 7 7 7',
+  forward: 'M9 5l7 7-7 7',
   alert: 'M12 3.5 1.8 20.5h20.4L12 3.5ZM12 10v4M12 17.5h.01',
   party: 'M4 20l5.5-13 8.5 8.5L4 20ZM14 4.5c1 .5 1.3 1.6 1 2.5M18.5 3c.6 1.2.2 2.4-.7 3M20.5 8.5c-1 .3-2 0-2.6-.8M17 12.5c.8-.9 2-1.1 3-.6',
   pin: 'M12 17.5V22M8.5 2.5h7v1.2l1.6 5.6A3.5 3.5 0 0 1 17.6 12H6.4a3.5 3.5 0 0 1 .5-2.7l1.6-5.6V2.5Z',
@@ -81,6 +94,24 @@ const PATHS: Record<IconName, string> = {
   thumbDown: 'M7 3v11l4.5 7c1.2-.2 1.8-1 1.8-2.2L12.6 15H19a2 2 0 0 0 2-2.3l-1.1-7A2 2 0 0 0 18 4H7ZM7 14H3V3h4',
   history: 'M3.5 12a8.5 8.5 0 1 0 2.6-6.1M3.5 5v4h4M12 7.5V12l3 2',
   repeat: 'M4 9a5 5 0 0 1 5-5h9M18 4l-3-3M18 4l-3 3M20 15a5 5 0 0 1-5 5H6M6 20l3-3M6 20l3 3',
+  // перенос данных: с телефона по ссылке на компьютер
+  phone: 'M7 2.5h10a1 1 0 0 1 1 1v17a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-17a1 1 0 0 1 1-1ZM10 18.5h4',
+  laptop: 'M5 5.5h14a1 1 0 0 1 1 1v10H4v-10a1 1 0 0 1 1-1ZM2 16.5h20l-1.5 3H3.5l-1.5-3Z',
+  shield: 'M12 2.5l8 3v6c0 5-3.4 8.8-8 10-4.6-1.2-8-5-8-10v-6l8-3Z',
+  /*
+   * Напитки и дополнения к столу. Своими контурами, а не эмодзи: эмодзи
+   * рисуются шрифтом системы — на телефоне, на макбуке и в Windows это три
+   * разных картинки, и рядом с ровным набором линий они выглядят наклейками.
+   */
+  cup: 'M4 8h12v6a4 4 0 0 1-4 4H8a4 4 0 0 1-4-4V8ZM16 9.5h1.5a2.5 2.5 0 0 1 0 5H16M3 21h14M8 5c0-1 1-1.3 1-2.2M12 5c0-1 1-1.3 1-2.2',
+  glass: 'M7 3h10l-1 15.2a2 2 0 0 1-2 1.8h-4a2 2 0 0 1-2-1.8L7 3ZM7.4 9h9.2',
+  bread: 'M5 9.5C5 6.5 8 5 12 5s7 1.5 7 4.5c0 1.4-1 2-2 2v6.5a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V11.5c-1 0-2-.6-2-2ZM10 11.5v7M14 11.5v7',
+  nuts: 'M12 3c3.5 0 6 3 6 7.5S15.5 21 12 21s-6-6-6-10.5S8.5 3 12 3ZM12 4.5v15M9 8.5c1.5 1 4.5 1 6 0M9 14c1.5 1 4.5 1 6 0',
+  yogurt: 'M6 8h12l-1.2 11.2a2 2 0 0 1-2 1.8H9.2a2 2 0 0 1-2-1.8L6 8ZM5 5.5h14v2.5H5zM10 12.5c1 .8 3 .8 4 0',
+  cheese: 'M3 12.5 13 6.5l8 3.5v7a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-4.5ZM3 12.5h18M8 15h.01M13 14h.01M17 15.5h.01',
+  // где человек ест: дома, с собой в контейнере, не дома
+  home: 'M4 10.5 12 4l8 6.5V19a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-8.5ZM10 20v-5h4v5',
+  bag: 'M3.5 8h17v10a1 1 0 0 1-1 1h-15a1 1 0 0 1-1-1V8ZM9 8V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V8M3.5 12h17',
 }
 
 export function Icon({
@@ -112,6 +143,26 @@ export function Icon({
 }
 
 /** Иконка блюда по его сути: суп, каша, салат, запечённое, сковорода и так далее. */
+/** Напиток своим значком: горячее в чашке, холодное в стакане. */
+export function drinkIcon(kind: DrinkKind): IconName {
+  if (kind === 'wine' || kind === 'beer') return 'glass'
+  if (kind === 'juice' || kind === 'soda' || kind === 'protein') return 'glass'
+  return 'cup'
+}
+
+/** Дополнение к столу: то же самое для овощной тарелки, фрукта, хлеба. */
+export function extraIcon(kind: ExtraKind): IconName {
+  const map: Record<ExtraKind, IconName> = {
+    veg_plate: 'salad',
+    fruit: 'apple',
+    bread: 'bread',
+    nuts: 'nuts',
+    yogurt: 'yogurt',
+    cheese: 'cheese',
+  }
+  return map[kind]
+}
+
 export function recipeIcon(recipe: Recipe): IconName {
   const title = recipe.title.toLowerCase()
   const has = (...words: string[]) => words.some((w) => title.includes(w))
