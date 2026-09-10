@@ -759,54 +759,6 @@ select {
   margin-right: 8px;
 }
 
-/* ── План готовки ─────────────────────────────────────────────────────── */
-.timeline {
-  position: relative;
-  padding-left: 62px;
-}
-
-.tl-step {
-  position: relative;
-  padding: 12px 14px;
-  background: var(--card);
-  border-radius: var(--radius-md);
-  margin-bottom: 8px;
-  box-shadow: var(--shadow);
-}
-
-.tl-step[data-passive='true'] {
-  background: var(--card-soft);
-  box-shadow: none;
-}
-
-.tl-step__time {
-  position: absolute;
-  left: -62px;
-  top: 14px;
-  width: 52px;
-  text-align: right;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.tl-step__dish {
-  font-size: 12px;
-  color: var(--muted);
-  margin-bottom: 2px;
-}
-
-.tl-step__text {
-  font-size: 15px;
-  line-height: 1.35;
-}
-
-.tl-step__tag {
-  font-size: 11px;
-  color: var(--muted);
-  margin-top: 4px;
-}
 
 .plan-stats {
   display: flex;

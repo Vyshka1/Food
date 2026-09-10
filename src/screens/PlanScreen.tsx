@@ -8,7 +8,7 @@ import { Card, Warnings } from '../components/ui'
 import { Icon, recipeIcon } from '../components/icons'
 import { CookGantt } from '../components/CookGantt'
 import { recipeById } from '../data/recipeRegistry'
-import { APPLIANCE_LABEL, THAW_LABEL } from '../types'
+import { APPLIANCE_LABEL, STATION_LABEL, THAW_LABEL } from '../types'
 import type { Appliance, CookingPlan, Kitchen } from '../types'
 
 /** «4 конфорки, духовка и блендер» — перечисляем то, что реально есть. */
@@ -70,6 +70,8 @@ export function PlanScreen({
   const [activeDay, setActiveDay] = useState<number | null>(null)
   /** Готовим одна или вдвоём — это второй повар в расписании, а не оформление. */
   const [cooks, setCooks] = useState(1)
+  /** Диаграмма показывает форму дня, список — подробности. Второе по запросу. */
+  const [allSteps, setAllSteps] = useState(false)
   /*
    * Кладовую передаём обязательно. Без неё расписание считало партии по пустой
    * морозилке, а карточка того же блюда — по настоящей: два экрана про одну
@@ -99,8 +101,16 @@ export function PlanScreen({
    * Свободные минуты — одно число на весь экран: и подсказка под плитками, и
    * охристая плашка в рейке говорят про него же. Двух ответов на вопрос
    * «остаётся ли время» быть не должно.
+   *
+   * Вычитаем занятость самого нагруженного повара, а не сумму по всем.
+   * `handsOnMinutes` — это работа всей кухни, и вдвоём она вдвое больше
+   * настенных часов: план на 1 ч 40 при двух поварах по 1 ч 10 и 1 ч 06
+   * давал «минус 36 минут». Экран советовал разнести готовку на два дня ровно
+   * там, где второй повар уже сократил её на 37 минут. Замерено: при двух
+   * поварах в минус уходили 49 планов из 60.
    */
-  const freeMinutes = current.makespan - current.handsOnMinutes
+  const busiestCook = Math.max(...current.perCookMinutes, 0)
+  const freeMinutes = current.makespan - busiestCook
   const clock = (offset: number) => clockFrom(startHour, offset)
 
   return (
@@ -194,7 +204,7 @@ export function PlanScreen({
               . Работы меньше не становится, она делится: духовку вторая пара рук не ускоряет.
             </p>
           )}
-          <p className="hint">
+          <p className="hint plan-free">
             Одновременно в работе до {current.maxParallel}{' '}
             {plural(current.maxParallel, ['блюда', 'блюд', 'блюд'])}. «Присмотр» идёт поверх
             занятых рук — помешать, перевернуть, заглянуть в кастрюлю.
@@ -227,14 +237,43 @@ export function PlanScreen({
             </div>
           </Card>
 
-          <Card>
-            <CookGantt steps={current.steps} makespan={current.makespan} clock={clock} />
-          </Card>
+          {/*
+            * Пустая карточка вместо диаграммы — это белый прямоугольник без
+            * объяснения. Достижимо, если все рецепты дня исчезли из реестра:
+            * например, человек удалил свой рецепт, по которому собрана неделя.
+            */}
+          {current.steps.length > 0 && (
+            <Card>
+              <CookGantt steps={current.steps} makespan={current.makespan} clock={clock} />
+            </Card>
+          )}
 
           <Card>
-            <div className="section-title">Ближайшие шаги</div>
-            {current.steps.slice(0, NEXT_STEPS).map((step, i) => {
+            <div className="section-title">
+              {allSteps ? 'Все шаги' : 'Ближайшие шаги'}
+            </div>
+            {(allSteps ? current.steps : current.steps.slice(0, NEXT_STEPS)).map((step, i) => {
               const recipe = recipeById(step.recipeId)
+              const minutes = step.end - step.start
+              /*
+               * Подробности шага живут здесь, а не только на отрезке диаграммы.
+               * У отрезка они были в `title`, а `title` на телефоне не
+               * показывается вовсе — наведения нет, — и в дерево доступности
+               * пустой `span` не попадает. То есть «руки заняты 5 из 40»,
+               * «180°» и «можно отойти» пропадали ровно на том устройстве, где
+               * по плану и готовят.
+               */
+              const detail = [
+                `${minutes} мин`,
+                step.activeMinutes > 0 && step.activeMinutes < minutes
+                  ? `руки заняты ${step.activeMinutes}`
+                  : null,
+                step.appliance ? APPLIANCE_LABEL[step.appliance] : STATION_LABEL[step.station],
+                step.tempC ? `${step.tempC}°` : null,
+                step.unattended ? 'можно отойти' : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')
               return (
                 <div className="next-step" key={`${step.recipeId}-${step.stepIndex}-${i}`}>
                   <span className="next-step__mark">
@@ -242,6 +281,7 @@ export function PlanScreen({
                   </span>
                   <span className="next-step__what">
                     <b>{clock(step.start)}</b> · {step.text}
+                    <span className="next-step__detail muted small">{detail}</span>
                   </span>
                   <span className="next-step__dish muted small">
                     {recipe && <Icon name={recipeIcon(recipe)} size={16} />}
@@ -250,8 +290,18 @@ export function PlanScreen({
                 </div>
               )
             })}
+            {current.steps.length > NEXT_STEPS && (
+              <button
+                className="btn btn--soft btn--small"
+                onClick={() => setAllSteps((v) => !v)}
+              >
+                {allSteps
+                  ? 'Свернуть до ближайших'
+                  : `Показать все ${current.steps.length} ${plural(current.steps.length, ['шаг', 'шага', 'шагов'])}`}
+              </button>
+            )}
             <p className="hint" style={{ marginBottom: 0 }}>
-              Дальше — по расписанию выше. В пошаговом режиме те же шаги идут с таймерами.
+              В пошаговом режиме те же шаги идут с таймерами.
             </p>
           </Card>
 
@@ -368,7 +418,15 @@ export function PlanScreen({
                     <b>{d.title}</b>
                     <span className="muted small">
                       {work?.handsOnMinutes ?? 0} мин ·{' '}
-                      {work?.appliance ? APPLIANCE_LABEL[work.appliance] : 'руками'}
+                      {work?.appliance ? APPLIANCE_LABEL[work.appliance] : 'руками'} ·{' '}
+                      {/*
+                        * Порции: сколько всего варим. Число ушло с экрана
+                        * вместе со старой карточкой «Что готовим», а больше
+                        * его тут негде увидеть — «2 контейнера» отвечают на
+                        * другой вопрос, про раскладку, а не про объём.
+                        */}
+                      {d.portions.toFixed(1).replace('.0', '')}{' '}
+                      {plural(Math.round(d.portions), ['порция', 'порции', 'порций'])}
                     </span>
                   </span>
                   <span className="rail-dish__pack">

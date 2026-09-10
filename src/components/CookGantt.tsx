@@ -143,10 +143,19 @@ export function CookGantt({
               </div>,
               <div className="gantt__lane" key={`${lane.recipeId}-lane`}>
                 {lane.steps.map((step) => (
+                  /*
+                   * У отрезка есть имя, а не только подсказка при наведении:
+                   * `title` на телефоне не показывается вовсе, и в дерево
+                   * доступности пустой span без роли не попадает. Диаграмма
+                   * рисует форму дня — но прочитать её должно быть можно и без
+                   * мыши.
+                   */
                   <span
                     className="gantt__bar"
                     key={`${step.stepIndex}-${step.start}`}
                     data-band={bandOf(step)}
+                    role="img"
+                    aria-label={stepTitle(step, clock)}
                     style={{ left: pct(step.start), width: pct(step.end - step.start) }}
                     title={stepTitle(step, clock)}
                   />

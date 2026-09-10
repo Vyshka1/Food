@@ -235,6 +235,18 @@ export const APPLIANCE_LABEL: Record<Appliance, string> = {
   microwave: 'микроволновка',
 }
 
+/**
+ * Где делается шаг, когда прибор не назван: руками, на плите, в духовке или
+ * это ожидание. Рядом с APPLIANCE_LABEL, потому что на экране они стоят в
+ * одной строке и одно подменяет другое.
+ */
+export const STATION_LABEL: Record<string, string> = {
+  prep: 'руками',
+  stove: 'плита',
+  oven: 'духовка',
+  wait: 'ждём',
+}
+
 /** Кухня пользователя — от неё зависит точность плана готовки. */
 export interface Kitchen {
   burners: number

@@ -20,7 +20,7 @@ const [KEY] = STORAGE_KEYS
 /** Прошлый понедельник: тогда загрузка соберёт живое меню на текущую неделю. */
 const LAST_WEEK = '2026-08-31'
 
-function saved(): string {
+function saved(cookingDays: number[] = [0, 2, 6]): string {
   return JSON.stringify({
     version: SCHEMA_VERSION,
     household: {
@@ -58,7 +58,7 @@ function saved(): string {
           ratings: {},
         },
       ],
-      cookingDays: [0, 2, 6],
+      cookingDays,
       meals: ['breakfast', 'lunch', 'dinner'],
       kitchen: {
         burners: 4,
@@ -141,11 +141,58 @@ describe('план готовки: расписание диаграммой', (
   it('отрезок стоит там же, где шаг стоит в расписании', () => {
     mount()
     const { plan } = planOnScreen()
-    const bars = all('.gantt__bar') as HTMLElement[]
-    // порядок отрезков внутри строки — порядок шагов блюда
-    const first = plan.steps.find((s) => s.recipeId === plan.steps[0].recipeId)!
-    expect(bars[0].style.left).toBe(`${(first.start / plan.makespan) * 100}%`)
-    expect(bars[0].style.width).toBe(`${((first.end - first.start) / plan.makespan) * 100}%`)
+    const bars = [...document.querySelectorAll('.gantt__bar')] as HTMLElement[]
+
+    /*
+     * Сверяем каждый отрезок, а не первый. Первый шаг плана всегда начинается
+     * в ноль, поэтому проверка на нём сводилась к «0% равно 0%»: отрезки можно
+     * было прижать к левому краю все разом, и тест этого не замечал.
+     */
+    const byLane = new Map<string, typeof plan.steps>()
+    for (const step of plan.steps) {
+      byLane.set(step.recipeId, [...(byLane.get(step.recipeId) ?? []), step])
+    }
+    const expected = [...byLane.values()].flat()
+    expect(bars).toHaveLength(expected.length)
+
+    let movedRight = 0
+    expected.forEach((step, i) => {
+      expect(bars[i].style.left, step.text).toBe(`${(step.start / plan.makespan) * 100}%`)
+      expect(bars[i].style.width, step.text).toBe(
+        `${((step.end - step.start) / plan.makespan) * 100}%`,
+      )
+      if (step.start > 0) movedRight += 1
+    })
+    // и хотя бы часть отрезков действительно сдвинута — иначе сверять нечего
+    expect(movedRight).toBeGreaterThan(0)
+  })
+
+  it('у отрезка есть имя, а не только подсказка при наведении', () => {
+    mount()
+    const bars = [...document.querySelectorAll('.gantt__bar')] as HTMLElement[]
+    expect(bars.length).toBeGreaterThan(0)
+    for (const bar of bars) {
+      // title на телефоне не показывается: наводить нечем
+      expect(bar.getAttribute('aria-label')).toBeTruthy()
+      expect(bar.getAttribute('aria-label')).toBe(bar.getAttribute('title'))
+    }
+  })
+
+  it('подробности шага видны в списке, а не только на отрезке', () => {
+    mount()
+    const { plan } = planOnScreen()
+    const detailed = plan.steps.find(
+      (s) => s.unattended || s.tempC || (s.activeMinutes > 0 && s.activeMinutes < s.end - s.start),
+    )
+    if (!detailed) return
+    // раскрываем весь список: подробности не должны жить только в title
+    const more = [...document.querySelectorAll('button')].find((b) =>
+      b.textContent?.startsWith('Показать все'),
+    )
+    if (more) act(() => (more as HTMLButtonElement).click())
+    const text = document.querySelector('.next-step__detail')?.textContent ?? ''
+    expect(document.querySelectorAll('.next-step__detail').length).toBe(plan.steps.length)
+    expect(text.length).toBeGreaterThan(0)
   })
 
   it('«руками» старше прибора: занятые руки видно, даже если это плита', () => {
@@ -236,5 +283,93 @@ describe('план готовки: рейка и ближайшие шаги', (
     expect(free).toBeGreaterThan(0)
     expect(document.querySelector('.rail-tip')).toBeNull()
     expect(text('.plan-main > .hint:last-of-type')).toContain('Свободного времени остаётся')
+  })
+})
+
+describe('план готовки: день и второй повар', () => {
+  const dayButtons = () =>
+    [...document.querySelectorAll('.day-toggle button')] as HTMLButtonElement[]
+
+  it('переключение дня меняет и расписание, и рейку', () => {
+    mount()
+    const state = JSON.parse(localStorage.getItem(KEY) ?? '{}') as AppState
+    const plans = buildCookingPlans(state.menu!, state.household!, 1, state.pantry)
+    expect(plans.length).toBeGreaterThan(1)
+
+    const snapshot = () => ({
+      bars: all('.gantt__bar').length,
+      dishes: all('.rail-dish__name b').map((n) => n.textContent).join('|'),
+      // минуты в рейке — не украшение: их сумма это handsOnMinutes плана
+      minutes: all('.rail-dish__name .muted')
+        .map((n) => Number((n.textContent ?? '').match(/^(\d+) мин/)?.[1] ?? 0))
+        .reduce((a, b) => a + b, 0),
+    })
+    const before = snapshot()
+    act(() => dayButtons()[1].click())
+    const after = snapshot()
+
+    /*
+     * Рейка обязана поехать вместе с диаграммой. Пока этого не проверяли,
+     * «Что приготовим» и «Загрузка кухни» можно было навсегда привязать к
+     * первому дню, и тесты этого не замечали.
+     */
+    expect(after.dishes).not.toBe(before.dishes)
+    expect(before.bars).toBe(plans[0].steps.length)
+    expect(after.bars).toBe(plans[1].steps.length)
+    expect(before.minutes).toBe(plans[0].handsOnMinutes)
+    expect(after.minutes).toBe(plans[1].handsOnMinutes)
+  })
+
+  it('«готовлю сейчас» открывает выбранный день, а не первый', () => {
+    mount()
+    const state = JSON.parse(localStorage.getItem(KEY) ?? '{}') as AppState
+    const plans = buildCookingPlans(state.menu!, state.household!, 1, state.pantry)
+
+    act(() => dayButtons()[1].click())
+    const start = [...document.querySelectorAll('button')].find(
+      (b) => b.textContent?.trim() === 'Готовлю сейчас',
+    )!
+    act(() => (start as HTMLButtonElement).click())
+
+    expect(cooked?.cookDay).toBe(plans[1].cookDay)
+  })
+
+  it('вдвоём свободное время считается по самому занятому повару', () => {
+    /*
+     * Одна готовка в неделю: тогда за раз варится столько, что работа кухни
+     * заметно превышает настенные часы, и две формулы расходятся знаком. На
+     * трёх днях готовки день слишком лёгкий — расхождения не видно, и проверка
+     * была бы пустой.
+     */
+    localStorage.setItem(KEY, saved([6]))
+    mount()
+    const state = JSON.parse(localStorage.getItem(KEY) ?? '{}') as AppState
+    const pairs = buildCookingPlans(state.menu!, state.household!, 2, state.pantry)
+
+    /*
+     * handsOnMinutes — это работа всей кухни, и вдвоём она вдвое больше
+     * настенных часов. Пока вычитали её, экран советовал добавить второй день
+     * готовки ровно там, где второй повар уже сократил день: план на 1 ч 40 с
+     * поварами по 1 ч 10 и 1 ч 06 давал «минус 36 минут».
+     */
+    const byWholeKitchen = (p: CookingPlan) => p.makespan - p.handsOnMinutes
+    const byBusiestCook = (p: CookingPlan) => p.makespan - Math.max(...p.perCookMinutes)
+
+    // фикстура обязана различать два ответа хотя бы на одном дне
+    const telling = pairs.findIndex((p) => byWholeKitchen(p) <= 0 && byBusiestCook(p) > 0)
+    expect(telling, 'ни один день не различает две формулы — фикстура устарела').toBeGreaterThan(-1)
+
+    const second = [...document.querySelectorAll('.segmented button')].find((b) =>
+      b.textContent?.includes('вдвоём'),
+    )!
+    act(() => (second as HTMLButtonElement).click())
+
+    // и так на каждом дне: совет «разнеси на два дня» — только когда времени правда нет
+    pairs.forEach((plan, i) => {
+      act(() => dayButtons()[i].click())
+      const crowded = byBusiestCook(plan) <= 0
+      expect(!!document.querySelector('.rail-tip'), `день ${plan.cookDay}`).toBe(crowded)
+      if (!crowded) expect(text('.plan-free')).toContain('Свободного времени остаётся')
+    })
   })
 })

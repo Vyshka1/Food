@@ -458,6 +458,12 @@ export function ProductsScreen({ onShoppingMode }: { onShoppingMode: () => void 
                     const off = tab === 'buy' && sameCats(store.categories)
                     setCats(off ? null : store.categories)
                     setTab('buy')
+                    /*
+                     * И снимаем поиск. Иначе жест выглядит как «ничего не
+                     * произошло»: с набранным «ябл» отдел «Мясо и рыба» даёт
+                     * пустой список, хотя в строке отдела написано «2 позиции».
+                     */
+                    setQuery('')
                   }}
                 >
                   <span className="store-row__icon">

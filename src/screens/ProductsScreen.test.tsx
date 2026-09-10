@@ -4,7 +4,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { STORAGE_KEYS, StoreProvider } from '../store'
 import { SCHEMA_VERSION } from '../lib/persist'
 import { buildWeekMenu } from '../lib/menu'
-import { buildShoppingList } from '../lib/shopping'
+import { buildShoppingList, weekSpending } from '../lib/shopping'
 import { CATEGORY_LABEL } from '../data/ingredients'
 import { STORE_LABEL, categoriesOf, storeOf } from '../lib/stores'
 import { emptyPantry } from '../lib/pantry'
@@ -253,5 +253,54 @@ describe('экран «Продукты»', () => {
     const [, leftAfter, totalAfter] = /(\d+) из (\d+)/.exec(after) ?? []
     expect(Number(totalAfter)).toBe(Number(totalBefore) - 1)
     expect(Number(leftAfter)).toBe(Number(leftBefore) - 1)
+  })
+})
+
+describe('деньги на экране закупки', () => {
+  /*
+   * Самая переделанная часть экрана не проверялась ни одним числом. А правило
+   * проекта прямое: величина не считается заново. Здесь три места, где чек
+   * может разойтись — крупное число в рейке, суммы отделов и суммы заголовков
+   * категорий, — и все три обязаны быть одним и тем же числом.
+   */
+  const digits = (text: string | null | undefined) =>
+    Number((text ?? '').replace(/[^0-9]/g, '')) || 0
+
+  it('чек в рейке — тот же, что считает библиотека', () => {
+    mount()
+    const spending = weekSpending(MENU, HOUSE, emptyPantry(), [])
+    expect(digits(document.querySelector('.rail-money')?.textContent)).toBe(spending.checkout)
+  })
+
+  it('суммы отделов складываются в чек', () => {
+    mount()
+    const spending = weekSpending(MENU, HOUSE, emptyPantry(), [])
+    const rows = [...document.querySelectorAll('.store-row')]
+    expect(rows.length).toBeGreaterThan(1)
+    const sum = rows.reduce(
+      (acc, row) => acc + digits(row.querySelector('.muted')?.textContent?.split('·')[1]),
+      0,
+    )
+    expect(sum).toBe(spending.checkout)
+  })
+
+  it('позиции отделов складываются в число покупаемых строк', () => {
+    mount()
+    const list = buildShoppingList(MENU, HOUSE, emptyPantry())
+    const buying = list.lines.filter((l) => !l.staple).length
+    const rows = [...document.querySelectorAll('.store-row')]
+    const sum = rows.reduce(
+      (acc, row) => acc + digits(row.querySelector('.muted')?.textContent?.split('·')[0]),
+      0,
+    )
+    expect(sum).toBe(buying)
+  })
+
+  it('доли «на неделю» и «в запасы» не выходят за сто процентов', () => {
+    mount()
+    const shares = [...document.querySelectorAll('.rail-split__label, .rail-split span')]
+      .map((n) => digits(n.textContent))
+      .filter((v) => v > 0)
+    for (const share of shares) expect(share).toBeLessThanOrEqual(100)
   })
 })

@@ -25,15 +25,16 @@ import { today as todayIso } from '../lib/day'
  * постоянные продукты (соль, специи, масло — их не покупают вообще), текущие
  * запасы с количеством (700 г риса, полпачки фарша) и морозилка с датами.
  */
-export type PantryView = 'all' | 'stock' | 'freezer'
+export type PantryView = 'stock' | 'freezer'
 
 /**
  * `view` раскладывает эти списки по вкладкам «Запасы» и «Морозилка» на экране
  * «Продукты». Тремя карточками подряд под списком покупок они читались как
  * хвост закупки, хотя отвечают на другой вопрос — что уже дома и покупать не
- * надо. Значение по умолчанию оставляет прежний вид целиком.
+ * надо. Вкладка обязательна: вида «всё сразу» на экранах не осталось, а
+ * значение по умолчанию оставляло ветку, которую никто не исполняет.
  */
-export function PantryCard({ view = 'all' }: { view?: PantryView }) {
+export function PantryCard({ view }: { view: PantryView }) {
   const { pantry, setPantry, menu } = useStore()
   const [adding, setAdding] = useState(false)
   const [query, setQuery] = useState('')
@@ -48,8 +49,8 @@ export function PantryCard({ view = 'all' }: { view?: PantryView }) {
 
   const totalPortions = freezerPortions(pantry)
 
-  const showStock = view === 'all' || view === 'stock'
-  const showFreezer = view === 'all' || view === 'freezer'
+  const showStock = view === 'stock'
+  const showFreezer = view === 'freezer'
 
   return (
     <>

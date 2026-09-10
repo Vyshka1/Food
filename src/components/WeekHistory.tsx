@@ -5,7 +5,6 @@ import { useStore } from '../store'
 import { Icon } from './icons'
 import { weekLabel } from '../lib/day'
 
-
 /**
  * История недель. Удачное меню — редкая находка: раньше пересборка стирала
  * его без следа, теперь неделю можно сохранить и повторить.
