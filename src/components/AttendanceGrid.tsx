@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { MEAL_PLACE, MEAL_PLACE_LABEL, MEAL_SLOTS } from '../types'
+import type { MealPlace } from '../types'
 import { WEEKDAYS } from '../lib/menu'
 import {
   ATTENDANCE_TEMPLATES,
@@ -9,6 +10,21 @@ import {
 } from '../lib/attendance'
 import { useStore } from '../store'
 import { plural } from '../lib/format'
+import { Icon } from './icons'
+
+/**
+ * Значок места: дома, с собой, не дома.
+ *
+ * Раньше здесь стояли типографские знаки — точка и стрелка вверх. Точка не
+ * говорит «дома» ничего, стрелка не говорит «в контейнере», а рисуются они
+ * шрифтом системы, то есть в каждой ОС по-своему. Теперь тот же набор
+ * контуров, что и во всём приложении. «Не дома» остаётся пустым намеренно:
+ * это единственное состояние, в котором ничего не происходит.
+ */
+function PlaceMark({ place }: { place: MealPlace }) {
+  if (place === 'away') return null
+  return <Icon name={place === 'takeaway' ? 'bag' : 'home'} size={15} />
+}
 
 /**
  * Кто где ест. Три состояния, а не два: обед, взятый с собой, нужно
@@ -83,7 +99,7 @@ export function AttendanceGrid() {
                   onClick={() => cycleMealPlace(eater.id, day, slot.id)}
                   aria-label={`${label}, ${slot.label.toLowerCase()}: ${MEAL_PLACE_LABEL[place]}`}
                 >
-                  {place === 'takeaway' ? '↑' : place === 'away' ? '' : '·'}
+                  <PlaceMark place={place} />
                 </button>
               )
             })}
@@ -94,7 +110,9 @@ export function AttendanceGrid() {
       <div className="legend">
         {MEAL_PLACE.map((p) => (
           <span key={p.id} className="legend__item">
-            <i className="legend__dot" data-place={p.id} />
+            <i className="legend__dot" data-place={p.id}>
+              <PlaceMark place={p.id} />
+            </i>
             {p.label} — {p.hint}
           </span>
         ))}
