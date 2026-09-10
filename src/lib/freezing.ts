@@ -5,6 +5,7 @@ import type {
   RecipeStep,
   ThawMethod,
 } from '../types'
+import { MONTHS_GEN } from './day'
 
 /**
  * Как блюдо ведёт себя в морозилке.
@@ -125,10 +126,7 @@ export function expiresOn(cookedOn: Date, days: number): Date {
   return date
 }
 
-const MONTHS_GEN = [
-  'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
-  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
-]
+// месяцы живут в lib/day: одна дата не должна называться по-разному
 
 /** «до 9 декабря» — как это писать на контейнере. */
 export function formatUseBy(date: Date): string {

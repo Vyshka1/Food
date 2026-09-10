@@ -77,3 +77,42 @@ export function daysBetween(from: string, to: string): number {
   const b = parseIso(to)
   return Math.round((b.getTime() - a.getTime()) / 86400000)
 }
+
+/**
+ * Месяцы в родительном падеже: «7 сентября», а не «7 сентябрь».
+ *
+ * Лежат здесь, а не в каждом экране: одна и та же неделя не должна
+ * называться по-разному на соседних экранах.
+ */
+export const MONTHS_GEN = [
+  'января',
+  'февраля',
+  'марта',
+  'апреля',
+  'мая',
+  'июня',
+  'июля',
+  'августа',
+  'сентября',
+  'октября',
+  'ноября',
+  'декабря',
+] as const
+
+/**
+ * Подпись недели: «7–13 сентября», а на стыке месяцев «28 сентября — 4
+ * октября».
+ *
+ * Была написана четырьмя копиями — в меню, в истории недель, в закупке и
+ * своим массивом месяцев в морозилке. Копии совпадали побайтно ровно до
+ * первой правки: поменяв тире или падеж в одной, получаешь два экрана,
+ * по-разному называющих одну и ту же неделю.
+ */
+export function weekLabel(weekStart: string): string {
+  const start = parseIso(weekStart)
+  const end = parseIso(weekStart)
+  end.setDate(end.getDate() + 6)
+  return start.getMonth() === end.getMonth()
+    ? `${start.getDate()}–${end.getDate()} ${MONTHS_GEN[end.getMonth()]}`
+    : `${start.getDate()} ${MONTHS_GEN[start.getMonth()]} — ${end.getDate()} ${MONTHS_GEN[end.getMonth()]}`
+}

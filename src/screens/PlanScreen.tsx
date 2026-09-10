@@ -38,34 +38,6 @@ const MULTI_FORMS: Partial<Record<Appliance, [string, string, string]>> = {
 /** Род прибора: от него зависит «свободна» или «свободен». */
 const FEMININE: Appliance[] = ['stove', 'oven', 'multicooker', 'microwave']
 
-/*
- * Значки «рука» и «глаз». В общем наборе `icons.tsx` их нет, а сам набор
- * сейчас правит соседний поток — две правки одного файла встретились бы
- * конфликтом. Контур тот же, что у остальных значков: сетка 24, штрих 1.7.
- */
-const GLYPH = {
-  hand: 'M8 12V5.5a1.5 1.5 0 1 1 3 0V11M11 11V4.5a1.5 1.5 0 1 1 3 0V11M14 11V6.5a1.5 1.5 0 1 1 3 0V14a6 6 0 0 1-6 6h-1.2a4.8 4.8 0 0 1-3.9-2l-2.7-3.4a1.6 1.6 0 0 1 2.5-2L8 14',
-  eye: 'M2.5 12S6 6 12 6s9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6ZM12 14.5a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5',
-}
-
-function Glyph({ d, size = 20 }: { d: string; size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={1.7}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      focusable="false"
-    >
-      <path d={d} />
-    </svg>
-  )
-}
 
 /** Текст шага, после которого морозят сырым — чтобы этикетка была понятна. */
 function stepText(recipeId: string, index: number): string {
@@ -197,14 +169,14 @@ export function PlanScreen({
             </div>
             <div className="plan-stat">
               <i className="plan-stat__icon">
-                <Glyph d={GLYPH.hand} />
+                <Icon name="hand" size={20} />
               </i>
               <b>{formatDuration(current.handsOnMinutes)}</b>
               <span>руки заняты</span>
             </div>
             <div className="plan-stat">
               <i className="plan-stat__icon">
-                <Glyph d={GLYPH.eye} />
+                <Icon name="eye" size={20} />
               </i>
               <b>{formatDuration(current.attentionMinutes)}</b>
               <span>присмотр</span>

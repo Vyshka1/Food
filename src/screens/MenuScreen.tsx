@@ -19,7 +19,7 @@ import { DishThumb } from '../components/DishImage'
 import { plural } from '../lib/format'
 import { MACRO_COLOR } from '../lib/palette'
 import { ReplacePicker } from '../components/ReplacePicker'
-import { daysBetween, parseIso, today } from '../lib/day'
+import { daysBetween, parseIso, today, weekLabel } from '../lib/day'
 
 const STORAGE_BADGE: Record<string, { label: string; cls: string } | null> = {
   fresh: null,
@@ -162,17 +162,7 @@ export function MenuScreen() {
     return d.getDate()
   })
 
-  const monthNames = [
-    'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
-    'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
-  ]
-  const weekStart = parseIso(shown.weekStart)
-  const weekEnd = parseIso(shown.weekStart)
-  weekEnd.setDate(weekEnd.getDate() + 6)
-  const weekLabel =
-    weekStart.getMonth() === weekEnd.getMonth()
-      ? `${weekStart.getDate()}–${weekEnd.getDate()} ${monthNames[weekEnd.getMonth()]}`
-      : `${weekStart.getDate()} ${monthNames[weekStart.getMonth()]} — ${weekEnd.getDate()} ${monthNames[weekEnd.getMonth()]}`
+  const weekTitle = weekLabel(shown.weekStart)
 
   // план и факт: пока отметок нет, показываем состав недели, потом — что съели
   const eatenCount = shown.entries.filter((e) => e.status === 'eaten').length
@@ -204,7 +194,7 @@ export function MenuScreen() {
           </button>
           <div className="week-nav__title">
             <b>
-              {weekLabel}
+              {weekTitle}
               {preview && <span className="badge week-nav__badge">следующая</span>}
             </b>
             <div className="muted small">
