@@ -1,17 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { CookingPlan, PlannedStep } from '../types'
-import { APPLIANCE_LABEL } from '../types'
+import { APPLIANCE_LABEL, STATION_LABEL } from '../types'
 import { formatDuration } from '../lib/cookingPlan'
 import { cookProgress, stepKey } from '../lib/cookProgress'
 import { useKeepAwake } from '../hooks/useKeepAwake'
 import { Icon } from '../components/icons'
-
-const STATION_LABEL: Record<string, string> = {
-  prep: 'руками',
-  stove: 'плита',
-  oven: 'духовка',
-  wait: 'ждём',
-}
 
 function where(step: PlannedStep): string {
   const place = step.appliance ? APPLIANCE_LABEL[step.appliance] : STATION_LABEL[step.station]

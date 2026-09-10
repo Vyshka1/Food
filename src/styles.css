@@ -759,54 +759,6 @@ select {
   margin-right: 8px;
 }
 
-/* ── План готовки ─────────────────────────────────────────────────────── */
-.timeline {
-  position: relative;
-  padding-left: 62px;
-}
-
-.tl-step {
-  position: relative;
-  padding: 12px 14px;
-  background: var(--card);
-  border-radius: var(--radius-md);
-  margin-bottom: 8px;
-  box-shadow: var(--shadow);
-}
-
-.tl-step[data-passive='true'] {
-  background: var(--card-soft);
-  box-shadow: none;
-}
-
-.tl-step__time {
-  position: absolute;
-  left: -62px;
-  top: 14px;
-  width: 52px;
-  text-align: right;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.tl-step__dish {
-  font-size: 12px;
-  color: var(--muted);
-  margin-bottom: 2px;
-}
-
-.tl-step__text {
-  font-size: 15px;
-  line-height: 1.35;
-}
-
-.tl-step__tag {
-  font-size: 11px;
-  color: var(--muted);
-  margin-top: 4px;
-}
 
 .plan-stats {
   display: flex;
@@ -2698,12 +2650,20 @@ select {
 }
 
 /*
- * На узком экране рейка идёт первой — там она и была до появления двух
- * колонок: сумма чека и кнопка «в магазин» стояли над списком. Телефон
- * остаётся главным устройством, и его порядок первичен.
+ * Порядок на телефоне решает экран, а не каркас.
+ *
+ * Замерено на 390 px: если поднять рейку целиком над содержимым, до
+ * расписания готовки остаётся 1274 px прокрутки, а до первого продукта в
+ * закупке — 1203 px. То есть человек полутора экранами ниже находит то, ради
+ * чего пришёл. Поэтому по умолчанию рейка идёт после содержимого.
+ *
+ * «Продуктам» этого мало: им нужны наверху сумма чека и кнопка «в магазин», а
+ * справки — под списком. Они растворяют рейку (`display: contents`) и
+ * расставляют карточки поштучно у себя в products.css. Каркас такую точность
+ * не навязывает и не мешает ей.
  */
 .workspace__rail {
-  order: -1;
+  order: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;

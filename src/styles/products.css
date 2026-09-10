@@ -1,1 +1,367 @@
 /* Экран «Продукты». Заполняется потоком закупки. */
+
+/*
+ * Колонки каркаса расставляют карточки через gap, а у `.card` есть свой
+ * нижний отступ — вместе они дают полтора интервала между блоками.
+ */
+.products-main > .card {
+  margin-bottom: 0;
+}
+
+/*
+ * Строка управления: вкладки, поиск и категории одним блоком.
+ *
+ * Липнет к верху только на широком экране. Замер (семья из двоих, неделя из
+ * семи готовок — 42 строки списка, 9 категорий): страница 3 795 px на 1440 и
+ * 6 575 px на 390, сама строка 206 px и 163 px. На телефоне липкая строка
+ * забирала бы 19% высоты окна навсегда, а список там и так листается целиком;
+ * на 1440 те же 206 px — 23% окна, но иначе, чтобы сменить категорию, надо
+ * пролистать почти четыре тысячи точек обратно наверх.
+ */
+.products-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 0;
+  background: var(--bg);
+}
+
+@media (min-width: 900px) {
+  .products-bar {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+  }
+}
+
+/*
+ * Категории на телефоне — одной прокручиваемой строкой, а не сеткой в три
+ * ряда. Замер на 390 px: десять чипов переносились в три ряда (174 px) и
+ * растили строку управления до 298 px — на липкой строке это 35% высоты окна.
+ * На 1440 они переносятся в два ряда (84 px) и помещаются целиком, а тянуть
+ * ленту вбок мышью неудобно, поэтому там перенос и остаётся.
+ *
+ * Селектор из двух классов не ради веса: этот файл подключён первой же
+ * строкой `styles.css`, и при равной силе побеждает общий `.chips` с его
+ * `flex-wrap: wrap`. То же и у рейки ниже.
+ */
+@media (max-width: 899px) {
+  .chips.products-cats {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    /* полоса прокрутки съедала бы 15 px под чипами и дёргала строку */
+    scrollbar-width: none;
+    /* тень и рамка крайних чипов не должны обрезаться по краям ленты */
+    margin-inline: -2px;
+    padding-inline: 2px;
+    padding-bottom: 2px;
+  }
+
+  .chips.products-cats::-webkit-scrollbar {
+    display: none;
+  }
+
+  .chips.products-cats > .chip {
+    flex: 0 0 auto;
+  }
+}
+
+/*
+ * Порядок на телефоне. Каркас держит рейку под содержимым — для «Плана» это
+ * верно, а здесь мало: сумма чека и кнопка «в магазин» должны быть наверху, а
+ * справки — под списком. Поэтому рейка растворяется, и карточки
+ * расставляются поштучно.
+ *
+ * Замер на 390 px: рейка целиком сверху — 1 102 px, и первый продукт начинался
+ * на 1 203-й точке, полторы высоты экрана до главного действия. Наверху
+ * оставлены «В магазин» (131 px) и «Финансы» (249 px); после правки первый
+ * продукт на 833-й точке.
+ */
+@media (max-width: 899px) {
+  .workspace__rail.products-rail {
+    display: contents;
+  }
+
+  .workspace__rail.products-rail > * {
+    order: 1;
+  }
+
+  .workspace__rail.products-rail > .rail-cta {
+    order: -2;
+  }
+
+  .workspace__rail.products-rail > .products-rail__money {
+    order: -1;
+  }
+}
+
+.products-bar .input {
+  /* поле поиска в Safari рисует свою рамку и крестик — гасим оба */
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.products-bar .input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* ── Полоса прогресса ─────────────────────────────────────────────────── */
+.buy-progress {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px 16px;
+}
+
+.buy-ring {
+  flex: 0 0 auto;
+}
+
+.buy-progress__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1 1 160px;
+}
+
+/*
+ * Подсказка справа — только там, где для неё есть место. На 390 px она занимает
+ * две строки и отжимает главное число вниз, а в рейке та же мысль написана
+ * ещё раз, поэтому здесь её просто нет.
+ */
+.buy-progress__hint {
+  display: none;
+}
+
+@media (min-width: 900px) {
+  .buy-progress__hint {
+    display: block;
+    flex: 0 1 200px;
+    text-align: right;
+    line-height: 1.35;
+  }
+}
+
+/* ── Заголовок категории ──────────────────────────────────────────────── */
+.cat-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.cat-head__icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-sm);
+  background: var(--green-soft);
+  color: var(--green-dark);
+}
+
+.cat-head__name {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-weight: 700;
+  min-width: 0;
+}
+
+.cat-head__sum {
+  margin-left: auto;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/*
+ * Замер на 390 px: «ОВОЩИ И ЗЕЛЕНЬ» это 126 px, «10 позиций · ≈ 1 233 ₽» —
+ * 288 px, вместе с отступом 424 px при доступных 326. Ставим сумму на свою
+ * строку, иначе она уезжает за край карточки.
+ */
+@media (max-width: 420px) {
+  .cat-head {
+    flex-wrap: wrap;
+  }
+
+  .cat-head__sum {
+    flex-basis: 100%;
+    margin-left: 38px;
+    text-align: left;
+  }
+}
+
+/* ── Рейка ────────────────────────────────────────────────────────────── */
+.rail-money {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+}
+
+.rail-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.rail-line > span:first-child {
+  color: var(--muted);
+  min-width: 0;
+}
+
+.rail-line b {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Куда уходит чек: неделя и запасы одной полосой, а не двумя числами подряд. */
+.split-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--card-soft);
+}
+
+.split-bar__used {
+  background: var(--green);
+}
+
+.split-bar__left {
+  background: var(--green-soft);
+}
+
+.split-legend {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.rail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  /*
+   * Замер: постоянных продуктов в этом меню 7 строк (148 px), но сюда же
+   * попадает всё отмеченное «есть дома» — если отметить весь список, это
+   * 42 строки и 918 px, и кнопка «Проверить запасы» уходила под сгиб вместе
+   * с концом карточки. Потолок в 220 px оставляет десяток строк и кнопку.
+   */
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.rail-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.rail-list li > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Строка отдела магазина ───────────────────────────────────────────── */
+.store-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid transparent;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  padding: 8px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.store-row:hover {
+  background: var(--green-tint);
+}
+
+.store-row[data-active='true'] {
+  background: var(--green-tint);
+  border-color: var(--green-soft);
+}
+
+.store-row__icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border-radius: var(--radius-sm);
+  background: var(--green-soft);
+  color: var(--green-dark);
+}
+
+.store-row__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+
+.store-row__text b {
+  font-weight: 600;
+}
+
+.store-row__arrow {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+/*
+ * Значок в подсказке — не резиновый. Замер: во flex-строке без этого он
+ * сжимался с 16 до 8 px и превращался в вертикальную чёрточку.
+ */
+.rail-tip > svg {
+  flex: 0 0 auto;
+}
+
+/* Кнопка в карточке рейки не должна тянуться во всю ширину. */
+.rail-card .btn--small {
+  align-self: flex-start;
+}
+
+
+/*
+ * Лупа внутри поля, а не рядом: поле поиска без значка на широком экране
+ * теряется среди чипов — оно такое же светлое и такой же высоты.
+ */
+.products-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.products-search > svg {
+  position: absolute;
+  left: 14px;
+  color: var(--muted);
+  pointer-events: none;
+}
+
+.products-search .input {
+  width: 100%;
+  padding-left: 42px;
+}

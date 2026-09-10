@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addDays, daysBetween, isoDate, mondayOf, parseIso, today } from './day'
+import { addDays, daysBetween, isoDate, mondayOf, parseIso, today, weekLabel } from './day'
 
 /*
  * Проверки написаны так, чтобы проходить в любом часовом поясе: даты и
@@ -151,5 +151,34 @@ describe('в приложении нет всемирных дат', () => {
     const wasBroken = "const today = new Date().toISOString().slice(0, 10)\nnew Date('2026-01-05')"
     expect(patterns.some((p) => p.test(wasBroken))).toBe(true)
     expect(patterns.every((p) => p.test(wasBroken))).toBe(true)
+  })
+})
+
+describe('подпись недели', () => {
+  /*
+   * Одна неделя — одно название на всех экранах. Ветка на стыке месяцев не
+   * проверялась ничем во всём проекте: её можно было заменить на «7.9 - 13.9»,
+   * и все тесты оставались зелёными. А видна она читателю раз в месяц.
+   */
+  it('внутри месяца — короткая форма', () => {
+    expect(weekLabel('2026-09-07')).toBe('7–13 сентября')
+    expect(weekLabel('2026-09-01')).toBe('1–7 сентября')
+  })
+
+  it('на стыке месяцев называет оба', () => {
+    expect(weekLabel('2026-09-28')).toBe('28 сентября — 4 октября')
+    expect(weekLabel('2026-12-28')).toBe('28 декабря — 3 января')
+  })
+
+  it('високосный февраль не сбивает границу', () => {
+    // 2024-02-26 + 6 = 3 марта, потому что февраль в 2024-м двадцатидевятидневный
+    expect(weekLabel('2024-02-26')).toBe('26 февраля — 3 марта')
+    // а в невисокосном 2026-м та же дата даёт другой конец недели
+    expect(weekLabel('2026-02-23')).toBe('23 февраля — 1 марта')
+  })
+
+  it('месяцы стоят в родительном падеже', () => {
+    expect(weekLabel('2026-05-04')).toBe('4–10 мая')
+    expect(weekLabel('2026-08-03')).toBe('3–9 августа')
   })
 })

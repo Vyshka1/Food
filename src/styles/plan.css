@@ -1,1 +1,397 @@
-/* Экран «План готовки». Заполняется потоком расписания. */
+/* Экран «План готовки».
+ *
+ * Файл подключён из styles.css первым, поэтому там, где правило спорит с общим,
+ * селектор здесь намеренно длиннее: иначе выиграет общий, стоящий ниже.
+ */
+
+/* ── Управление: дни готовки и «одна / вдвоём» ─────────────────────────── */
+.plan-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+@media (min-width: 900px) {
+  /* на широком экране оба переключателя помещаются в одну строку */
+  .plan-controls {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  /* переключателям хватает своей ширины: «Пн» — 24 px текста, а не треть строки */
+  .plan-controls .day-toggle,
+  .plan-controls .segmented {
+    flex: 0 0 auto;
+  }
+
+  .plan-controls .day-toggle button {
+    flex: 0 0 auto;
+    min-width: 64px;
+  }
+
+  .plan-controls .segmented button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    padding: 9px 14px;
+  }
+}
+
+/* Внутри колонки расстояния держит сам грид, поля карточек тут лишние. */
+.plan-main .card {
+  margin-bottom: 0;
+}
+
+.plan-main > .hint {
+  margin: 0;
+}
+
+.plan-day {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+/* ── Три плитки времени ───────────────────────────────────────────────── */
+/*
+ * На 390 px три плитки делят 338 px — по 113 px, из них 89 px под текст (замеры
+ * в Chromium). «1 ч 47 мин» занимает 86 px при 17 px кегля и 111 px при 22 px,
+ * а значок слева отнял бы ещё 50 px. Поэтому до 560 px значок стоит над числом,
+ * и число мельче; дальше места хватает на макетную раскладку.
+ */
+.plan-stats .plan-stat {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  padding: 12px;
+  align-content: start;
+}
+
+.plan-stats .plan-stat b {
+  font-size: 17px;
+}
+
+.plan-stat__icon {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--green-soft);
+  color: var(--green-dark);
+  font-style: normal;
+}
+
+@media (min-width: 560px) {
+  .plan-stats .plan-stat {
+    grid-template-columns: auto 1fr;
+    column-gap: 12px;
+    row-gap: 2px;
+    padding: 16px;
+  }
+
+  .plan-stats .plan-stat .plan-stat__icon {
+    grid-row: span 2;
+    width: 38px;
+    height: 38px;
+  }
+
+  .plan-stats .plan-stat b {
+    font-size: 22px;
+  }
+}
+
+/* ── Строка старта: одна строка, «начну» и «закончу» по краям ──────────── */
+.plan-start {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.plan-start__set {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.plan-start__end {
+  margin-left: auto;
+}
+
+.plan-start__end b {
+  color: var(--ink);
+}
+
+/* ── Расписание диаграммой ────────────────────────────────────────────── */
+.gantt {
+  /* цвета полос заодно служат образцами в легенде — один источник на обе */
+  --band-hands: var(--green-dark);
+  --band-stove: #7ea86c;
+  --band-stove-alt: #c6dcba;
+  --band-oven: #c98b34;
+  --band-free: #dcd8c6;
+}
+
+.gantt__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.gantt__legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.gantt__legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.gantt__swatch {
+  width: 14px;
+  height: 10px;
+  border-radius: 3px;
+  flex: 0 0 auto;
+}
+
+.gantt__swatch[data-band='hands'],
+.gantt__bar[data-band='hands'] {
+  background: var(--band-hands);
+}
+
+/* «плита» — штриховка: полоса занята, но руки при этом могут быть свободны */
+.gantt__swatch[data-band='stove'],
+.gantt__bar[data-band='stove'] {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--band-stove) 0 4px,
+    var(--band-stove-alt) 4px 8px
+  );
+}
+
+.gantt__swatch[data-band='oven'],
+.gantt__bar[data-band='oven'] {
+  background: var(--band-oven);
+}
+
+.gantt__swatch[data-band='free'],
+.gantt__bar[data-band='free'] {
+  background: var(--band-free);
+}
+
+/*
+ * Диаграмма прокручивается внутри себя, а не тянет за собой страницу: на 390 px
+ * от экрана остаётся 326 px, а план на 1 ч 39 мин в читаемом масштабе занимает
+ * 498 px (замер в Chromium). Разницу забирает прокрутка этого блока.
+ */
+.gantt__scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+}
+
+.gantt__grid {
+  display: grid;
+  grid-template-columns: 128px minmax(var(--gantt-lanes), 1fr);
+  column-gap: 12px;
+  /* запас справа под последнюю подпись времени: «12:40» — 30 px */
+  padding-right: 36px;
+}
+
+.gantt__axis {
+  position: relative;
+  height: 18px;
+}
+
+.gantt__tick {
+  position: absolute;
+  top: 0;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--muted);
+  white-space: nowrap;
+  padding-left: 4px;
+}
+
+.gantt__lane {
+  position: relative;
+  min-height: 40px;
+  padding: 6px 0;
+  /* та же сетка времени, что и в подписях: линия ровно под каждой засечкой */
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--line) 0 1px,
+    transparent 1px var(--gantt-tick)
+  );
+}
+
+/* Вертикальная линия старта — общая для оси и всех строк. */
+.gantt__axis::before,
+.gantt__lane::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--green-dark);
+}
+
+.gantt__dish {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ink);
+}
+
+.gantt__dish-title {
+  font-size: 12.5px;
+  line-height: 1.25;
+  /* две строки: длинные названия рецептов иначе распирают строку блюда */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.gantt__bar {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 22px;
+  /* минутный шаг иначе исчезает совсем */
+  min-width: 3px;
+  border-radius: 5px;
+}
+
+/* ── Ближайшие шаги ───────────────────────────────────────────────────── */
+.next-step {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  padding: 9px 0;
+}
+
+.next-step + .next-step {
+  border-top: 1px solid var(--line);
+}
+
+.next-step__mark {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid var(--line);
+  display: grid;
+  place-items: center;
+  color: var(--green);
+}
+
+.next-step__what {
+  flex: 1 1 180px;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.35;
+}
+
+.next-step__dish {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Рейка: что приготовим ────────────────────────────────────────────── */
+.rail-dish {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.rail-dish + .rail-dish {
+  border-top: 1px solid var(--line);
+  padding-top: 10px;
+}
+
+.rail-dish__name {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.rail-dish__name b {
+  font-size: 14px;
+}
+
+.rail-dish__pack {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  text-align: right;
+}
+
+.rail-dish__pack b {
+  font-size: 13px;
+}
+
+/* ── Рейка: загрузка кухни ────────────────────────────────────────────── */
+.load-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.load-row__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* Прибор, который на кухне один, помещается в строку: «Духовка — свободна». */
+.load-row--single .load-row__text {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.load-row b {
+  font-size: 14px;
+}
+
+/* Названия приборов в общем словаре со строчной буквы, а здесь они начинают строку. */
+.load-row b::first-letter {
+  text-transform: uppercase;
+}
+
+.load-dots {
+  display: flex;
+  gap: 4px;
+  flex: 0 0 auto;
+}
+
+.load-dots i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--line);
+}
+
+.load-dots i[data-busy='true'] {
+  background: var(--green);
+}
