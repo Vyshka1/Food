@@ -3,3 +3,7 @@ dist
 .DS_Store
 *.local
 tsconfig.tsbuildinfo
+
+# Рабочие копии, которые заводит инструментарий для параллельной работы.
+# Внутри них лежат git-worktree'ы — в репозиторий они не относятся.
+.claude/worktrees

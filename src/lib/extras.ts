@@ -1,5 +1,6 @@
 import type { DailyExtra, ExtraKind, Household, MealSlot, Norms } from '../types'
 import { statsOf } from './nutrition'
+import { isFed } from './attendance'
 
 /**
  * Ежедневные дополнения к столу.
@@ -121,8 +122,29 @@ export function extraOn(extra: DailyExtra, day: number): boolean {
   return extra.days.length === 0 || extra.days.includes(day)
 }
 
+/**
+ * Дополнение попадает на стол, только если человек в этот приём пищи дома.
+ *
+ * Дней недели мало: Кирилл обедает не дома по средам, а овощная тарелка к
+ * обеду всё равно ставилась — и не только на экране. Она шла в его дневную
+ * норму и в список покупок, то есть мы считали калории съеденными и покупали
+ * огурцы на обед, которого не было.
+ *
+ * «С собой» — это дома: еда наша, человек её просто уносит. Не считается
+ * только «не дома», и ровно так же устроен подбор блюд (`isFed`). Правило
+ * одно на всё приложение и живёт здесь, а не в каждом вызывающем.
+ */
+export function extraApplies(household: Household, extra: DailyExtra, day: number): boolean {
+  if (!extraOn(extra, day)) return false
+  const eater = household.eaters.find((e) => e.id === extra.eaterId)
+  // дополнение без хозяина — след удалённого едока; на стол оно не попадает
+  return eater ? isFed(eater, day, extra.slot) : false
+}
+
 export function extrasOf(household: Household, eaterId: string, day: number): DailyExtra[] {
-  return (household.extras ?? []).filter((e) => e.eaterId === eaterId && extraOn(e, day))
+  return (household.extras ?? []).filter(
+    (e) => e.eaterId === eaterId && extraApplies(household, e, day),
+  )
 }
 
 /** Что человек съест дополнениями за день. */
@@ -147,14 +169,17 @@ export function extraNorms(household: Household, eaterId: string, day: number): 
 
 /** Дополнения к конкретному приёму пищи — их и показываем рядом с блюдом. */
 export function extrasAt(household: Household, day: number, slot: MealSlot): DailyExtra[] {
-  return (household.extras ?? []).filter((e) => e.slot === slot && extraOn(e, day))
+  return (household.extras ?? []).filter(
+    (e) => e.slot === slot && extraApplies(household, e, day),
+  )
 }
 
 /** Что купить на дополнения за неделю. */
 export function extraShopping(household: Household): Map<string, number> {
   const need = new Map<string, number>()
   for (const extra of household.extras ?? []) {
-    const days = [0, 1, 2, 3, 4, 5, 6].filter((d) => extraOn(extra, d)).length
+    // считаем только те дни, когда человек и правда за столом
+    const days = [0, 1, 2, 3, 4, 5, 6].filter((d) => extraApplies(household, extra, d)).length
     if (days === 0) continue
     for (const { ingredientId, qty } of extraIngredients(extra)) {
       need.set(ingredientId, (need.get(ingredientId) ?? 0) + qty * days)

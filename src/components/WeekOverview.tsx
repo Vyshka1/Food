@@ -1,4 +1,4 @@
-import type { MenuEntry } from '../types'
+import type { MenuEntry, WeekMenu } from '../types'
 import { MEAL_SLOTS } from '../types'
 import { WEEKDAYS_FULL, cookTasks, dayNorms, dayTotals, fedEaters, takeawayEaters } from '../lib/menu'
 import { recipeById } from '../data/recipeRegistry'
@@ -16,10 +16,19 @@ import { Icon } from './icons'
  *
  * На телефоне это не таблица, а семь карточек: в каждой — блюда, цена дня,
  * отметки готовки и заморозки и то, кого в этот день нет.
+ *
+ * Меню приходит извне, а не из хранилища: недель теперь две — текущая и
+ * предпросмотр следующей, — и выбирает между ними экран.
  */
-export function WeekOverview({ onOpenDay }: { onOpenDay: (day: number) => void }) {
-  const { household, menu, pantry } = useStore()
-  if (!household || !menu) return null
+export function WeekOverview({
+  menu,
+  onOpenDay,
+}: {
+  menu: WeekMenu
+  onOpenDay: (day: number) => void
+}) {
+  const { household, pantry } = useStore()
+  if (!household) return null
 
   // калории дня — от фактически приготовленных партий, как и в карточке блюда
   const actual = cookedStats(planWeek(menu, household, { pantry }), pantry)

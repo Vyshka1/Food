@@ -1,6 +1,7 @@
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { allRecipes, recipeById } from '../data/recipeRegistry'
 import type {
+  AheadBatch,
   Allergen,
   Eater,
   EaterPortion,
@@ -417,12 +418,18 @@ function scoreRecipe(
     topTarget?: number
     /** Чего человек хочет от этой пересборки. */
     options?: BuildOptions
+    /**
+     * Эта готовка последняя в неделе: ей кормить и начало следующей, а
+     * доехать туда может только то, что морозится.
+     */
+    wantsFreezable?: boolean
   },
 ): number {
   const { household, targetKcal, targetMacros, day, state, jitter } = opts
   const stats = recipeStats(recipe)
   const scale = portionScale(recipe, targetKcal)
   let score = 0
+  if (opts.wantsFreezable && !recipe.batch?.freezeCooked) score += AHEAD_WEIGHT
 
   // попадание в норму по калориям
   const achieved = stats.kcal * scale
@@ -593,6 +600,42 @@ function repeatAllowed(
 
 /** Насколько кандидат может уступать лучшему, чтобы всё ещё попасть в жеребьёвку. */
 const NEAR_SCORE_MARGIN = 50
+
+/**
+ * Чего стоит блюдо, которое нельзя заморозить, в последнюю готовку недели.
+ *
+ * Последняя готовка кормит и начало следующей недели, а доехать туда может
+ * только то, что морозится. Сначала я поправил не счёт, а разрешение ничьих
+ * («почти равные» варианты) — и это не дало ничего: в замере `near` почти
+ * всегда состоял из одного варианта, выбирать было не из чего. Значит, вес
+ * должен быть в самом счёте.
+ *
+ * Замер (12 недель × 12 прогонов, семья из двоих): касса ₽/нед, выброшено
+ * ₽/нед, готовок в неделю, приёмов пищи из морозилки, худшее отклонение дня.
+ *
+ * Готовка по средам (`[3]` — тот самый случай «отметил один день, а готовлю
+ * два»):
+ *     0 — 6991, 459, 12.74, 1.28, 3.2%
+ *   100 — 6538, 390, 12.18, 1.26, 2.7%
+ *   150 — 6518, 367, 11.83, 1.38, 2.5%
+ *   250 — 6516, 353, 11.64, 1.39, 2.5%
+ *   500 — 6505, 352, 11.63, 1.39, 2.5%
+ * Готовка по воскресеньям (`[6]`):
+ *     0 — 6925, 438, 13.49, 0.97, 2.9%
+ *   100 — 6818, 447, 13.44, 0.84, 3.9%
+ *   150 — 6708, 429, 13.49, 0.96, 2.7%
+ *   250 — 6702, 437, 13.60, 0.92, 3.3%
+ *
+ * После двухсот пятидесяти счёт насыщается — вес уже и так решает исход. Сто
+ * пятьдесят выбрано потому, что дальше готовок не убавляется (у `[6]` их даже
+ * становится больше, чем без запаса), а день начинает уходить от нормы: за
+ * лишние одиннадцать рублей платить третью процента отклонения не за что.
+ *
+ * Порядок величины не случаен: NEAR_SCORE_MARGIN равен 50 — меньшим весом
+ * порядок вариантов не изменить; штраф за недобор калорий равен 200 — большим
+ * весом можно было бы оставить людей голодными ради морозилки.
+ */
+const AHEAD_WEIGHT = 150
 
 /**
  * Блюдо, которое едут есть в контейнере, должно продержаться хотя бы до
@@ -774,6 +817,22 @@ export function buildWeekMenu(
       freezerStock.set(item.recipeId, { portions, left })
     }
   }
+  /*
+   * Закреплённая заготовка уже съедена — второй раз её из морозилки не
+   * достанут.
+   *
+   * Пересборка с закреплениями приходит с записями прошлой сборки, и запись из
+   * морозилки среди них сохраняет свою пометку. Клетку она занимает, но
+   * контейнеры до сих пор не списывались: один лоток на три порции человек
+   * закреплял на понедельник, и подбор раздавал те же три порции ещё раз во
+   * вторник. План обещал шесть порций из трёх, а во вторник морозилка
+   * оказывалась пустой.
+   */
+  for (const entry of pinnedAt.values()) {
+    if (!entry.fromFreezer) continue
+    const stock = freezerStock.get(entry.recipeId)
+    if (stock) stock.portions -= totalPortions(entry)
+  }
   // первым в меню попадает то, что раньше испортится: заготовка, о которой
   // никто не вспомнил, через месяц становится мусором
   const freezerOrder = [...freezerStock.entries()].sort((a, b) => a[1].left - b[1].left)
@@ -824,14 +883,9 @@ export function buildWeekMenu(
     }
   }
 
-  const implicit = segments.find((s) => s.implicit && household.cookingDays.length > 0)
-  if (implicit) {
-    warnings.push(
-      `${WEEKDAYS_FULL[0]} не отмечен днём готовки — добавили короткую готовку, чтобы закрыть начало недели.`,
-    )
-  }
-
   const pool = allRecipes().filter((r) => isRecipeAllowed(r, household))
+
+  const gap = aheadGap(household, segments)
 
   for (const slot of household.meals) {
     // приёмы перебираются в порядке household.meals, поэтому «последний» —
@@ -843,6 +897,18 @@ export function buildWeekMenu(
       continue
     }
     for (const segment of segments) {
+      /*
+       * Последняя готовка недели кормит не только её: дни следующей недели до
+       * первой готовки закрывать больше нечем. Заморозить впрок можно только
+       * то, что вообще морозится, — и среди почти равных вариантов такое блюдо
+       * здесь и предпочитаем. Замерено: без этой поправки запас выходил у
+       * одного приёма пищи из трёх (в базе морозятся 24 обеда из 32 и 21 ужин
+       * из 37, но выбор из «почти равных» на них не смотрел).
+       *
+       * Это не перевес в подборе: `near` — уже отобранные варианты, которые по
+       * норме и балансу неотличимы. Ухудшать питание тут нечем.
+       */
+      const wantAhead = !!gap && segment.cookDay === gap.cookDay
       let cursor = 0
       let guard = 0
       while (cursor < segment.days.length && guard++ < 50) {
@@ -888,6 +954,7 @@ export function buildWeekMenu(
             recipe,
             score: scoreRecipe(recipe, {
               household,
+              wantsFreezable: wantAhead,
               targetKcal: target2,
               targetMacros,
               day,
@@ -1010,6 +1077,27 @@ export function buildWeekMenu(
       a.day - b.day || household.meals.indexOf(a.slot) - household.meals.indexOf(b.slot),
   )
 
+  /*
+   * Плашка про дописанную готовку — только если её действительно пришлось
+   * дописать.
+   *
+   * Готовка идёт витками, а не неделями: дни до первой готовки кормит не
+   * понедельник, а прошлый виток. Если он оставил заготовки и они закрыли
+   * начало недели, никакой готовки в понедельник нет — и говорить человеку,
+   * что мы её ему добавили, значит сообщать о том, чего не было. Раньше
+   * плашка зависела только от анкеты и потому висела всегда, в том числе над
+   * неделей, где в понедельник и вторник только достают из морозилки.
+   *
+   * Сам отрезок остаётся: чем-то эти дни закрывать надо, и когда заготовок
+   * нет — а в первую неделю их нет ни у кого, — короткая готовка законна.
+   */
+  const implicit = segments.find((s) => s.implicit && household.cookingDays.length > 0)
+  if (implicit && entries.some((e) => !e.fromFreezer && implicit.days.includes(e.day))) {
+    warnings.push(
+      `${WEEKDAYS_FULL[0]} не отмечен днём готовки — добавили короткую готовку, чтобы закрыть начало недели.`,
+    )
+  }
+
   if (repeatsRelaxed) {
     warnings.push(
       'Правила повторов пришлось ослабить: подходящих блюд на неделю не хватило. Разрешите блюду появляться чаще или добавьте свои рецепты.',
@@ -1052,7 +1140,107 @@ export function buildWeekMenu(
     )
   }
 
-  return { menu: { weekStart: household.weekStart, seed, entries }, warnings }
+  const ahead = planAhead(household, segments, entries, repeats)
+
+  return { menu: { weekStart: household.weekStart, seed, entries, ahead }, warnings }
+}
+
+/**
+ * Сколько сварить впрок — и ради каких дней.
+ *
+ * Готовка идёт витками, а неделя — календарь. Если первая готовка недели не в
+ * понедельник, то дни до неё кормит прошлый виток, а не эта неделя. Раньше их
+ * закрывала молча дописанная понедельничная готовка: человек отмечал в анкете
+ * одно воскресенье, а на кухне выходило два дня у плиты. Теперь последняя
+ * готовка недели варит с запасом, запас уходит в морозилку, и следующая неделя
+ * достаёт его штатным путём — той же веткой, что и любую другую заготовку: без
+ * задачи готовки и без покупки.
+ *
+ * Запас не привязан к записи меню намеренно. Запись живёт внутри своей недели
+ * (`day` и `cookDay` — числа 0..6), и запись следующей недели с `cookDay = 6`
+ * указывала бы на воскресенье **этой** недели: кнопка «Приготовлено» списала бы
+ * продукты под варку, которой ещё не было. Проверено на модели переноса
+ * записями — понедельник получался сваренным за шесть дней до того, как его
+ * съедят.
+ *
+ * Сколько варить: не больше, чем семья согласна есть одно и то же за неделю.
+ * Ограничение то же самое (`repeats.maxPerWeek`), которым связан обычный
+ * подбор, и по той же причине: пять обедов одним супом — не экономия, а
+ * наказание. Дальше запас сам упрётся в морозилку — место в ней считает
+ * планировщик партии.
+ */
+/**
+ * Разрыв в начале недели: дни до первой готовки и та готовка, которой их
+ * закрывать. `null` — закрывать нечего или нечем.
+ *
+ * Один источник правды на две стороны: и подбор блюд (последней готовке нужно
+ * что-то морозящееся), и сам запас. Пока условие было записано дважды, оно
+ * разошлось бы при первой же правке.
+ *
+ * Разрыв в один день не в счёт. Замерено (12 недель × 12 прогонов, готовка по
+ * вторникам и пятницам): запас на единственный понедельник не убирал
+ * понедельничную готовку — её всё равно оставляли приёмы пищи, которым запаса
+ * не досталось, — а касса росла на 109 ₽ в неделю. Платим за морозилку и не
+ * получаем ничего.
+ */
+export function aheadGap(
+  household: Household,
+  segments: CookingSegment[],
+): { days: number[]; cookDay: number } | null {
+  // морозить некуда — переносить нечем: холодильник между неделями приложение
+  // не помнит, и обещать «достанем в понедельник» было бы обещанием наугад
+  if (!household.kitchen.hasFreezer) return null
+  if (household.cookingDays.length === 0) return null
+  const first = segments[0]
+  // готовят с понедельника — разрыва нет, переносить нечего
+  if (!first?.implicit || first.days.length < 2) return null
+  const last = segments[segments.length - 1]
+  if (last.cookDay === first.cookDay) return null
+  return { days: first.days, cookDay: last.cookDay }
+}
+
+export function planAhead(
+  household: Household,
+  segments: CookingSegment[],
+  entries: MenuEntry[],
+  repeats: RepeatRules,
+): AheadBatch[] {
+  const gap = aheadGap(household, segments)
+  if (!gap) return []
+
+  const ahead: AheadBatch[] = []
+  for (const slot of household.meals) {
+    const limit = repeats.maxPerWeek[slot] ?? 0
+    const days = limit > 0 ? gap.days.slice(0, limit) : gap.days
+    // варим то, что и так варится в последнюю готовку недели: отдельное блюдо
+    // «на потом» — это ещё одна кастрюля в тот же вечер
+    const source = entries.find(
+      (e) => e.slot === slot && e.cookDay === gap.cookDay && !e.fromFreezer,
+    )
+    if (!source) continue
+    const recipe = recipeById(source.recipeId)
+    if (!recipe?.batch?.freezeCooked) continue
+
+    let portions = 0
+    const forDays: number[] = []
+    for (const day of days) {
+      // с собой поедет не всё: то же правило, что и для свежесваренного
+      if (takeawayEaters(household, day, slot).length > 0 && !travels(recipe)) continue
+      const share = portionsFor(recipe, household, slot, day).reduce((sum, p) => sum + p.factor, 0)
+      if (share <= 0) continue
+      portions += share
+      forDays.push(day)
+    }
+    if (portions <= 0) continue
+    ahead.push({
+      recipeId: recipe.id,
+      cookDay: gap.cookDay,
+      slot,
+      portions: Math.round(portions * 20) / 20,
+      forDays,
+    })
+  }
+  return ahead
 }
 
 /**
@@ -1375,6 +1563,12 @@ export interface CookTask {
   portions: number
   eatDays: number[]
   freezerPortions: number
+  /**
+   * Порции сверх недели: их варят в эту же готовку и замораживают на начало
+   * следующей. Отдельным числом, а не внутри `portions`, потому что о них надо
+   * сказать словами — иначе партия просто молча вырастает.
+   */
+  aheadPortions: number
 }
 
 /** Группирует меню в задачи готовки: одно блюдо — одна готовка на все дни, которые оно закрывает. */
@@ -1396,10 +1590,21 @@ export function cookTasks(menu: WeekMenu): CookTask[] {
         recipeId: entry.recipeId,
         cookDay: entry.cookDay,
         portions,
+        aheadPortions: 0,
         eatDays: [entry.day],
         freezerPortions: entry.storage === 'freezer' ? portions : 0,
       })
     }
+  }
+  /*
+   * Запас впрок прибавляется к своей готовке, а не заводит новую: варят одну
+   * кастрюлю, просто больше. Если блюдо из меню исчезло (пересборка, замена),
+   * запаса тоже нет — варить его отдельно было бы лишней готовкой ради еды,
+   * которую никто не выбирал.
+   */
+  for (const batch of menu.ahead ?? []) {
+    const task = map.get(cookTaskId(menu.weekStart, batch.recipeId, batch.cookDay))
+    if (task) task.aheadPortions += batch.portions
   }
   return [...map.values()].sort((a, b) => a.cookDay - b.cookDay)
 }

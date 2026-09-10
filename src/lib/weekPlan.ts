@@ -31,6 +31,11 @@ export interface Placement {
   servedGrams: number
   /** В морозилку заготовкой, г. */
   freezeGrams: number
+  /**
+   * Из них — запас впрок: сварено нарочно, на начало следующей недели.
+   * Остальное в морозилке — излишек партии, который просто некуда больше деть.
+   */
+  aheadGrams: number
   /** Хвост на доесть в ближайшие дни, г. */
   tailGrams: number
   /** Ни туда, ни туда: места в морозилке нет, г. */
@@ -230,8 +235,12 @@ function cookingFor(
       continue
     }
     const neededGrams = cookedGrams(recipe, task.portions)
+    // запас впрок — та же арифметика, что и потребность недели: порции в
+    // граммы одной и той же функцией, чтобы «сколько варить» считалось раз
+    const aheadGrams = task.aheadPortions > 0 ? cookedGrams(recipe, task.aheadPortions) : 0
     const batchPlan = planBatch(recipe, {
       neededGrams,
+      aheadGrams,
       hasFreezer: household.kitchen.hasFreezer,
       freezerRoomGrams: room,
       prefer: options.prefer,
@@ -272,6 +281,7 @@ function cookingFor(
       placement: {
         servedGrams: batchPlan.chosen.servedGrams,
         freezeGrams: batchPlan.chosen.freezeGrams,
+        aheadGrams: batchPlan.chosen.aheadGrams,
         tailGrams: batchPlan.chosen.tailGrams,
         unplacedGrams: batchPlan.chosen.unplacedGrams,
       },

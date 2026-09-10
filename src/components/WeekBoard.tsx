@@ -1,4 +1,4 @@
-import type { MenuEntry } from '../types'
+import type { MenuEntry, WeekMenu } from '../types'
 import { MEAL_SLOTS } from '../types'
 import { WEEKDAYS, cookTasks, dayNorms, dayTotals, fedEaters } from '../lib/menu'
 import { recipeById } from '../data/recipeRegistry'
@@ -18,19 +18,29 @@ import { Icon } from './icons'
  *
  * Считает она не сама: те же функции библиотеки, что и дневной экран и
  * карточка блюда. Вторая раскладка не должна означать второй арифметики.
+ *
+ * Меню приходит извне, а не из хранилища: недель теперь две — текущая и
+ * предпросмотр следующей, — и выбирает между ними экран. Доска берёт то, что
+ * ей дали, и не может показать не ту неделю, которую человек открыл.
  */
 export function WeekBoard({
+  menu,
   onOpenDay,
   onOpenEntry,
   day,
 }: {
+  menu: WeekMenu
   onOpenDay: (day: number) => void
-  /** Нажали на блюдо — открываем его карточку, как и на дневном экране. */
-  onOpenEntry: (entry: MenuEntry) => void
+  /**
+   * Нажали на блюдо — открываем его карточку, как и на дневном экране.
+   * Необязателен: в предпросмотре следующей недели карточку показать нечем —
+   * она считает партию по сохранённому меню, а не по показанному.
+   */
+  onOpenEntry?: (entry: MenuEntry) => void
   day: number
 }) {
-  const { household, menu, pantry } = useStore()
-  if (!household || !menu) return null
+  const { household, pantry } = useStore()
+  if (!household) return null
 
   // калории дня — от фактически приготовленных партий, как и везде
   const actual = cookedStats(planWeek(menu, household, { pantry }), pantry)
@@ -97,8 +107,9 @@ export function WeekBoard({
                     <button
                       className="board__dish"
                       key={entry.id}
-                      onClick={() => onOpenEntry(entry)}
-                      title={`${recipe.title} — открыть карточку`}
+                      disabled={!onOpenEntry}
+                      onClick={onOpenEntry ? () => onOpenEntry(entry) : undefined}
+                      title={onOpenEntry ? `${recipe.title} — открыть карточку` : recipe.title}
                       data-eaten={entry.status === 'eaten'}
                       data-skipped={entry.status === 'skipped'}
                     >

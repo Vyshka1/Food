@@ -13,6 +13,7 @@ import { cookTaskId } from './menu'
 import { defaultOils } from './oil'
 import { defaultRepeats } from './menu'
 import { emptyPantry } from './pantry'
+import { ACTIVITY_FACTOR, GOAL_FACTOR } from './nutrition'
 
 /**
  * Чтение и починка сохранённых данных.
@@ -88,11 +89,53 @@ export interface LoadResult {
  * и придумывать за человека, какие из его отлучек были обедом в контейнере,
  * мы не станем.
  */
+/**
+ * Тело едока: возраст, рост, вес, активность и цель.
+ *
+ * Значения из записи нельзя брать на веру. Норма — это
+ * `basalRate(e) * ACTIVITY_FACTOR[e.activity] * GOAL_FACTOR[e.goal]`: три
+ * сомножителя, и любой из них может оказаться не числом. Возраст, рост и вес
+ * приходят из полей ввода; активность и цель — ключи в таблицах, и неизвестный
+ * ключ даёт `undefined`.
+ *
+ * Одного нечисла хватает, чтобы нормой стал NaN. Дальше NaN расходится по
+ * всему подбору: оценка каждого блюда становится NaN, сравнение с лучшей
+ * оценкой всегда ложно, список «почти равных» вариантов оказывается пуст — и
+ * сборка меню падает целиком. Замерено: `weightKg: NaN` роняет
+ * `buildWeekMenu` на всех 50 проверенных зёрнах; `activity: 'спортсменка'` —
+ * тоже, на любом; `weightKg: 0` — ни на одном.
+ *
+ * Чиним и то, что роняет, и то, что просто не может быть правдой: нулевой рост
+ * сборку не ломает, но норму по нему считать бессмысленно. Подставляем те же
+ * значения, с которых начинается новая анкета. Настоящие восстановить
+ * неоткуда, но рабочая анкета с чужой цифрой лучше экрана с ошибкой вместо
+ * меню: цифру видно в профиле и можно поправить, пустой экран поправить нечем.
+ */
+const BODY_FALLBACK = { age: 30, heightCm: 168, weightKg: 62 } as const
+
+function body(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : fallback
+}
+
+/** Ключ таблицы или значение по умолчанию: неизвестный ключ даёт undefined. */
+function known<T extends string>(value: unknown, table: Record<T, unknown>, fallback: T): T {
+  return typeof value === 'string' && value in table ? (value as T) : fallback
+}
+
 export function migrateEater(eater: Eater & { awayMeals?: string[] }): Eater {
   const mealPlaces: Record<string, MealPlace> = { ...(eater.mealPlaces ?? {}) }
   const away = Array.isArray(eater.awayMeals) ? eater.awayMeals : []
   for (const key of away) mealPlaces[key] = 'away'
-  const migrated: Eater = { ...eater, mealPlaces, ratings: eater.ratings ?? {} }
+  const migrated: Eater = {
+    ...eater,
+    age: body(eater.age, BODY_FALLBACK.age),
+    heightCm: body(eater.heightCm, BODY_FALLBACK.heightCm),
+    weightKg: body(eater.weightKg, BODY_FALLBACK.weightKg),
+    activity: known(eater.activity, ACTIVITY_FACTOR, 'light'),
+    goal: known(eater.goal, GOAL_FACTOR, 'keep'),
+    mealPlaces,
+    ratings: eater.ratings ?? {},
+  }
   delete (migrated as Eater & { awayMeals?: string[] }).awayMeals
   return migrated
 }
@@ -332,6 +375,15 @@ export function parseState(raw: string | null): LoadResult {
         { ...state, menu: null },
         'меню сохранено не полностью — оно будет собрано заново',
       )
+    }
+    /*
+     * Запас впрок — необязательная часть меню, и меню без него рабочее: он
+     * появится при следующей сборке. Поэтому испорченный запас выбрасываем
+     * молча, а не объявляем нечитаемым всё меню. Проверка нужна: cookTasks
+     * перебирает этот список, и строка вместо массива уронила бы сборку плана.
+     */
+    if (state.menu && state.menu.ahead !== undefined && !Array.isArray(state.menu.ahead)) {
+      state.menu = { ...state.menu, ahead: undefined }
     }
     /*
      * Анкета без едоков — не анкета, её придётся заполнить заново. Но кладовая,
