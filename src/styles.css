@@ -379,6 +379,77 @@ select {
 }
 
 /* ── Меню ─────────────────────────────────────────────────────────────── */
+/* ── Какая неделя открыта ─────────────────────────────────────────────── */
+/*
+ * Стрелки по краям заголовка, а не третья вкладка рядом с «День» и «Неделей»:
+ * у недели ровно два соседа, и «дальше — назад» тут читается само.
+ */
+.week-nav {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+}
+
+.week-nav__title {
+  min-width: 0;
+}
+
+.week-nav__arrow {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  padding: 8px 6px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-sm);
+}
+
+/*
+ * Идти некуда — стрелка гаснет, но остаётся на месте: исчезни она, заголовок
+ * прыгал бы влево-вправо при каждом переходе между неделями.
+ */
+.week-nav__arrow:disabled {
+  opacity: 0.25;
+  cursor: default;
+}
+
+.week-nav__ahead {
+  transform: rotate(180deg);
+}
+
+.week-nav__badge {
+  margin-top: 0;
+  vertical-align: 2px;
+}
+
+/*
+ * Оговорка к предпросмотру.
+ *
+ * Не серой подсказкой внизу: человек собирается в воскресенье готовить под то,
+ * что здесь увидел, и должен прочесть, при каких условиях увиденное сбудется.
+ */
+.preview-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  background: var(--green-tint);
+  border: 1px solid var(--green-soft);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.preview-note svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--green-dark);
+}
+
 .week-strip {
   display: flex;
   gap: 6px;
@@ -959,6 +1030,23 @@ select {
 
 .ing-line:last-child {
   border-bottom: none;
+}
+
+/*
+ * Пояснение к строке выше — «из них впрок». Это не отдельный пункт списка, а
+ * уточнение к морозилке: без разделителя сверху и мельче, чтобы читалось как
+ * подпись, а не как ещё одно число в столбик.
+ */
+.ing-line--note {
+  margin-top: -8px;
+  padding-top: 0;
+  font-size: 13px;
+  gap: 12px;
+}
+
+.ing-line--note b {
+  font-weight: 500;
+  text-align: right;
 }
 
 .step-line {
@@ -2228,6 +2316,19 @@ select {
     font-size: 12px;
     line-height: 1.25;
     color: var(--ink);
+  }
+
+  .board__dish {
+    cursor: pointer;
+  }
+
+  /*
+   * В предпросмотре следующей недели плитка не открывается: карточка считает
+   * партию по сохранённой неделе. Без этого правила она выглядела ровно как
+   * нажимаемая и просто не отвечала — вид, который читается как поломка.
+   */
+  .board__dish:disabled {
+    cursor: default;
   }
 
   .board__dish[data-eaten='true'] {

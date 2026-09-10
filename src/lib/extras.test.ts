@@ -1,13 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import type { DailyExtra, Eater, Household, Kitchen } from '../types'
+import type { DailyExtra, Eater, Household, Kitchen, MealPlace, MealSlot } from '../types'
 import { buildWeekMenu, dayNorms, defaultRepeats } from './menu'
 import { buildShoppingList } from './shopping'
 import { dailyNorm, recipeStats } from './nutrition'
 import { recipeById } from '../data/recipeRegistry'
 import { defaultOils } from './oil'
+import { mealKey } from './attendance'
 import {
   EXTRA_KINDS,
+  extraApplies,
   extraIngredients,
+  extraNorms,
   extraShopping,
   extraStats,
   extraSummary,
@@ -172,5 +175,61 @@ describe('норма не уходит в ноль', () => {
     const huge = household([extra({ amount: 500 }), extra({ id: 'x2', kind: 'nuts', amount: 200 })])
     const food = dayNorms(huge, 0, 'e1')
     expect(food.kcal).toBeGreaterThan(dailyNorm(eater).kcal * 0.55)
+  })
+})
+
+/*
+ * Дополнения не спрашивали, дома ли человек. Кирилл обедает не дома по будням,
+ * а овощная тарелка к обеду ставилась всё равно — и не только на экране: она
+ * шла в его дневную норму и в список покупок. Мы считали калории съеденными и
+ * покупали огурцы на обед, которого не было.
+ */
+describe('дополнение ставится только тому, кто за столом', () => {
+  const away = (days: number[], slot: MealSlot = 'lunch') => {
+    const places: Record<string, MealPlace> = {}
+    for (const d of days) places[mealKey(d, slot)] = 'away'
+    return places
+  }
+
+  const family = (places: Record<string, MealPlace>): Household => {
+    const h = household([extra({ eaterId: 'e2', days: [] })])
+    return {
+      ...h,
+      eaters: [eater, { ...eater, id: 'e2', name: 'Кирилл', mealPlaces: places }],
+    }
+  }
+
+  it('не дома — дополнения нет', () => {
+    const household = family(away([0, 1, 2, 3, 4]))
+    const days = [0, 1, 2, 3, 4, 5, 6].filter((d) => extrasAt(household, d, 'lunch').length > 0)
+    // было семь дней из семи, хотя человек за столом только в выходные
+    expect(days).toEqual([5, 6])
+  })
+
+  it('«с собой» — это дома: еда наша, человек её просто уносит', () => {
+    const places: Record<string, MealPlace> = { [mealKey(0, 'lunch')]: 'takeaway' }
+    const household = family(places)
+    expect(extrasAt(household, 0, 'lunch')).toHaveLength(1)
+  })
+
+  it('и в норму дня оно тоже не попадает', () => {
+    // это была не косметика: калории считались съеденными
+    const household = family(away([0]))
+    expect(extraNorms(household, 'e2', 0).kcal).toBe(0)
+    expect(extraNorms(household, 'e2', 6).kcal).toBeGreaterThan(0)
+  })
+
+  it('и в закупку: огурцы на обед, которого не было', () => {
+    const home = family({})
+    const partly = family(away([0, 1, 2, 3, 4]))
+    const sum = (h: Household) => [...extraShopping(h).values()].reduce((a, b) => a + b, 0)
+    expect(sum(partly)).toBeCloseTo((sum(home) * 2) / 7, 5)
+  })
+
+  it('дополнение без хозяина на стол не попадает', () => {
+    // след удалённого едока: раньше он молча продолжал есть и покупать
+    const orphan = household([extra({ id: 'x9', eaterId: 'нет-такого', days: [] })])
+    expect(extraApplies(orphan, orphan.extras[0], 0)).toBe(false)
+    expect(extrasAt(orphan, 0, 'lunch')).toHaveLength(0)
   })
 })

@@ -10,7 +10,8 @@ import type {
 } from '../types'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
 import { recipeById } from '../data/recipeRegistry'
-import { cookTaskId, portionOf, totalPortions } from './menu'
+import { WEEKDAYS, cookTaskId, portionOf, totalPortions } from './menu'
+import { slotLabel } from './attendance'
 import { cookedGrams, recipeStats, statsOf } from './nutrition'
 import { FREEZE_MIN_GRAMS } from './batch'
 
@@ -138,6 +139,12 @@ export interface CookCard {
   meals: number
   freezeGrams: number
   freezePieces?: number
+  /**
+   * Часть морозилки, сваренная нарочно на начало следующей недели, и то, ради
+   * чего она сварена. Без этой строки партия просто молча выросла бы — а
+   * человек имеет право знать, зачем ему велят варить больше, чем он съест.
+   */
+  ahead?: { grams: number; label: string }
   /** Хвост в порцию: не заготовка, но и не потеря — доедается за пару дней. */
   eatSoonGrams: number
   /** Тот же остаток штуками, если блюдо считается штуками. */
@@ -337,6 +344,24 @@ export function cookCard(
       : undefined
   const unplacedGrams = restGrams - freezeGrams - eatSoonGrams
 
+  /*
+   * Запас впрок: сколько из морозилки уйдёт на начало следующей недели и на
+   * какие приёмы пищи. Берём из того же плана и того же меню — карточка тут
+   * ничего не решает, только называет вслух.
+   */
+  const aheadGrams = Math.min(freezeGrams, plan?.placement.aheadGrams ?? 0)
+  const aheadBatches = (menu.ahead ?? []).filter(
+    (b) => b.recipeId === entry.recipeId && b.cookDay === entry.cookDay,
+  )
+  const aheadDays = [...new Set(aheadBatches.flatMap((b) => b.forDays))].sort((a, b) => a - b)
+  const ahead =
+    aheadGrams > 0 && aheadBatches.length > 0
+      ? {
+          grams: Math.round(aheadGrams),
+          label: `${slotLabel(aheadBatches[0].slot)} в ${aheadDays.map((d) => WEEKDAYS[d]).join(' и ')}`,
+        }
+      : undefined
+
   // продукты и остатки упаковок
   const items: CardItem[] = []
   const leftovers: CardLeftover[] = []
@@ -463,6 +488,7 @@ export function cookCard(
     rows,
     meals: entries.length,
     freezeGrams,
+    ahead,
     eatSoonGrams,
     eatSoonPieces,
     eatSoonNegligible,

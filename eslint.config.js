@@ -18,7 +18,9 @@ import tseslint from 'typescript-eslint'
  * не довели до конца, второе — что тип потеряли.
  */
 export default tseslint.config(
-  { ignores: ['dist', 'coverage'] },
+  // .claude/worktrees — рабочие копии инструментария: полная копия проекта,
+  // и без этого линтер проверяет её вместе с чужой недоделанной правкой
+  { ignores: ['dist', 'coverage', '.claude'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

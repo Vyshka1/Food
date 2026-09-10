@@ -41,6 +41,15 @@ export interface BatchOption {
   servedGrams: number
   /** Уйдёт в морозилку готовым. */
   freezeGrams: number
+  /**
+   * Часть морозилки, которая и есть запас впрок: её варят нарочно, на начало
+   * следующей недели. Считается отдельно от остального замороженного, потому
+   * что в цене варианта они противоположны — случайный излишек это издержка,
+   * а запас цель.
+   */
+  aheadGrams: number
+  /** Сколько запаса не удалось пристроить: не влезло в морозилку. */
+  aheadShortGrams: number
   /** Некуда деть: ни в тарелки, ни в морозилку. */
   unplacedGrams: number
   /** Хвост в порцию: не заготовка, но и не потеря — доедается за пару дней. */
@@ -196,13 +205,28 @@ const FREEZE_WEIGHT = 0.4
 function place(
   yieldGrams: number,
   neededGrams: number,
+  aheadGrams: number,
   canFreeze: boolean,
   freezerRoomGrams: number,
-): { servedGrams: number; freezeGrams: number; tailGrams: number; unplacedGrams: number } {
+): {
+  servedGrams: number
+  freezeGrams: number
+  aheadGrams: number
+  aheadShortGrams: number
+  tailGrams: number
+  unplacedGrams: number
+} {
   const servedGrams = Math.min(yieldGrams, neededGrams)
   const rest = yieldGrams - servedGrams
   const room = Math.min(rest, freezerRoomGrams)
-  const freezeGrams = canFreeze && room >= FREEZE_MIN_GRAMS ? room : 0
+  /*
+   * Порог контейнера запас не проходит: его морозят потому, что он нужен, а не
+   * потому, что осталось. Двести граммов супа на понедельник — это обед, а не
+   * «слишком мало для заготовки».
+   */
+  const wanted = Math.min(rest, freezerRoomGrams, aheadGrams)
+  const freezeGrams = canFreeze ? (room >= FREEZE_MIN_GRAMS ? room : Math.max(0, wanted)) : 0
+  const placedAhead = canFreeze ? Math.min(freezeGrams, aheadGrams) : 0
   const left = rest - freezeGrams
   /*
    * Хвост — это добавка, а не потеря: за два-три дня его доедают без всякого
@@ -220,6 +244,8 @@ function place(
   return {
     servedGrams,
     freezeGrams,
+    aheadGrams: Math.round(placedAhead),
+    aheadShortGrams: Math.round(Math.max(0, aheadGrams - placedAhead)),
     tailGrams: Math.round(tailGrams),
     unplacedGrams: Math.round(left - tailGrams),
   }
@@ -238,6 +264,12 @@ export type BatchPreference = 'cost' | 'min' | 'max'
 export interface BatchContext {
   /** Сколько готового блюда нужно по меню, г. */
   neededGrams: number
+  /**
+   * Сколько сверх меню сварить впрок и заморозить, г. Ноль — обычная готовка.
+   * Это не пожелание «побольше», а потребность начала следующей недели: она
+   * посчитана из анкеты ровно так же, как потребность этой.
+   */
+  aheadGrams?: number
   hasFreezer: boolean
   /** Сколько ещё влезет в морозилку, г. Считаем по числу контейнеров. */
   freezerRoomGrams: number
@@ -300,9 +332,10 @@ export function buildOption(
       : cookedYieldPerServing(recipe).grams * servings,
   )
   const canFreeze = batch.freezeCooked && context.hasFreezer
-  const { servedGrams, freezeGrams, tailGrams, unplacedGrams } = place(
+  const { servedGrams, freezeGrams, aheadGrams, aheadShortGrams, tailGrams, unplacedGrams } = place(
     yieldGrams,
     context.neededGrams,
+    canFreeze ? Math.min(context.aheadGrams ?? 0, context.freezerRoomGrams) : 0,
     canFreeze,
     context.freezerRoomGrams,
   )
@@ -316,6 +349,8 @@ export function buildOption(
     yieldGrams,
     servedGrams: Math.round(servedGrams),
     freezeGrams: Math.round(freezeGrams),
+    aheadGrams,
+    aheadShortGrams,
     tailGrams,
     unplacedGrams,
     shortfallGrams: Math.max(0, Math.round(context.neededGrams - servedGrams)),
@@ -343,7 +378,14 @@ export function optionCost(option: BatchOption, batch: RecipeBatch): number {
   let cost = option.shortfallGrams * SHORT_WEIGHT
   cost += option.unplacedGrams * 3
   cost += option.tailGrams * TAIL_WEIGHT
-  cost += option.freezeGrams * FREEZE_WEIGHT
+  /*
+   * Запас не штрафуется как излишек: его варят нарочно, ради начала следующей
+   * недели, и заморозить его — не потеря, а смысл. А вот недобрать запас так же
+   * плохо, как недобрать на стол: невыполненное обещание «в понедельник не
+   * готовим» стоит понедельничной готовки.
+   */
+  cost += Math.max(0, option.freezeGrams - option.aheadGrams) * FREEZE_WEIGHT
+  cost += option.aheadShortGrams * SHORT_WEIGHT
   // сырой остаток, который нельзя заморозить, почти так же плох, как готовый
   const rawPenalty = batch.freezeRawAnchor ? 0.4 : 2
   cost += option.anchorLeftover * rawPenalty
@@ -362,7 +404,10 @@ export function planBatch(recipe: Recipe, context: BatchContext): BatchPlan | nu
   // приготовить 298 г» — то есть план, по которому семья остаётся голодной.
   if (batch.reason === 'fresh') {
     const perServing = cookedYieldPerServing(recipe).grams
-    const scale = Math.max(1, Math.round((context.neededGrams / Math.max(1, perServing)) * 4) / 4)
+    // свежее не морозят, поэтому запас сюда попасть не должен; складываем всё
+    // равно — чтобы «сколько варить» считалось в одном месте, а не в двух
+    const wanted = context.neededGrams + Math.min(context.aheadGrams ?? 0, context.freezerRoomGrams)
+    const scale = Math.max(1, Math.round((wanted / Math.max(1, perServing)) * 4) / 4)
     return {
       recipeId: recipe.id,
       batch,
@@ -403,7 +448,14 @@ export function planBatch(recipe: Recipe, context: BatchContext): BatchPlan | nu
   // Без этого план молча предлагал приготовить меньше, чем нужно по меню.
   const perScale = cookedYieldPerServing(recipe).grams * batch.baseScale
   const maxScale = Math.max(...batch.scales)
-  const needScale = Math.ceil((context.neededGrams / Math.max(1, perScale)) * 2) / 2
+  /*
+   * Запас ограничен полкой: варить впрок больше, чем влезет в морозилку,
+   * значит приготовить еду, которую некуда деть. Замерено — без этой отсечки
+   * при одной готовке в среду в неделю оставалось около 300 г готовой еды,
+   * которой не находилось ни тарелки, ни контейнера.
+   */
+  const aheadGrams = Math.min(context.aheadGrams ?? 0, context.freezerRoomGrams)
+  const needScale = Math.ceil(((context.neededGrams + aheadGrams) / Math.max(1, perScale)) * 2) / 2
   const scales = [...batch.scales]
   if (needScale > maxScale) scales.push(Math.min(needScale, maxScale * 4))
 

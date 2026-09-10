@@ -292,6 +292,19 @@ export function RecipeSheet({
             </b>
           </div>
         )}
+        {card.ahead && (
+          /*
+           * Партия выросла не сама по себе: последняя готовка недели кормит и
+           * её начало. Без этой строки человек видит только «варить больше» и
+           * не видит, зачем.
+           */
+          <div className="ing-line ing-line--note">
+            <span className="muted">Из них впрок</span>
+            <b>
+              {card.ahead.grams} г — {card.ahead.label} на следующей неделе
+            </b>
+          </div>
+        )}
         {card.eatSoonGrams > 0 && !card.eatSoonNegligible && (
           <div className="ing-line">
             <span className="muted">Останется</span>

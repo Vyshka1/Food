@@ -10,6 +10,8 @@ import {
   serialize,
 } from './persist'
 import type { AppState, CookEvent, Eater, Household, MenuEntry, WeekMenu } from '../types'
+import { buildWeekMenu, cookTasks } from './menu'
+import { dailyNorm } from './nutrition'
 
 /*
  * Строки в этих проверках — то, что действительно могло лежать у человека в
@@ -209,6 +211,80 @@ describe('починка полей', () => {
     const missing = parseState(saved({ pantry: null }))
     expect(missing.state.pantry.stock).toEqual([])
     expect(missing.state.pantry.always.length).toBeGreaterThan(0)
+  })
+
+  it('нечисло в теле едока не должно ронять сборку меню', () => {
+    /*
+     * JSON.stringify превращает NaN в null, поэтому «weightKg: null» — это
+     * ровно то, что окажется в браузере, если в запись когда-то попало NaN.
+     * Без починки норма становится NaN, оценка каждого блюда — NaN, список
+     * «почти равных» вариантов пуст, и buildWeekMenu падает на любом зерне.
+     */
+    const raw = saved({
+      household: household({
+        eaters: [
+          eater({ weightKg: null }),
+          eater({ id: 'e2', heightCm: 'сто семьдесят' }),
+          // норма перемножает три сомножителя: чинить надо все, а не только рост и вес
+          eater({ id: 'e3', activity: 'спортсменка' }),
+          eater({ id: 'e4', goal: 'похудеть' }),
+          eater({ id: 'e5', activity: null }),
+        ],
+      }),
+    })
+    const { state, broken } = parseState(raw)
+    expect(broken).toBe(false)
+    expect(state.household).not.toBeNull()
+    const people = state.household!.eaters
+    for (const person of people) {
+      expect(Number.isFinite(person.age)).toBe(true)
+      expect(Number.isFinite(person.heightCm)).toBe(true)
+      expect(Number.isFinite(person.weightKg)).toBe(true)
+      expect(Number.isFinite(dailyNorm(person).kcal), person.id).toBe(true)
+    }
+    expect(() => buildWeekMenu(state.household!, 1)).not.toThrow()
+  })
+
+  it('годное тело остаётся как записано', () => {
+    const raw = saved({
+      household: household({
+        eaters: [eater({ weightKg: 48.5, age: 71, activity: 'high', goal: 'lose' })],
+      }),
+    })
+    const person = parseState(raw).state.household!.eaters[0]
+    expect(person.weightKg).toBe(48.5)
+    expect(person.age).toBe(71)
+    expect(person.activity).toBe('high')
+    expect(person.goal).toBe('lose')
+  })
+
+  it('нулевой рост — не рост: считать норму по нему нечем', () => {
+    const raw = saved({
+      household: household({ eaters: [eater({ heightCm: 0, weightKg: -5, age: 0 })] }),
+    })
+    const person = parseState(raw).state.household!.eaters[0]
+    expect(person.heightCm).toBeGreaterThan(0)
+    expect(person.weightKg).toBeGreaterThan(0)
+    expect(person.age).toBeGreaterThan(0)
+  })
+
+  it('испорченный запас впрок не уносит с собой всё меню', () => {
+    const raw = saved({
+      menu: { weekStart: '2026-09-07', seed: 1, entries: [entry()], ahead: 'впрок' },
+    })
+    const { state, broken, problem } = parseState(raw)
+    expect(broken).toBe(false)
+    expect(problem).toBeNull()
+    expect(state.menu?.entries).toHaveLength(1)
+    expect(state.menu?.ahead).toBeUndefined()
+    // и план по такому меню строится, а не падает на переборе строки
+    expect(() => cookTasks(state.menu!)).not.toThrow()
+  })
+
+  it('целый запас впрок переживает запись и чтение', () => {
+    const ahead = [{ recipeId: 'r1', cookDay: 6, slot: 'lunch', portions: 2.5, forDays: [0, 1] }]
+    const raw = saved({ menu: { weekStart: '2026-09-07', seed: 1, entries: [entry()], ahead } })
+    expect(parseState(raw).state.menu?.ahead).toEqual(ahead)
   })
 
   it('версия в состоянии всегда своя, даже если сохранена чужая', () => {
