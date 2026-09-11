@@ -5,6 +5,7 @@ import { STORAGE_KEYS, StoreProvider } from '../store'
 import { SCHEMA_VERSION } from '../lib/persist'
 import { buildCookingPlans } from '../lib/cookingPlan'
 import { cookBlocks } from '../lib/cookBlocks'
+import { formatDuration } from '../lib/cookingPlan'
 import { kitchenLoad } from '../lib/kitchenLoad'
 import { PlanScreen } from './PlanScreen'
 import type { AppState, CookingPlan } from '../types'
@@ -256,6 +257,42 @@ describe('план готовки: рейка и ближайшие шаги', (
     expect(text('.plan-block__time')).toBe('11:00')
   })
 
+  it('сводка называет числа плана, а не соседние', () => {
+    mount()
+    const { plan } = planOnScreen()
+    const tiles = all('.plan-stat').map((n) => n.textContent ?? '')
+    expect(tiles).toHaveLength(4)
+    /*
+     * Главная перемена экрана не проверялась ничем: «действий» можно было
+     * сдвинуть на единицу, «всего» подменить занятыми руками, «блюд» —
+     * посчитать иначе, и все 699 тестов оставались зелёными.
+     */
+    expect(tiles[0]).toContain(formatDuration(plan.makespan))
+    expect(tiles[1]).toContain(String(plan.steps.length))
+    expect(tiles[2]).toContain(String(plan.dishes.length))
+    // «закончите» — старт плюс длительность, а старт в фикстуре 11:00
+    const end = 11 * 60 + plan.makespan
+    expect(tiles[3]).toContain(
+      `${Math.floor(end / 60) % 24}:${String(end % 60).padStart(2, '0')}`,
+    )
+    // и это не длительность, выданная за время
+    expect(tiles[3]).not.toContain(formatDuration(plan.makespan))
+  })
+
+  it('время блока — время его первого шага, а не начала готовки', () => {
+    mount()
+    const { plan } = planOnScreen()
+    const blocks = cookBlocks(plan.steps)
+    const times = all('.plan-block__time').map((n) => n.textContent)
+    expect(blocks.length).toBeGreaterThan(1)
+    // сверяем каждый блок: первый всегда стартует в ноль и ничего не доказывает
+    blocks.forEach((block, i) => {
+      const h = 11 + Math.floor(block.start / 60)
+      const m = block.start % 60
+      expect(times[i]).toBe(`${h}:${String(m).padStart(2, '0')}`)
+    })
+  })
+
   it('первый блок не обещает одновременности, когда повар один', () => {
     mount()
     const head = document.querySelector('.plan-block__head')?.textContent ?? ''
@@ -421,5 +458,64 @@ describe('план готовки: день и второй повар', () => {
       expect(!!document.querySelector('.rail-tip'), `день ${plan.cookDay}`).toBe(crowded)
       if (!crowded) expect(text('.plan-free')).toContain('Свободного времени остаётся')
     })
+  })
+})
+
+describe('план готовки: отметка о готовке', () => {
+  /*
+   * Отметка живёт здесь, и это единственный вход в самую опасную операцию
+   * приложения: она списывает продукты из кладовой и кладёт заготовки в
+   * морозилку. Когда её убрали из меню, она не «переехала» — она исчезла, и
+   * вместе с ней перестали работать списание и морозилка. Этот тест стоит
+   * ровно против такого повтора.
+   */
+  const cookedButtons = () =>
+    [...document.querySelectorAll('.rail-dish__cooked')] as HTMLButtonElement[]
+
+  it('готовку можно отметить и снять', () => {
+    mount()
+    const buttons = cookedButtons()
+    expect(buttons.length).toBeGreaterThan(0)
+    expect(buttons[0].textContent).toContain('Приготовлено')
+
+    act(() => buttons[0].click())
+
+    const saved = JSON.parse(localStorage.getItem(KEY) ?? '{}') as AppState
+    expect(saved.cookEvents).toHaveLength(1)
+    expect(cookedButtons()[0].textContent).toContain('Готово')
+
+    act(() => cookedButtons()[0].click())
+
+    expect(
+      (JSON.parse(localStorage.getItem(KEY) ?? '{}') as AppState).cookEvents,
+    ).toHaveLength(0)
+  })
+
+  it('отметка записывает, что именно ушло в кастрюлю', () => {
+    mount()
+    act(() => cookedButtons()[0].click())
+
+    const saved = JSON.parse(localStorage.getItem(KEY) ?? '{}') as AppState
+    const event = saved.cookEvents[0]
+    /*
+     * Продукты списываются по факту готовки, и снимок «что взяли» лежит в
+     * самом событии: план потом пересчитается, а списанное уже списано.
+     * Пустая кладовая в фикстуре — не повод не проверять сам факт.
+     */
+    expect(event.used.length).toBeGreaterThan(0)
+    expect(event.used.every((u) => u.qty > 0)).toBe(true)
+    expect(event.cookedGrams).toBeGreaterThan(0)
+  })
+
+  it('ключ отметки — день, который открыт, а не первый', () => {
+    mount()
+    const days = [...document.querySelectorAll('.day-toggle button')] as HTMLButtonElement[]
+    act(() => days[1].click())
+    act(() => cookedButtons()[0].click())
+
+    const saved = JSON.parse(localStorage.getItem(KEY) ?? '{}') as AppState
+    const state = JSON.parse(localStorage.getItem(KEY) ?? '{}') as AppState
+    const plans = buildCookingPlans(state.menu!, state.household!, 1, state.pantry)
+    expect(saved.cookEvents[0].taskId).toContain(`|${plans[1].cookDay}`)
   })
 })

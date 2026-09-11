@@ -480,3 +480,27 @@
 .plan-note span {
   font-size: 14px;
 }
+
+
+/* Отметка о готовке: главное действие строки, поэтому словом, а не значком */
+.rail-dish__cooked {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--muted);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 6px;
+}
+
+.rail-dish__cooked[data-on='true'] {
+  background: var(--green-soft);
+  border-color: var(--green-soft);
+  color: var(--green-dark);
+}
