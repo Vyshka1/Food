@@ -189,6 +189,26 @@ export function MenuScreen() {
 
   const pct = (fact: number, norm: number) => Math.round((fact / Math.max(1, norm)) * 100)
   const percent = pct(totals.kcal, norms.kcal)
+  /*
+   * Клетчатка за день целиком: и дополнения, и блюда — с обеих сторон.
+   *
+   * `norms.fiber` приходит из foodNorm, где клетчатка дополнений уже вычтена:
+   * овощная тарелка честно закрывает часть нормы. Прибавить дополнения только
+   * к факту значит посчитать их дважды — плюсом к съеденному и минусом из
+   * требования. Я так и сделал, и «26 из 26 г» превратилось в «26 / 19 г
+   * 137%»; хуже другое — настоящий недобор при этом показывался бы как 100%.
+   */
+  const fiberFact = totals.fiber + extras.fiber
+  const fiberNorm = norms.fiber + extras.fiber
+  /** Кого весь день нет дома — одной строкой, и про выбранного тоже. */
+  const awaySelf = eater ? attendance.awayAllDay.some((e) => e.id === eater.id) : false
+  const awayOthers = attendance.awayAllDay.filter((e) => e.id !== eater?.id)
+  const awayNote = [
+    awaySelf ? 'Весь день ест не дома' : null,
+    awayOthers.length ? `${awayOthers.map((e) => e.name).join(', ')} не дома весь день` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
   /** Отклонение больше 15% подсвечиваем: «99% нормы» не должно скрывать перекос по БЖУ. */
   const off = (value: number) => (Math.abs(value - 100) > 15 ? { color: 'var(--warn)' } : undefined)
   const macros = [
@@ -410,15 +430,16 @@ export function MenuScreen() {
             * уменьшались: кастрюля меньше, а почему — нигде. Свойство дня не
             * перестаёт быть правдой оттого, что смотрят одного человека.
             */}
-          {attendance.awayAllDay.length > 0 && (
+          {awayNote && (
             <span className="muted small">
-              {/* про самого выбранного — без повтора имени из строки выше */}
-              {eater && attendance.awayAllDay.every((e) => e.id === eater.id)
-                ? 'Весь день ест не дома'
-                : `${attendance.awayAllDay
-                    .filter((e) => e.id !== eater?.id)
-                    .map((e) => e.name)
-                    .join(', ')} не дома весь день`}
+              {/*
+                * Про самого выбранного — без повтора имени из строки выше, но
+                * и не вместо остальных: когда весь день нет двоих, сказать
+                * надо про обоих. Раньше здесь стояло «все отсутствующие — это
+                * я», и на вкладке Кирилла выходило «Норма: Кирилл · Оля не
+                * дома весь день» — про самого Кирилла ни слова.
+                */}
+              {awayNote}
             </span>
           )}
         </div>
@@ -465,11 +486,6 @@ export function MenuScreen() {
               * Клетчатка без четвёртого кольца: она важна, но не настолько,
               * чтобы спорить за место с калориями.
               *
-              * Дополнения прибавляются только к факту. Раньше они прибавлялись
-              * и к норме тоже — то есть овощная тарелка одновременно и
-              * съедалась, и повышала требование, а в сравнении «мало ли»
-              * взаимно сокращалась. Норму задаёт человек, а не то, что он съел.
-              *
               * Процент показан как у остальных нутриентов: «166 из 61 г» без
               * него читается как ошибка счёта, хотя это настоящая чечевица —
               * 30 г клетчатки на 100 г сухой.
@@ -477,9 +493,9 @@ export function MenuScreen() {
             <div className="macro muted small">
               <span>клетчатка</span>
               <b>
-                {Math.round(totals.fiber + extras.fiber)} / {Math.round(norms.fiber)} г{' '}
-                <span className="small" style={off(pct(totals.fiber + extras.fiber, norms.fiber))}>
-                  {pct(totals.fiber + extras.fiber, norms.fiber)}%
+                {Math.round(fiberFact)} / {Math.round(fiberNorm)} г{' '}
+                <span className="small" style={off(pct(fiberFact, fiberNorm))}>
+                  {pct(fiberFact, fiberNorm)}%
                 </span>
               </b>
             </div>
@@ -550,10 +566,16 @@ export function MenuScreen() {
                * целиком впереди, и любой её день — план.
                */
               const state = dishState(entry, cooked, preview ? -1 : realToday)
-              /** Кто ест именно это блюдо — по расписанию, а не по отметкам. */
-              const eatingDish = household.eaters
-                .map((person) => ({ person, share: portionOf(entry, person.id) }))
-                .filter((x) => x.share > 0)
+              /*
+               * Кто ест именно это блюдо — тот же `fed`, что и в строке выше.
+               * Доли из `portionOf` сегодня дают тот же список (portionsFor
+               * строит их из isFed), но список «кто ест» на экране должен
+               * считаться один раз, а не двумя способами рядом.
+               */
+              const eatingDish = fed.map((person) => ({
+                person,
+                share: portionOf(entry, person.id),
+              }))
               const body = (
                 <>
                   <DishThumb recipe={recipe} />

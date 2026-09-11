@@ -4,6 +4,7 @@ import { act, cleanup, render, screen } from '@testing-library/react'
 import { STORAGE_KEYS, StoreProvider } from '../store'
 import { SCHEMA_VERSION } from '../lib/persist'
 import { MenuScreen } from './MenuScreen'
+import { dailyNorm } from '../lib/nutrition'
 
 /*
  * Предпросмотр следующей недели на экране.
@@ -291,6 +292,72 @@ describe('экран меню: кто ест и что с блюдом', () => {
   })
 
   /*
+   * Когда весь день нет двоих, сказать надо про обоих. Условие «все
+   * отсутствующие — это я» тут ломалось: на вкладке Кирилла выходило
+   * «Норма: Кирилл · Оля не дома весь день», про самого Кирилла ни слова.
+   */
+  it('отсутствие выбранного не теряется рядом с чужим', () => {
+    const data = JSON.parse(twoEaters()) as { household: { eaters: Record<string, unknown>[] } }
+    data.household.eaters.push({ ...data.household.eaters[1], id: 'e3', name: 'Оля' })
+    localStorage.setItem(KEY, JSON.stringify(data))
+    mount()
+    const tab = [...document.querySelectorAll('.segmented button')].find(
+      (b) => b.textContent === 'Кирилл',
+    ) as HTMLButtonElement
+    act(() => tab.click())
+
+    const text = document.querySelector('.day-who')?.textContent ?? ''
+    expect(text).toContain('Весь день ест не дома')
+    expect(text).toContain('Оля не дома весь день')
+  })
+
+  /*
+   * Строка по людям, когда ест один, дословно повторяла бы калории из строки
+   * выше: «Я · 558 ккал» и под ней «Я — 558 ккал».
+   */
+  it('строк по людям нет, когда блюдо ест один', () => {
+    const data = JSON.parse(twoEaters()) as { household: { eaters: Record<string, unknown>[] } }
+    // Кирилла нет только на обеде среды — остальные приёмы он дома
+    data.household.eaters[1].mealPlaces = { '2:lunch': 'away' }
+    localStorage.setItem(KEY, JSON.stringify(data))
+    mount()
+
+    const meals = [...document.querySelectorAll('.meal-head')].map((n) => n.textContent ?? '')
+    const lunch = meals.findIndex((t) => t.includes('Обед'))
+    expect(lunch).toBeGreaterThanOrEqual(0)
+    // у блюд обеда строк по людям нет, у остальных приёмов — есть
+    const blocks = [...document.querySelectorAll('.day-main > div')]
+    const lunchWho = blocks[lunch].querySelectorAll('.dish__who')
+    expect(lunchWho).toHaveLength(0)
+    expect(document.querySelectorAll('.dish__who').length).toBeGreaterThan(0)
+  })
+
+  /*
+   * Клетчатка дополнений уже вычтена из нормы (foodNorm), поэтому прибавлять
+   * их только к факту — считать дважды: «26 из 26 г» становилось «26 / 19 г»,
+   * а настоящий недобор показывался бы как ровно сто процентов.
+   */
+  it('клетчатку считаем с обеих сторон одинаково', () => {
+    const data = JSON.parse(saved(LAST_WEEK)) as {
+      household: { extras: Record<string, unknown>[] }
+    }
+    data.household.extras = [
+      { id: 'x1', eaterId: 'e1', kind: 'veg_plate', amount: 200, slot: 'lunch', days: [] },
+    ]
+    localStorage.setItem(KEY, JSON.stringify(data))
+    mount()
+
+    const line = [...document.querySelectorAll('.macro')].find((n) =>
+      n.textContent?.startsWith('клетчатка'),
+    )
+    const shown = /(\d+) \/ (\d+) г/.exec(line?.textContent ?? '')
+    expect(shown).not.toBeNull()
+    const eater = JSON.parse(saved(LAST_WEEK)).household.eaters[0]
+    // справа — дневная норма человека, а не она же за вычетом овощной тарелки
+    expect(Number(shown![2])).toBe(Math.round(dailyNorm(eater).fiber))
+  })
+
+  /*
    * Личный режим не отменяет фактов про день: порции в нём меньше именно
    * потому, что второго нет дома, и раньше об этом нигде не было сказано.
    */
@@ -314,6 +381,26 @@ describe('экран меню: кто ест и что с блюдом', () => {
     ) as HTMLButtonElement
     act(() => me.click())
     expect(document.querySelector('.day-who')?.textContent).toContain('Кирилл не дома весь день')
+  })
+
+  /*
+   * Когда весь день нет двоих, сказать надо про обоих. Условие «все
+   * отсутствующие — это я» тут ломалось: на вкладке Кирилла выходило
+   * «Норма: Кирилл · Оля не дома весь день», про самого Кирилла ни слова.
+   */
+  it('отсутствие выбранного не теряется рядом с чужим', () => {
+    const data = JSON.parse(twoEaters()) as { household: { eaters: Record<string, unknown>[] } }
+    data.household.eaters.push({ ...data.household.eaters[1], id: 'e3', name: 'Оля' })
+    localStorage.setItem(KEY, JSON.stringify(data))
+    mount()
+    const tab = [...document.querySelectorAll('.segmented button')].find(
+      (b) => b.textContent === 'Кирилл',
+    ) as HTMLButtonElement
+    act(() => tab.click())
+
+    const text = document.querySelector('.day-who')?.textContent ?? ''
+    expect(text).toContain('Весь день ест не дома')
+    expect(text).toContain('Оля не дома весь день')
   })
 
   it('у блюда одна плашка состояния, а не две спорящие', () => {
