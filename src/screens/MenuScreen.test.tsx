@@ -135,17 +135,21 @@ describe('экран меню: следующая неделя', () => {
 
   it('на ненаступившей неделе нечего отметить и нечего испортить', () => {
     mount()
-    expect(screen.queryAllByText('Приготовлено').length).toBeGreaterThan(0)
     expect(screen.queryAllByText('Съедено').length).toBeGreaterThan(0)
-    expect(screen.queryByText('Пересобрать')).toBeTruthy()
+    expect(screen.queryByText('Изменить меню')).toBeTruthy()
+    /*
+     * «Приготовлено» из меню убрано насовсем: это факт про всю готовку, и
+     * место ему в «Готовке». Рядом со «съедено» оно читалось третьим равным
+     * состоянием, хотя блюдо сначала готовят, а потом едят.
+     */
+    expect(screen.queryAllByText('Приготовлено')).toHaveLength(0)
 
     click('Следующая неделя')
 
-    expect(screen.queryAllByText('Приготовлено')).toHaveLength(0)
     expect(screen.queryAllByText('Съедено')).toHaveLength(0)
     expect(screen.queryAllByText('Пропущено')).toHaveLength(0)
     // пересборка меняет сохранённое меню — то есть не ту неделю, что открыта
-    expect(screen.queryByText('Пересобрать')).toBeNull()
+    expect(screen.queryByText('Изменить меню')).toBeNull()
     // и блюдо не открывается: карточка считает партию по сохранённой неделе
     expect(document.querySelectorAll('button.dish__open')).toHaveLength(0)
   })
@@ -203,5 +207,89 @@ describe('экран меню: следующая неделя', () => {
 
     expect(localStorage.getItem(KEY)).toBe(before)
     expect(JSON.parse(before ?? '{}').menu.weekStart).toBe(THIS_WEEK)
+  })
+})
+
+describe('экран меню: кто ест и что с блюдом', () => {
+  /** Тот же день, но в доме двое, и одного нет весь день. */
+  function twoEaters(): string {
+    const data = JSON.parse(saved(LAST_WEEK)) as {
+      household: { eaters: Record<string, unknown>[]; meals: string[] }
+    }
+    const second: Record<string, unknown> = {
+      ...data.household.eaters[0],
+      id: 'e2',
+      name: 'Кирилл',
+      sex: 'male',
+    }
+    const away: Record<string, string> = {}
+    for (let d = 0; d < 7; d++) for (const m of data.household.meals) away[`${d}:${m}`] = 'away'
+    second.mealPlaces = away
+    data.household.eaters.push(second)
+    return JSON.stringify(data)
+  }
+
+  it('«не дома весь день» сказано один раз, а не у каждого приёма', () => {
+    localStorage.setItem(KEY, twoEaters())
+    mount()
+
+    const day = document.querySelector('.day-who')?.textContent ?? ''
+    expect(day).toContain('Сегодня едят дома')
+    expect(day).toContain('Кирилл не дома весь день')
+    /*
+     * Это свойство дня. Пока строка повторялась у всех четырёх приёмов, она
+     * читалась как шум и ничего не добавляла.
+     */
+    expect(document.querySelectorAll('.meal-head__away')).toHaveLength(0)
+  })
+
+  it('у приёма про отсутствие говорят, только если день неоднородный', () => {
+    const data = JSON.parse(twoEaters()) as {
+      household: { eaters: Record<string, unknown>[] }
+    }
+    /*
+     * Часы в этом файле стоят на среде, а неделя начинается с понедельника —
+     * значит экран открыт на дне 2. Кирилл дома весь день, кроме обеда: вот
+     * теперь у обеда про это и стоит сказать.
+     */
+    data.household.eaters[1].mealPlaces = { '2:lunch': 'away' }
+    localStorage.setItem(KEY, JSON.stringify(data))
+    mount()
+
+    const notes = [...document.querySelectorAll('.meal-head__away')].map((n) => n.textContent)
+    expect(notes.length).toBeGreaterThan(0)
+    expect(notes.join(' ')).toContain('Кирилл')
+    expect(document.querySelector('.day-who')?.textContent).not.toContain('весь день')
+  })
+
+  it('в семейном режиме видно, сколько достаётся каждому', () => {
+    localStorage.setItem(KEY, twoEaters())
+    mount()
+    const rows = document.querySelector('.dish__who')?.textContent ?? ''
+    const first = JSON.parse(twoEaters()).household.eaters[0].name as string
+    expect(rows).toContain(first)
+    expect(rows).toContain('Кирилл')
+    // Кирилла нет — и это сказано, а не спрятано в нулевых калориях
+    expect(rows).toContain('не дома')
+  })
+
+  it('у блюда одна плашка состояния, а не две спорящие', () => {
+    mount()
+    const badges = [...document.querySelectorAll('.dish--row .badge[data-stage]')]
+    expect(badges.length).toBeGreaterThan(0)
+    for (const badge of badges) {
+      const text = badge.textContent ?? ''
+      // «из холодильника» рядом с «готовим Ср» — это и было противоречие
+      expect(text.includes('холодильника') && text.includes('Готовим')).toBe(false)
+    }
+    // и рядом с ними нет второй плашки про день готовки
+    expect(document.querySelectorAll('.dish--row .badge').length).toBe(badges.length)
+  })
+
+  it('факт готовки из меню убран: это другой слой', () => {
+    mount()
+    expect(screen.queryAllByText('Приготовлено')).toHaveLength(0)
+    const actions = [...document.querySelectorAll('.dish__status button')].map((b) => b.textContent)
+    expect(new Set(actions)).toEqual(new Set(['Съедено', 'Пропущено']))
   })
 })

@@ -33,7 +33,13 @@ export function RebuildSheet({ day, onClose }: { day: number; onClose: () => voi
 
   return (
     <Sheet onClose={onClose}>
-      <div className="sheet__title">Пересобрать</div>
+      {/*
+        * «Пересобрать» звучало технически и опасно: можно было решить, что
+        * кнопка немедленно уничтожит всё меню. На деле человек сначала
+        * выбирает, что именно меняет — неделю, день или один приём, — и
+        * почему. Название и говорит про это.
+        */}
+      <div className="sheet__title">Изменить меню</div>
 
       <div className="section-title">Что меняем</div>
       <div className="chips">
@@ -77,7 +83,7 @@ export function RebuildSheet({ day, onClose }: { day: number; onClose: () => voi
           onClose()
         }}
       >
-        Пересобрать
+        Подобрать другие блюда
       </button>
     </Sheet>
   )

@@ -2773,3 +2773,45 @@ select {
     max-width: 1440px;
   }
 }
+
+
+/* ── Меню: кто ест и в каком состоянии блюдо ─────────────────────────────── */
+
+/*
+ * Строки по людям в семейном режиме. «На всех: 393 ккал» не отвечало на
+ * вопрос, кто эти все и сколько достаётся каждому, — а в доме, где один ест
+ * не каждый день, это и есть главный вопрос к карточке.
+ */
+.dish__who {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.dish__who [data-away='true'] {
+  opacity: 0.6;
+}
+
+/* Плашка состояния: «не отмечено приготовленным» — не то же, что «готово» */
+.badge[data-warn='true'] {
+  background: #f6e7de;
+  color: var(--warn);
+}
+
+.day-who {
+  margin-bottom: 12px;
+}
+
+.day-who b {
+  display: block;
+  font-size: 15px;
+}
+
+.day-parts {
+  border-top: 1px solid var(--line);
+  padding-top: 6px;
+  margin-top: 2px;
+}

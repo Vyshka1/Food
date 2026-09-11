@@ -169,3 +169,38 @@ export function attendanceSummary(eater: Eater, meals: MealSlot[]): string {
 export function slotLabel(slot: MealSlot): string {
   return (MEAL_SLOTS.find((m) => m.id === slot)?.label ?? slot).toLowerCase()
 }
+
+
+/**
+ * Кто сегодня ест дома, а кого не будет.
+ *
+ * «Кирилл не дома» — свойство дня, а не каждого блюда. Пока эта строка
+ * повторялась у всех четырёх приёмов, она читалась как шум и вдобавок
+ * неверно: она ничего не говорила о том, различается ли расписание внутри
+ * дня. Здесь это и разделено: `allDay` — не будет весь день, `partly` —
+ * будет не на всех приёмах, и вот про него у конкретного приёма сказать
+ * стоит.
+ */
+export interface DayAttendance {
+  /** Кто ест дома хотя бы один приём. */
+  home: Eater[]
+  /** Кого не будет весь день. */
+  awayAllDay: Eater[]
+  /** Кто дома не на всех приёмах: у таких расписание внутри дня различается. */
+  partly: Eater[]
+}
+
+export function dayAttendance(household: Household, day: number): DayAttendance {
+  const home: Eater[] = []
+  const awayAllDay: Eater[] = []
+  const partly: Eater[] = []
+  for (const eater of household.eaters) {
+    const fed = household.meals.filter((slot) => isFed(eater, day, slot))
+    if (fed.length === 0) awayAllDay.push(eater)
+    else {
+      home.push(eater)
+      if (fed.length < household.meals.length) partly.push(eater)
+    }
+  }
+  return { home, awayAllDay, partly }
+}

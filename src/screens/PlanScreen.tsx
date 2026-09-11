@@ -8,6 +8,7 @@ import { Card, Warnings } from '../components/ui'
 import { Icon, recipeIcon } from '../components/icons'
 import { CookGantt } from '../components/CookGantt'
 import { blockHint, blockTitle, cookBlocks } from '../lib/cookBlocks'
+import { IMPLICIT_COOK_NOTE } from '../lib/menu'
 import { recipeById } from '../data/recipeRegistry'
 import { APPLIANCE_LABEL, STATION_LABEL, THAW_LABEL } from '../types'
 import type { Appliance, CookingPlan, Kitchen } from '../types'
@@ -68,7 +69,7 @@ export function PlanScreen({
 }: {
   onCookNow: (plan: CookingPlan, cookNames: string[]) => void
 }) {
-  const { household, menu, pantry } = useStore()
+  const { household, menu, pantry, warnings } = useStore()
   const [startHour, setStartHour] = useState(11)
   const [activeDay, setActiveDay] = useState<number | null>(null)
   /** Готовим одна или вдвоём — это второй повар в расписании, а не оформление. */
@@ -159,6 +160,22 @@ export function PlanScreen({
       </div>
 
       <Warnings items={current.warnings} />
+
+      {/*
+        * Про дописанную понедельничную готовку говорим здесь — рядом с
+        * планом, который из-за неё и появился. На экране меню это сообщение
+        * стояло над пятницей и не относилось ни к одному блюду на экране.
+        */}
+      {warnings.includes(IMPLICIT_COOK_NOTE) && (
+        <div className="plan-note">
+          <Icon name="pan" size={16} />
+          <span>
+            <b>Добавили короткую готовку в понедельник</b>
+            Понедельник не отмечен днём готовки, а чем-то начало недели закрывать надо. Уберётся
+            сама, если отметить понедельник днём готовки в профиле.
+          </span>
+        </div>
+      )}
 
       <div className="workspace">
         <div className="workspace__main plan-main">
