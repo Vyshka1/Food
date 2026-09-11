@@ -2801,9 +2801,6 @@ select {
   color: var(--muted);
 }
 
-.dish__who [data-away='true'] {
-  opacity: 0.6;
-}
 
 /* Плашка состояния: «не отмечено приготовленным» — не то же, что «готово» */
 .badge[data-warn='true'] {
