@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { PlannedStep } from '../types'
 import {
   BLOCK_GAP_MINUTES,
+  BLOCK_MAX_STEPS,
   BLOCK_SPAN_MINUTES,
   FIRST_BLOCK_MINUTES,
   blockHint,
@@ -150,6 +151,37 @@ describe('блоки готовки', () => {
       'Заканчиваем',
     )
     expect(blockTitle(blocks[1], 1, blocks.length)).not.toBe('Заканчиваем')
+  })
+
+  /*
+   * Вдвоём за те же минуты успевают вдвое больше, и потолок по времени
+   * перестаёт сдерживать длину блока: замер показал каждый пятый блок длиннее
+   * семи шагов. Поэтому есть отдельный потолок по шагам.
+   */
+  it('плотная работа внутри одного окна режется по числу шагов', () => {
+    // первый шаг отдельно, дальше восемь подряд в одном окне по времени
+    const steps = [
+      step({ start: 0, end: 1, activeMinutes: 1 }),
+      ...Array.from({ length: 8 }, (_, i) =>
+        step({ start: 20 + i, end: 21 + i, stepIndex: i + 1, activeMinutes: 1 }),
+      ),
+    ]
+    // восьмёрка укладывается и в паузу, и в потолок по времени
+    expect(7).toBeLessThan(BLOCK_SPAN_MINUTES)
+    expect(1).toBeLessThan(BLOCK_GAP_MINUTES)
+
+    const blocks = cookBlocks(steps)
+    expect(blocks.map((b) => b.steps.length)).toEqual([1, BLOCK_MAX_STEPS, 3])
+  })
+
+  it('одну минуту потолок по шагам не разрывает', () => {
+    // восемь шагов в одну и ту же минуту: два повара взялись разом
+    const steps = Array.from({ length: 8 }, (_, i) =>
+      step({ start: 0, end: 3, stepIndex: i, activeMinutes: 3 }),
+    )
+    const blocks = cookBlocks(steps)
+    expect(blocks).toHaveLength(1)
+    expect(blocks[0].steps).toHaveLength(8)
   })
 
   it('пустой план не выдумывает блоков', () => {

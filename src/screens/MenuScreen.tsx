@@ -404,9 +404,21 @@ export function MenuScreen() {
                 ? `${dayWord} дома никто не ест`
                 : `${dayWord} едят дома: ${attendance.home.map((e) => e.name).join(', ')}`}
           </b>
-          {!eater && attendance.awayAllDay.length > 0 && (
+          {/*
+            * Отсутствие видно и когда выбран один едок. Раньше эта строка
+            * пряталась за `!eater`, и в личном режиме порции молча
+            * уменьшались: кастрюля меньше, а почему — нигде. Свойство дня не
+            * перестаёт быть правдой оттого, что смотрят одного человека.
+            */}
+          {attendance.awayAllDay.length > 0 && (
             <span className="muted small">
-              {attendance.awayAllDay.map((e) => e.name).join(', ')} не дома весь день
+              {/* про самого выбранного — без повтора имени из строки выше */}
+              {eater && attendance.awayAllDay.every((e) => e.id === eater.id)
+                ? 'Весь день ест не дома'
+                : `${attendance.awayAllDay
+                    .filter((e) => e.id !== eater?.id)
+                    .map((e) => e.name)
+                    .join(', ')} не дома весь день`}
             </span>
           )}
         </div>
@@ -449,20 +461,27 @@ export function MenuScreen() {
               <span style={off(percent)}>калории {percent}%</span>
               <span>≈ {totals.price} ₽</span>
             </div>
-            {/* Клетчатка без четвёртого кольца: она важна, но не настолько,
-                чтобы спорить за место с калориями. */}
+            {/*
+              * Клетчатка без четвёртого кольца: она важна, но не настолько,
+              * чтобы спорить за место с калориями.
+              *
+              * Дополнения прибавляются только к факту. Раньше они прибавлялись
+              * и к норме тоже — то есть овощная тарелка одновременно и
+              * съедалась, и повышала требование, а в сравнении «мало ли»
+              * взаимно сокращалась. Норму задаёт человек, а не то, что он съел.
+              *
+              * Процент показан как у остальных нутриентов: «166 из 61 г» без
+              * него читается как ошибка счёта, хотя это настоящая чечевица —
+              * 30 г клетчатки на 100 г сухой.
+              */}
             <div className="macro muted small">
               <span>клетчатка</span>
-              <span
-                style={
-                  totals.fiber + extras.fiber < norms.fiber + extras.fiber
-                    ? { color: 'var(--warn)' }
-                    : undefined
-                }
-              >
-                {Math.round(totals.fiber + extras.fiber)} из{' '}
-                {Math.round(norms.fiber + extras.fiber)} г
-              </span>
+              <b>
+                {Math.round(totals.fiber + extras.fiber)} / {Math.round(norms.fiber)} г{' '}
+                <span className="small" style={off(pct(totals.fiber + extras.fiber, norms.fiber))}>
+                  {pct(totals.fiber + extras.fiber, norms.fiber)}%
+                </span>
+              </b>
             </div>
           </div>
         </div>
@@ -531,6 +550,10 @@ export function MenuScreen() {
                * целиком впереди, и любой её день — план.
                */
               const state = dishState(entry, cooked, preview ? -1 : realToday)
+              /** Кто ест именно это блюдо — по расписанию, а не по отметкам. */
+              const eatingDish = household.eaters
+                .map((person) => ({ person, share: portionOf(entry, person.id) }))
+                .filter((x) => x.share > 0)
               const body = (
                 <>
                   <DishThumb recipe={recipe} />
@@ -550,19 +573,23 @@ export function MenuScreen() {
                           : `${cookedGrams(recipe, factor)} г · ${Math.round(stats.kcal * factor)} ккал`
                         : `${fed.map((e) => e.name).join(', ')} · ${Math.round(stats.kcal * factor)} ккал · ≈ ${Math.round(stats.price * factor)} ₽`}
                     </span>
-                    {!eater && household.eaters.length > 1 && (
+                    {/*
+                      * Здесь только те, кто это ест. Отсутствие сказано один
+                      * раз там, где оно случилось: весь день — в шапке дня,
+                      * на отдельный приём — в заголовке приёма. Строка «Кирилл
+                      * — не дома» у каждого из семи блюд повторяла один и тот
+                      * же факт семь раз.
+                      *
+                      * И только когда едят двое и больше: при одном едоке
+                      * строка повторила бы калории из строки выше.
+                      */}
+                    {!eater && eatingDish.length > 1 && (
                       <span className="dish__who">
-                        {household.eaters.map((person) => {
-                          const share = portionOf(entry, person.id)
-                          return (
-                            <span key={person.id} data-away={share === 0}>
-                              {person.name} —{' '}
-                              {share === 0
-                                ? 'не дома'
-                                : `${Math.round(stats.kcal * share)} ккал`}
-                            </span>
-                          )
-                        })}
+                        {eatingDish.map(({ person, share }) => (
+                          <span key={person.id}>
+                            {person.name} — {Math.round(stats.kcal * share)} ккал
+                          </span>
+                        ))}
                       </span>
                     )}
                     <br />

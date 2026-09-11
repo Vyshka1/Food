@@ -306,6 +306,11 @@
   line-height: 1.35;
 }
 
+/* Подробности шага — отдельной строкой: иначе «баклажан20 мин» слипается. */
+.next-step__detail {
+  display: block;
+}
+
 .next-step__dish {
   flex: 0 0 auto;
   margin-left: auto;
@@ -315,9 +320,16 @@
 }
 
 /* ── Рейка: что приготовим ────────────────────────────────────────────── */
+/*
+ * Название, упаковка и отметка «Приготовлено» не влезают в одну строку рейки:
+ * при ширине колонки в 320 px заголовку оставалось шестьдесят, и «Овсяная
+ * запеканка с яблоком» ломалась по слову на строку. Отметка уходит на свою
+ * строку — это и есть действие, а не подпись.
+ */
 .rail-dish {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -327,7 +339,7 @@
 }
 
 .rail-dish__name {
-  flex: 1 1 auto;
+  flex: 1 1 140px;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -484,7 +496,7 @@
 
 /* Отметка о готовке: главное действие строки, поэтому словом, а не значком */
 .rail-dish__cooked {
-  grid-column: 1 / -1;
+  flex: 1 0 100%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
