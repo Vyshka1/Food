@@ -263,14 +263,57 @@ describe('экран меню: кто ест и что с блюдом', () => {
   })
 
   it('в семейном режиме видно, сколько достаётся каждому', () => {
+    // оба дома: разбивка по людям отвечает на вопрос «сколько кому»
+    const data = JSON.parse(twoEaters()) as { household: { eaters: Record<string, unknown>[] } }
+    data.household.eaters[1].mealPlaces = {}
+    localStorage.setItem(KEY, JSON.stringify(data))
+    mount()
+
+    const rows = document.querySelector('.dish__who')?.textContent ?? ''
+    expect(rows).toContain(data.household.eaters[0].name as string)
+    expect(rows).toContain('Кирилл')
+    expect(rows).toMatch(/ккал/)
+  })
+
+  /*
+   * «Кирилл не дома» звучало в шапке дня и ещё раз у каждого блюда — на
+   * семи блюдах восемь повторов одного и того же факта. Отсутствие говорится
+   * там, где оно случилось, а в строках по людям остаются те, кто ест.
+   */
+  it('про отсутствие у блюд не повторяются', () => {
     localStorage.setItem(KEY, twoEaters())
     mount()
-    const rows = document.querySelector('.dish__who')?.textContent ?? ''
-    const first = JSON.parse(twoEaters()).household.eaters[0].name as string
-    expect(rows).toContain(first)
-    expect(rows).toContain('Кирилл')
-    // Кирилла нет — и это сказано, а не спрятано в нулевых калориях
-    expect(rows).toContain('не дома')
+
+    const rows = [...document.querySelectorAll('.dish__who')].map((n) => n.textContent ?? '')
+    expect(rows.join(' ')).not.toContain('не дома')
+    for (const row of rows) expect(row).not.toContain('Кирилл')
+    expect(document.querySelector('.day-who')?.textContent).toContain('Кирилл не дома весь день')
+  })
+
+  /*
+   * Личный режим не отменяет фактов про день: порции в нём меньше именно
+   * потому, что второго нет дома, и раньше об этом нигде не было сказано.
+   */
+  it('в режиме одного едока отсутствие второго всё равно видно', () => {
+    localStorage.setItem(KEY, twoEaters())
+    mount()
+    const tab = [...document.querySelectorAll('.segmented button')].find(
+      (b) => b.textContent === 'Кирилл',
+    ) as HTMLButtonElement
+    act(() => tab.click())
+
+    const text = document.querySelector('.day-who')?.textContent ?? ''
+    expect(text).toContain('Норма: Кирилл')
+    // про него самого — без повтора имени: «Норма: Кирилл. Кирилл не дома…»
+    expect(text).toContain('Весь день ест не дома')
+    expect(text).not.toContain('Кирилл не дома')
+
+    // а у того, кто дома, отсутствие второго названо по имени
+    const me = [...document.querySelectorAll('.segmented button')].find(
+      (b) => b.textContent === 'Я',
+    ) as HTMLButtonElement
+    act(() => me.click())
+    expect(document.querySelector('.day-who')?.textContent).toContain('Кирилл не дома весь день')
   })
 
   it('у блюда одна плашка состояния, а не две спорящие', () => {
