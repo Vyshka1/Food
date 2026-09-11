@@ -459,3 +459,24 @@
   padding: 6px 0;
   align-self: flex-start;
 }
+
+
+/* Сообщение о дописанной готовке: отчёт, а не тревога — отсюда и цвет */
+.plan-note {
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--green-tint);
+  color: var(--green-dark);
+  margin-bottom: 12px;
+}
+
+.plan-note b {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.plan-note span {
+  font-size: 14px;
+}
