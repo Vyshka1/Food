@@ -4,9 +4,9 @@ import { ENTRY_STATUS, MEAL_SLOTS } from '../types'
 import { dishState } from '../lib/dishState'
 import { dayAttendance } from '../lib/attendance'
 import type { MenuEntry } from '../types'
-import { IMPLICIT_COOK_NOTE, WEEKDAYS, cookTaskId, dayNorms, dayTotals, fedEaters, portionOf, takeawayEaters, totalPortions } from '../lib/menu'
-import { drinkNorms } from '../lib/drinks'
-import { extraNorms, extraStats, extraSummary, extrasAt } from '../lib/extras'
+import { IMPLICIT_COOK_NOTE, WEEKDAYS, cookTaskId, cookTasks, dayNorms, dayTotals, fedEaters, portionOf, takeawayEaters, totalPortions } from '../lib/menu'
+import { cupStats, drinkNorms, drinkOn, habitLabel } from '../lib/drinks'
+import { extraNorms, extraStats, extraSummary, extrasAt, extrasOf } from '../lib/extras'
 import { cookedGrams, recipeStats } from '../lib/nutrition'
 import { cookedStats, planWeek } from '../lib/weekPlan'
 import { useStore } from '../store'
@@ -16,7 +16,7 @@ import { RebuildSheet } from '../components/RebuildSheet'
 import { WeekOverview } from '../components/WeekOverview'
 import { WeekBoard } from '../components/WeekBoard'
 import { TodayCard } from '../components/TodayCard'
-import { Icon } from '../components/icons'
+import { Icon, drinkIcon, extraIcon } from '../components/icons'
 import { DishThumb } from '../components/DishImage'
 import { plural } from '../lib/format'
 import { MACRO_COLOR } from '../lib/palette'
@@ -161,6 +161,13 @@ export function MenuScreen() {
   /** Кто сегодня ест дома — свойство дня, и говорится оно один раз. */
   const attendance = dayAttendance(household, day)
   const partlyIds = new Set(attendance.partly.map((e) => e.id))
+  /** Напитки и дополнения этого дня — они и сидят в дневной норме. */
+  const eating = eater ? [eater] : household.eaters
+  const dayDrinks = household.drinks.filter(
+    (d) => eating.some((e) => e.id === d.eaterId) && drinkOn(d, day),
+  )
+  const dayExtras = eating.flatMap((e) => extrasOf(household, e.id, day))
+  const cookToday = cookTasks(shown).filter((t) => t.cookDay === day)
 
   // план и факт: пока отметок нет, показываем состав недели, потом — что съели
   const eatenCount = shown.entries.filter((e) => e.status === 'eaten').length
@@ -315,6 +322,52 @@ export function MenuScreen() {
 
           {note && <div className="shop__note">{note}</div>}
 
+          {/*
+            * Контекст дня. Напитки и дополнения считаются в дневной норме, но
+            * на экране их не было видно нигде: человек видел «2468 ккал» и не
+            * мог сойтись с суммой блюд. А готовка — единственное, что сегодня
+            * нужно сделать руками, и знать об этом лучше сразу.
+            */}
+          {(dayDrinks.length > 0 || dayExtras.length > 0 || cookToday.length > 0) && (
+            <Card>
+              <div className="section-title">День</div>
+              {cookToday.length > 0 && (
+                <div className="today-row">
+                  <Icon name="pan" size={17} />
+                  <span>
+                    <b>
+                      Сегодня готовим {cookToday.length}{' '}
+                      {plural(cookToday.length, ['блюдо', 'блюда', 'блюд'])}
+                    </b>
+                    <span className="muted small">
+                      {cookToday.map((t) => recipeById(t.recipeId)?.title ?? '').join(', ')}
+                    </span>
+                  </span>
+                </div>
+              )}
+              {dayDrinks.map((d) => (
+                <div className="today-row" key={d.id}>
+                  <Icon name={drinkIcon(d.kind)} size={17} />
+                  <span>
+                    <b>{habitLabel(d)}</b>
+                    <span className="muted small">
+                      {Math.round(cupStats(d).kcal * d.perDay)} ккал · {d.perDay} × в день
+                    </span>
+                  </span>
+                </div>
+              ))}
+              {dayExtras.map((x) => (
+                <div className="today-row" key={x.id}>
+                  <Icon name={extraIcon(x.kind)} size={17} />
+                  <span>
+                    <b>{extraSummary(x)}</b>
+                    <span className="muted small">{extraStats(x).kcal} ккал</span>
+                  </span>
+                </div>
+              ))}
+            </Card>
+          )}
+
           <Card>
         {/*
           * Заголовок отвечает на вопрос, который карточка раньше оставляла
@@ -355,33 +408,27 @@ export function MenuScreen() {
               </div>
             ))}
             {/*
-              * Из чего сложилось число. Пока в итоге молча сидели напитки и
-              * дополнения, «2468 ккал» не сходилось с суммой блюд на экране,
-              * и объяснить расхождение человеку было нечем.
+              * Из чего сложилось число дня — одной строкой вместо трёх.
+              *
+              * Кольцо показывает только блюда: напитки и дополнения в него не
+              * подмешаны, а вычтены из нормы (см. foodNorm). Поэтому здесь они
+              * складываются, а не вычитаются — я сначала написал наоборот и
+              * получил «блюда 4254» там, где на тарелках 4448.
               */}
-            <div className="macro muted small day-parts">
-              <span>
-                блюда {Math.round(totals.kcal - drinks.kcal - extras.kcal)}
-                {drinks.kcal > 0 ? ` · напитки ${Math.round(drinks.kcal)}` : ''}
-                {extras.kcal > 0 ? ` · дополнения ${Math.round(extras.kcal)}` : ''} ккал
-              </span>
-            </div>
+            {(drinks.kcal > 0 || extras.kcal > 0) && (
+              <div className="macro muted small day-parts">
+                <span>
+                  блюда {totals.kcal}
+                  {drinks.kcal > 0 ? ` · напитки ${drinks.kcal}` : ''}
+                  {extras.kcal > 0 ? ` · дополнения ${extras.kcal}` : ''}
+                </span>
+                <b>всего {totals.kcal + drinks.kcal + extras.kcal}</b>
+              </div>
+            )}
             <div className="macro muted small">
               <span style={off(percent)}>калории {percent}%</span>
               <span>≈ {totals.price} ₽</span>
             </div>
-            {drinks.kcal > 0 && (
-              <div className="macro muted small">
-                <span>напитки {drinks.kcal} ккал</span>
-                <span>всего {totals.kcal + drinks.kcal}</span>
-              </div>
-            )}
-            {extras.kcal > 0 && (
-              <div className="macro muted small">
-                <span>дополнения {extras.kcal} ккал</span>
-                <span>всего {totals.kcal + drinks.kcal + extras.kcal}</span>
-              </div>
-            )}
             {/* Клетчатка без четвёртого кольца: она важна, но не настолько,
                 чтобы спорить за место с калориями. */}
             <div className="macro muted small">
@@ -492,7 +539,7 @@ export function MenuScreen() {
                     <span className="badge" data-stage={state.stage} data-warn={state.warn}>
                       {state.label}
                     </span>
-                    {entry.pinned && <span className="badge">оставлено</span>}
+
                   </span>
                 </>
               )
@@ -526,16 +573,24 @@ export function MenuScreen() {
                       onClick={() => togglePin(entry.id)}
                       aria-label={
                         entry.pinned
-                          ? 'снять закрепление блюда'
-                          : 'оставить это блюдо при пересборке'
+                          ? `${recipe.title}: снять закрепление`
+                          : `${recipe.title}: оставить при смене меню`
                       }
+                      aria-pressed={!!entry.pinned}
                       title={
                         entry.pinned
-                          ? 'Пересборка меню его не тронет'
-                          : 'Оставить это блюдо при пересборке'
+                          ? 'Смена меню это блюдо не тронет'
+                          : 'Оставить это блюдо при смене меню'
                       }
                     >
-                      <Icon name="pin" size={18} />
+                      {/*
+                        * Значок с подписью, а не сам по себе. Булавка в 18 px
+                        * читается как колокольчик — её и приняли за
+                        * напоминание; немой значок у каждого блюда не сообщает
+                        * ничего, кроме того, что он есть.
+                        */}
+                      <Icon name="pin" size={16} />
+                      <span>{entry.pinned ? 'Оставлено' : 'Оставить'}</span>
                     </button>
                   )}
                   {!preview && (

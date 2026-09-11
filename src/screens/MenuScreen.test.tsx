@@ -286,6 +286,32 @@ describe('экран меню: кто ест и что с блюдом', () => {
     expect(document.querySelectorAll('.dish--row .badge').length).toBe(badges.length)
   })
 
+  it('разбивка дня складывается, а не вычитается', () => {
+    const data = JSON.parse(twoEaters()) as {
+      household: { drinks: unknown[]; extras: unknown[]; eaters: { id: string }[] }
+    }
+    data.household.drinks = [
+      { id: 'd1', eaterId: data.household.eaters[0].id, kind: 'cappuccino', volumeMl: 250,
+        sugarTsp: 0, syrupMl: 0, perDay: 2, days: [0, 1, 2, 3, 4, 5, 6] },
+    ]
+    localStorage.setItem(KEY, JSON.stringify(data))
+    mount()
+
+    const parts = document.querySelector('.day-parts')?.textContent ?? ''
+    const nums = [...parts.matchAll(/(\d+)/g)].map((m) => Number(m[1]))
+    expect(nums.length).toBeGreaterThanOrEqual(3)
+    /*
+     * Кольцо показывает только блюда: напитки в него не подмешаны, а вычтены
+     * из нормы. Значит «всего» — это сумма, а не разность. Я сначала написал
+     * наоборот и получил «блюда 4254» там, где на тарелках 4448.
+     */
+    const total = nums[nums.length - 1]
+    const summed = nums.slice(0, -1).reduce((a, b) => a + b, 0)
+    expect(total).toBe(summed)
+    expect(parts).toContain('блюда')
+    expect(parts).toContain('напитки')
+  })
+
   it('факт готовки из меню убран: это другой слой', () => {
     mount()
     expect(screen.queryAllByText('Приготовлено')).toHaveLength(0)
