@@ -4,7 +4,7 @@ import { ENTRY_STATUS, MEAL_SLOTS } from '../types'
 import { dishState } from '../lib/dishState'
 import { dayAttendance } from '../lib/attendance'
 import type { MenuEntry } from '../types'
-import { IMPLICIT_COOK_NOTE, WEEKDAYS, cookTaskId, cookTasks, dayNorms, dayTotals, fedEaters, portionOf, takeawayEaters, totalPortions } from '../lib/menu'
+import { IMPLICIT_COOK_NOTE, WEEKDAYS, WEEKDAYS_FULL, cookTaskId, dayNorms, isFed, dayTotals, fedEaters, portionOf, takeawayEaters, totalPortions } from '../lib/menu'
 import { cupStats, drinkNorms, drinkOn, habitLabel } from '../lib/drinks'
 import { extraNorms, extraStats, extraSummary, extrasAt, extrasOf } from '../lib/extras'
 import { cookedGrams, recipeStats } from '../lib/nutrition'
@@ -121,7 +121,17 @@ export function MenuScreen() {
 
   const drinks = useMemo(() => {
     if (!household) return { kcal: 0, protein: 0, fat: 0, carbs: 0 }
-    const who = eater ? [eater] : household.eaters
+    /*
+     * Напитки того, кого сегодня нет дома, в дневной итог не идут — как и его
+     * дополнения, которые это правило уже соблюдали через extraApplies. Два
+     * соседних слагаемых одной суммы жили по разным правилам: у человека,
+     * которого нет весь день, хлеб к обеду исчезал, а латте оставался и
+     * попадал в «всего» рядом с нормой, из которой этот человек вычеркнут
+     * целиком. Число не относилось ни к кому.
+     */
+    const who = (eater ? [eater] : household.eaters).filter((e) =>
+      household.meals.some((slot) => isFed(e, day, slot)),
+    )
     return who.reduce(
       (acc, e) => {
         const d = drinkNorms(household, e.id, day)
@@ -161,13 +171,16 @@ export function MenuScreen() {
   /** Кто сегодня ест дома — свойство дня, и говорится оно один раз. */
   const attendance = dayAttendance(household, day)
   const partlyIds = new Set(attendance.partly.map((e) => e.id))
+  /** Сегодняшний день недели — им и меряются состояния блюд, а не выбранным. */
+  const realToday = todayIndex(menu.weekStart)
+  /** «Сегодня» или название дня: слово должно быть правдой. */
+  const dayWord = !preview && day === realToday ? 'Сегодня' : `${WEEKDAYS_FULL[day]}:`
   /** Напитки и дополнения этого дня — они и сидят в дневной норме. */
   const eating = eater ? [eater] : household.eaters
   const dayDrinks = household.drinks.filter(
     (d) => eating.some((e) => e.id === d.eaterId) && drinkOn(d, day),
   )
   const dayExtras = eating.flatMap((e) => extrasOf(household, e.id, day))
-  const cookToday = cookTasks(shown).filter((t) => t.cookDay === day)
 
   // план и факт: пока отметок нет, показываем состав недели, потом — что съели
   const eatenCount = shown.entries.filter((e) => e.status === 'eaten').length
@@ -328,23 +341,25 @@ export function MenuScreen() {
             * мог сойтись с суммой блюд. А готовка — единственное, что сегодня
             * нужно сделать руками, и знать об этом лучше сразу.
             */}
-          {(dayDrinks.length > 0 || dayExtras.length > 0 || cookToday.length > 0) && (
+          {(dayDrinks.length > 0 || dayExtras.length > 0) && (
             <Card>
-              <div className="section-title">День</div>
-              {cookToday.length > 0 && (
-                <div className="today-row">
-                  <Icon name="pan" size={17} />
-                  <span>
-                    <b>
-                      Сегодня готовим {cookToday.length}{' '}
-                      {plural(cookToday.length, ['блюдо', 'блюда', 'блюд'])}
-                    </b>
-                    <span className="muted small">
-                      {cookToday.map((t) => recipeById(t.recipeId)?.title ?? '').join(', ')}
-                    </span>
-                  </span>
-                </div>
-              )}
+              {/*
+                * «День», а не «Сегодня»: карточка напоминаний рядом уже
+                * называется «Сегодня», и два одинаковых заголовка в одной
+                * рейке читались бы как одна разорванная карточка. А ещё эта
+                * показывает выбранный день, который сегодняшним может и не
+                * быть.
+                */}
+              <div className="section-title">
+                {!preview && day === realToday ? 'Сегодня' : WEEKDAYS_FULL[day]}
+              </div>
+              {/*
+                * Про готовку здесь молчим: то же самое число считает и
+                * печатает карточка «Сегодня» (remindersFor). Две соседние
+                * карточки в одной рейке говорили «Сегодня готовим 7 блюд»
+                * дважды подряд — и считали это двумя одинаковыми строками
+                * кода.
+                */}
               {dayDrinks.map((d) => (
                 <div className="today-row" key={d.id}>
                   <Icon name={drinkIcon(d.kind)} size={17} />
@@ -378,11 +393,16 @@ export function MenuScreen() {
           */}
         <div className="day-who">
           <b>
+            {/*
+              * «Сегодня» — только когда день и правда сегодняшний. На
+              * пролистанном дне и в предпросмотре следующей недели это слово
+              * было прямой неправдой.
+              */}
             {eater
               ? `Норма: ${eater.name}`
               : attendance.home.length === 0
-                ? 'Сегодня дома никто не ест'
-                : `Сегодня едят дома: ${attendance.home.map((e) => e.name).join(', ')}`}
+                ? `${dayWord} дома никто не ест`
+                : `${dayWord} едят дома: ${attendance.home.map((e) => e.name).join(', ')}`}
           </b>
           {!eater && attendance.awayAllDay.length > 0 && (
             <span className="muted small">
@@ -500,7 +520,17 @@ export function MenuScreen() {
                */
               const taskId = cookTaskId(shown.weekStart, entry.recipeId, entry.cookDay)
               const cooked = cookEvents.some((e) => e.taskId === taskId)
-              const state = dishState(entry, cooked, day)
+              /*
+               * Третий довод — сегодняшний день, а не выбранный. Сначала я
+               * передавал сюда `day`, и подпись врала на всех днях, кроме
+               * сегодняшнего: на понедельнике в пятницу стояло «Готовим
+               * сегодня», а в предпросмотре следующей недели — тоже
+               * «сегодня», рядом с баннером «неделя ещё не наступила».
+               *
+               * Для предпросмотра сегодняшнего дня нет вовсе: та неделя
+               * целиком впереди, и любой её день — план.
+               */
+              const state = dishState(entry, cooked, preview ? -1 : realToday)
               const body = (
                 <>
                   <DishThumb recipe={recipe} />

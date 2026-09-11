@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { WEEKDAYS, WEEKDAYS_ACC, WEEKDAYS_FULL } from '../lib/menu'
+import { WEEKDAYS, WEEKDAYS_ACC, WEEKDAYS_FULL, cookTaskId } from '../lib/menu'
 import { buildCookingPlans, formatDuration } from '../lib/cookingPlan'
 import { dishWorkloads, kitchenLoad } from '../lib/kitchenLoad'
 import { plural } from '../lib/format'
@@ -69,7 +69,8 @@ export function PlanScreen({
 }: {
   onCookNow: (plan: CookingPlan, cookNames: string[]) => void
 }) {
-  const { household, menu, pantry, warnings } = useStore()
+  const { household, menu, pantry, warnings, cookEvents, completeCookTask, undoCookTask } =
+    useStore()
   const [startHour, setStartHour] = useState(11)
   const [activeDay, setActiveDay] = useState<number | null>(null)
   /** Готовим одна или вдвоём — это второй повар в расписании, а не оформление. */
@@ -125,6 +126,9 @@ export function PlanScreen({
    * этого лишний хук.
    */
   const blocks = cookBlocks(current.steps)
+  /** Ключ готовки — тот же, что у cookTasks: неделя, блюдо, день готовки. */
+  const taskKey = (recipeId: string) => cookTaskId(menu.weekStart, recipeId, current.cookDay)
+  const doneTasks = new Set(cookEvents.map((e) => e.taskId))
 
   return (
     <div className="app app--workspace">
@@ -502,6 +506,27 @@ export function PlanScreen({
                       <span className="muted small">едим сегодня</span>
                     )}
                   </span>
+                  {/*
+                    * Отметка о готовке живёт здесь — на готовке, а не в меню,
+                    * где она читалась третьим состоянием рядом со «съедено».
+                    * Это единственный вход в самую опасную операцию
+                    * приложения: она списывает продукты из кладовой и кладёт
+                    * заготовки в морозилку.
+                    */}
+                  <button
+                    className="rail-dish__cooked"
+                    data-on={doneTasks.has(taskKey(d.recipeId))}
+                    onClick={() => {
+                      const key = taskKey(d.recipeId)
+                      if (doneTasks.has(key)) undoCookTask(key)
+                      else completeCookTask(key)
+                    }}
+                    aria-pressed={doneTasks.has(taskKey(d.recipeId))}
+                    aria-label={`${d.title}: приготовлено`}
+                  >
+                    <Icon name="check" size={14} />
+                    <span>{doneTasks.has(taskKey(d.recipeId)) ? 'Готово' : 'Приготовлено'}</span>
+                  </button>
                 </div>
               )
             })}

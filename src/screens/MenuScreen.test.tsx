@@ -294,6 +294,11 @@ describe('экран меню: кто ест и что с блюдом', () => {
       { id: 'd1', eaterId: data.household.eaters[0].id, kind: 'cappuccino', volumeMl: 250,
         sugarTsp: 0, syrupMl: 0, perDay: 2, days: [0, 1, 2, 3, 4, 5, 6] },
     ]
+    // и дополнения тоже: без них слагаемое «дополнения» в «всего» не проверено
+    data.household.extras = [
+      { id: 'x1', eaterId: data.household.eaters[0].id, kind: 'veg_plate', amount: 200,
+        slot: 'dinner', days: [0, 1, 2, 3, 4, 5, 6] },
+    ]
     localStorage.setItem(KEY, JSON.stringify(data))
     mount()
 
@@ -310,6 +315,69 @@ describe('экран меню: кто ест и что с блюдом', () => {
     expect(total).toBe(summed)
     expect(parts).toContain('блюда')
     expect(parts).toContain('напитки')
+    expect(parts).toContain('дополнения')
+    expect(nums.length).toBe(4)
+  })
+
+  it('напитки того, кого нет дома, в дневной итог не идут', () => {
+    const data = JSON.parse(twoEaters()) as {
+      household: { drinks: unknown[]; extras: unknown[]; eaters: { id: string }[] }
+    }
+    // латте у Кирилла, которого нет весь день
+    data.household.drinks = [
+      { id: 'd2', eaterId: 'e2', kind: 'latte', volumeMl: 250, sugarTsp: 0, syrupMl: 0,
+        perDay: 1, days: [0, 1, 2, 3, 4, 5, 6] },
+    ]
+    localStorage.setItem(KEY, JSON.stringify(data))
+    mount()
+
+    /*
+     * Дополнения отсутствующего отбрасывались через extraApplies, а напитки —
+     * нет: хлеб Кирилла исчезал, а латте оставалось и попадало в «всего»
+     * рядом с нормой, из которой Кирилл вычеркнут целиком. Число не
+     * относилось ни к кому.
+     */
+    const parts = document.querySelector('.day-parts')?.textContent ?? ''
+    expect(parts).not.toContain('напитки')
+  })
+
+  it('«сегодня» сказано только про сегодня', () => {
+    mount()
+    expect(document.querySelector('.day-who')?.textContent).toContain('Сегодня')
+
+    // листаем на другой день — слово «сегодня» становится неправдой
+    const days = [...document.querySelectorAll('.wd')].map((n) => n.parentElement as HTMLElement)
+    const other = days.find((b) => b.getAttribute('data-active') !== 'true')!
+    act(() => other.click())
+
+    expect(document.querySelector('.day-who')?.textContent).not.toContain('Сегодня')
+  })
+
+  it('«готовим сегодня» не переезжает вместе с пролистыванием дней', () => {
+    mount()
+    const state = JSON.parse(localStorage.getItem(KEY) ?? '{}') as {
+      menu: { entries: { day: number; cookDay: number }[] }
+    }
+    const stages = () =>
+      [...document.querySelectorAll('.dish--row .badge[data-stage]')].map((n) =>
+        n.getAttribute('data-stage'),
+      )
+
+    /*
+     * Состояние блюда меряется сегодняшним днём, а не открытым. Часы в этом
+     * файле стоят на среде, дни готовки — среда и воскресенье. Значит на
+     * воскресенье готовка ещё впереди: это «Приготовим в воскресенье», а не
+     * «Готовим сегодня». Пока сюда передавали выбранный день, «сегодня»
+     * стояло на каждом дне недели.
+     */
+    const future = state.menu.entries.filter((e) => e.day === 6 && e.cookDay === 6)
+    expect(future.length).toBeGreaterThan(0)
+
+    const days = [...document.querySelectorAll('.wd')].map((n) => n.parentElement as HTMLElement)
+    act(() => days[6].click())
+
+    expect(stages()).toContain('planned')
+    expect(stages()).not.toContain('today')
   })
 
   it('факт готовки из меню убран: это другой слой', () => {

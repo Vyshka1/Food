@@ -100,6 +100,58 @@ describe('блоки готовки', () => {
     expect(blockTitle(blocks[0], 0, 2)).toBe('Начните с этих двух шагов')
   })
 
+  it('«варится» — это про то, что идёт само, а не про чужие руки', () => {
+    /*
+     * Мутация «убрать проверку unattended» пережила прежний тест: в нём шаги
+     * вообще не пересекались по времени. Здесь пересекаются — но первый шаг
+     * занимает руки, а не стоит на плите.
+     */
+    const busyHands = cookBlocks([
+      step({ start: 0, end: 45, unattended: false, activeMinutes: 45 }),
+      step({ start: 10, end: 12, stepIndex: 1 }),
+    ])
+    expect(busyHands[busyHands.length - 1].waiting).toBe(false)
+  })
+
+  it('шаги приходят в любом порядке, а блоки выходят по времени', () => {
+    const blocks = cookBlocks([
+      step({ start: 40, end: 42, stepIndex: 2 }),
+      step({ start: 0, end: 2, stepIndex: 0 }),
+      step({ start: 1, end: 3, stepIndex: 1 }),
+    ])
+    expect(blocks[0].start).toBe(0)
+    expect(blocks.flatMap((b) => b.steps).map((s) => s.stepIndex)).toEqual([0, 1, 2])
+  })
+
+  it('поставить и отойти — это всё же минута занятых рук', () => {
+    /*
+     * У шага с activeMinutes = 0 руки заняты хотя бы на постановку. Без этой
+     * минуты пауза считается от самого старта, и шаг, начатый ровно через
+     * BLOCK_GAP_MINUTES, ошибочно открывает новый блок: человек не отходил,
+     * он всё это время был у плиты.
+     */
+    const blocks = cookBlocks([
+      step({ start: 0, end: 45, activeMinutes: 0, unattended: true }),
+      step({ start: BLOCK_GAP_MINUTES, end: 8, stepIndex: 1 }),
+    ])
+    expect(blocks).toHaveLength(1)
+  })
+
+  it('заголовки крайних блоков не путаются', () => {
+    const one = cookBlocks([step({ start: 0, end: 2 })])
+    expect(blockTitle(one[0], 0, 1)).toBe('Начните с первого шага')
+
+    const blocks = cookBlocks([
+      step({ start: 0, end: 2 }),
+      step({ start: 30, end: 32, stepIndex: 1 }),
+      step({ start: 60, end: 62, stepIndex: 2 }),
+    ])
+    expect(blockTitle(blocks[blocks.length - 1], blocks.length - 1, blocks.length)).toBe(
+      'Заканчиваем',
+    )
+    expect(blockTitle(blocks[1], 1, blocks.length)).not.toBe('Заканчиваем')
+  })
+
   it('пустой план не выдумывает блоков', () => {
     expect(cookBlocks([])).toEqual([])
   })
