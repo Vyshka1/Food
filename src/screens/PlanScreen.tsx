@@ -7,6 +7,7 @@ import { useStore } from '../store'
 import { Card, Warnings } from '../components/ui'
 import { Icon, recipeIcon } from '../components/icons'
 import { CookGantt } from '../components/CookGantt'
+import { blockHint, blockTitle, cookBlocks } from '../lib/cookBlocks'
 import { recipeById } from '../data/recipeRegistry'
 import { APPLIANCE_LABEL, STATION_LABEL, THAW_LABEL } from '../types'
 import type { Appliance, CookingPlan, Kitchen } from '../types'
@@ -58,7 +59,9 @@ function clockFrom(startHour: number, offsetMinutes: number): string {
  * шагов, ради отказа от которого и рисовалась диаграмма: что за чем — видно на
  * ней, а по шагам с таймерами ведёт пошаговый режим.
  */
-const NEXT_STEPS = 4
+
+/** Сколько блюд помещается в рейке, не превращая её во вторую таблицу. */
+const RAIL_DISHES = 4
 
 export function PlanScreen({
   onCookNow,
@@ -70,8 +73,10 @@ export function PlanScreen({
   const [activeDay, setActiveDay] = useState<number | null>(null)
   /** Готовим одна или вдвоём — это второй повар в расписании, а не оформление. */
   const [cooks, setCooks] = useState(1)
-  /** Диаграмма показывает форму дня, список — подробности. Второе по запросу. */
-  const [allSteps, setAllSteps] = useState(false)
+  /** Диаграмма — дополнительный режим, а не главный экран. */
+  const [showGantt, setShowGantt] = useState(false)
+  /** Рейка показывает первые блюда; остальные — по ссылке. */
+  const [railDishes, setRailDishes] = useState(false)
   /*
    * Кладовую передаём обязательно. Без неё расписание считало партии по пустой
    * морозилке, а карточка того же блюда — по настоящей: два экрана про одну
@@ -112,6 +117,13 @@ export function PlanScreen({
   const busiestCook = Math.max(...current.perCookMinutes, 0)
   const freeMinutes = current.makespan - busiestCook
   const clock = (offset: number) => clockFrom(startHour, offset)
+  /*
+   * Группировку не мемоизируем: она идёт после ранних возвратов, а хук там
+   * стоять не может. Замерено — 0.007 мс на плане из 56 шагов (2000 вызовов),
+   * то есть считать её заново каждую отрисовку дешевле, чем городить ради
+   * этого лишний хук.
+   */
+  const blocks = cookBlocks(current.steps)
 
   return (
     <div className="app app--workspace">
@@ -169,27 +181,48 @@ export function PlanScreen({
             </div>
           </Card>
 
+          {/*
+            * Сводка отвечает на четыре вопроса, которые задают до готовки:
+            * сколько это займёт, сколько действий, сколько блюд, когда я
+            * освобожусь. «Руки заняты» отсюда убрано намеренно: при одном
+            * поваре оно почти равно общему времени и читается как «четыре
+            * часа не отойти», хотя это не так — присмотр и ожидание внутри.
+            * Точное число осталось в подробностях ниже.
+            */}
           <div className="plan-stats">
             <div className="plan-stat">
               <i className="plan-stat__icon">
                 <Icon name="clock" size={20} />
               </i>
               <b>{formatDuration(current.makespan)}</b>
-              <span>от начала до конца</span>
+              <span>всего</span>
             </div>
             <div className="plan-stat">
               <i className="plan-stat__icon">
-                <Icon name="hand" size={20} />
+                <Icon name="check" size={20} />
               </i>
-              <b>{formatDuration(current.handsOnMinutes)}</b>
-              <span>руки заняты</span>
+              <b>
+                {current.steps.length}{' '}
+                {plural(current.steps.length, ['действие', 'действия', 'действий'])}
+              </b>
+              <span>по плану</span>
             </div>
             <div className="plan-stat">
               <i className="plan-stat__icon">
-                <Icon name="eye" size={20} />
+                <Icon name="pot" size={20} />
               </i>
-              <b>{formatDuration(current.attentionMinutes)}</b>
-              <span>присмотр</span>
+              <b>
+                {current.dishes.length}{' '}
+                {plural(current.dishes.length, ['блюдо', 'блюда', 'блюд'])}
+              </b>
+              <span>на {current.coversDays.length} {plural(current.coversDays.length, ['день', 'дня', 'дней'])}</span>
+            </div>
+            <div className="plan-stat">
+              <i className="plan-stat__icon">
+                <Icon name="party" size={20} />
+              </i>
+              <b>{clock(current.makespan)}</b>
+              <span>закончите</span>
             </div>
           </div>
 
@@ -205,9 +238,10 @@ export function PlanScreen({
             </p>
           )}
           <p className="hint plan-free">
-            Одновременно в работе до {current.maxParallel}{' '}
-            {plural(current.maxParallel, ['блюда', 'блюд', 'блюд'])}. «Присмотр» идёт поверх
-            занятых рук — помешать, перевернуть, заглянуть в кастрюлю.
+            Руки заняты {formatDuration(current.handsOnMinutes)}, присмотр —{' '}
+            {formatDuration(current.attentionMinutes)} поверх них: помешать, перевернуть,
+            заглянуть в кастрюлю. Одновременно в работе до {current.maxParallel}{' '}
+            {plural(current.maxParallel, ['блюда', 'блюд', 'блюд'])}.
             {freeMinutes > 0 ? ` Свободного времени остаётся ${formatDuration(freeMinutes)}.` : ''}
           </p>
 
@@ -238,152 +272,152 @@ export function PlanScreen({
           </Card>
 
           {/*
-            * Пустая карточка вместо диаграммы — это белый прямоугольник без
-            * объяснения. Достижимо, если все рецепты дня исчезли из реестра:
-            * например, человек удалил свой рецепт, по которому собрана неделя.
+            * План по времени — главное на экране, и он стоит до всего
+            * остального. Человек у плиты спрашивает «что мне делать сейчас»,
+            * а не «как устроен день»: диаграмма отвечает на второй вопрос и
+            * потому уехала под кнопку.
+            */}
+          {blocks.map((block, i) => (
+            <Card key={`${block.start}-${i}`}>
+              <div className="plan-block">
+                <span className="plan-block__time">{clock(block.start)}</span>
+                <div className="plan-block__head">
+                  <b>{blockTitle(block, i, blocks.length)}</b>
+                  <span className="muted small">
+                    {blockHint(block, i, blocks.length, cooks)}
+                  </span>
+                </div>
+              </div>
+              {block.steps.map((step) => {
+                const recipe = recipeById(step.recipeId)
+                const minutes = step.end - step.start
+                const detail = [
+                  `${minutes} мин`,
+                  step.activeMinutes > 0 && step.activeMinutes < minutes
+                    ? `руки заняты ${step.activeMinutes}`
+                    : null,
+                  step.appliance ? APPLIANCE_LABEL[step.appliance] : STATION_LABEL[step.station],
+                  step.tempC ? `${step.tempC}°` : null,
+                  step.unattended ? 'можно отойти' : null,
+                ]
+                  .filter(Boolean)
+                  .join(' · ')
+                return (
+                  <div className="next-step" key={`${step.recipeId}-${step.stepIndex}`}>
+                    <span className="next-step__mark">
+                      <Icon name="check" size={12} />
+                    </span>
+                    <span className="next-step__what">
+                      {step.text}
+                      <span className="next-step__detail muted small">{detail}</span>
+                    </span>
+                    <span className="next-step__dish muted small">
+                      {recipe && <Icon name={recipeIcon(recipe)} size={16} />}
+                      {step.title}
+                    </span>
+                  </div>
+                )
+              })}
+            </Card>
+          ))}
+
+          {/*
+            * Диаграмма осталась — но как дополнительный режим. Она полезна,
+            * когда хочется понять, почему день складывается именно так; на
+            * вопрос «с чего начать» она без расшифровки не отвечает.
             */}
           {current.steps.length > 0 && (
             <Card>
-              <CookGantt steps={current.steps} makespan={current.makespan} clock={clock} />
+              <button
+                className="btn btn--soft btn--small plan-gantt-toggle"
+                onClick={() => setShowGantt((v) => !v)}
+              >
+                <Icon name={showGantt ? 'close' : 'history'} size={14} />
+                {showGantt ? 'Скрыть загрузку кухни' : 'Показать загрузку кухни'}
+              </button>
+              {showGantt && (
+                <CookGantt steps={current.steps} makespan={current.makespan} clock={clock} />
+              )}
             </Card>
           )}
 
-          <Card>
-            <div className="section-title">
-              {allSteps ? 'Все шаги' : 'Ближайшие шаги'}
-            </div>
-            {(allSteps ? current.steps : current.steps.slice(0, NEXT_STEPS)).map((step, i) => {
-              const recipe = recipeById(step.recipeId)
-              const minutes = step.end - step.start
-              /*
-               * Подробности шага живут здесь, а не только на отрезке диаграммы.
-               * У отрезка они были в `title`, а `title` на телефоне не
-               * показывается вовсе — наведения нет, — и в дерево доступности
-               * пустой `span` не попадает. То есть «руки заняты 5 из 40»,
-               * «180°» и «можно отойти» пропадали ровно на том устройстве, где
-               * по плану и готовят.
-               */
-              const detail = [
-                `${minutes} мин`,
-                step.activeMinutes > 0 && step.activeMinutes < minutes
-                  ? `руки заняты ${step.activeMinutes}`
-                  : null,
-                step.appliance ? APPLIANCE_LABEL[step.appliance] : STATION_LABEL[step.station],
-                step.tempC ? `${step.tempC}°` : null,
-                step.unattended ? 'можно отойти' : null,
-              ]
-                .filter(Boolean)
-                .join(' · ')
-              return (
-                <div className="next-step" key={`${step.recipeId}-${step.stepIndex}-${i}`}>
+          {/*
+            * Контейнеры, морозилка и разморозка — один завершающий этап, а не
+            * три таблицы в подвале. Пока они лежали отдельными карточками
+            * внизу, они читались как справка; на деле это последнее действие
+            * дня, и у него есть своё место в порядке «сейчас → потом → после».
+            */}
+          {(current.pack.length > 0 || current.freeze.length > 0 || current.thaw.length > 0) && (
+            <Card>
+              <div className="plan-block">
+                <span className="plan-block__time">{clock(current.makespan)}</span>
+                <div className="plan-block__head">
+                  <b>После готовки</b>
+                  <span className="muted small">Разложить, подписать и убрать.</span>
+                </div>
+              </div>
+
+              {current.pack.map((task) => (
+                <div className="next-step next-step--after" key={`pack-${task.recipeId}`}>
                   <span className="next-step__mark">
                     <Icon name="check" size={12} />
                   </span>
                   <span className="next-step__what">
-                    <b>{clock(step.start)}</b> · {step.text}
-                    <span className="next-step__detail muted small">{detail}</span>
+                    {task.title}
+                    <span className="next-step__detail muted small">
+                      {task.containers}{' '}
+                      {plural(task.containers, ['контейнер', 'контейнера', 'контейнеров'])} · на{' '}
+                      {task.forDays.map((d) => WEEKDAYS[d]).join(', ')}
+                    </span>
                   </span>
-                  <span className="next-step__dish muted small">
-                    {recipe && <Icon name={recipeIcon(recipe)} size={16} />}
-                    {step.title}
-                  </span>
-                </div>
-              )
-            })}
-            {current.steps.length > NEXT_STEPS && (
-              <button
-                className="btn btn--soft btn--small"
-                onClick={() => setAllSteps((v) => !v)}
-              >
-                {allSteps
-                  ? 'Свернуть до ближайших'
-                  : `Показать все ${current.steps.length} ${plural(current.steps.length, ['шаг', 'шага', 'шагов'])}`}
-              </button>
-            )}
-            <p className="hint" style={{ marginBottom: 0 }}>
-              В пошаговом режиме те же шаги идут с таймерами.
-            </p>
-          </Card>
-
-          {current.pack.length > 0 && (
-            <Card>
-              <div className="section-title">
-                <Icon name="fridge" size={16} />
-                Разложить по контейнерам
-              </div>
-              {current.pack.map((task) => (
-                <div className="ing-line" key={task.recipeId}>
-                  <span>{task.title}</span>
-                  <b>
-                    {task.containers}{' '}
-                    {plural(task.containers, ['контейнер', 'контейнера', 'контейнеров'])} ·{' '}
-                    {task.forDays.map((d) => WEEKDAYS[d]).join(', ')}
-                  </b>
                 </div>
               ))}
-              <p className="hint" style={{ marginBottom: 0 }}>
-                Сегодняшнюю порцию раскладывать незачем — её едят с тарелки.
-              </p>
-            </Card>
-          )}
 
-          {current.freeze.length > 0 && (
-            <Card>
-              <div className="section-title">
-                <Icon name="snowflake" size={16} />В морозилку
-              </div>
               {current.freeze.map((f) => (
-                <div className="freeze-row" key={f.recipeId}>
-                  <div className="freeze-row__label">{f.label}</div>
-                  <div className="muted small">
-                    {f.stage === 'raw'
-                      ? `морозить сырыми${
-                          f.afterStep !== undefined
-                            ? ` — после «${stepText(f.recipeId, f.afterStep)}»`
-                            : ''
-                        }`
-                      : 'морозить готовыми, дав остыть'}
-                    {' · '}
-                    {THAW_LABEL[f.thaw]}
-                  </div>
+                <div className="next-step next-step--after" key={`freeze-${f.recipeId}`}>
+                  <span className="next-step__mark">
+                    <Icon name="snowflake" size={12} />
+                  </span>
+                  <span className="next-step__what">
+                    {f.label}
+                    <span className="next-step__detail muted small">
+                      {f.stage === 'raw'
+                        ? `морозить сырыми${
+                            f.afterStep !== undefined
+                              ? ` — после «${stepText(f.recipeId, f.afterStep)}»`
+                              : ''
+                          }`
+                        : 'морозить готовыми, дав остыть'}
+                      {' · '}
+                      {THAW_LABEL[f.thaw]}
+                    </span>
+                  </span>
                 </div>
               ))}
+
+              {current.thaw.map((r) => (
+                <div className="next-step next-step--after" key={`thaw-${r.recipeId}-${r.day}`}>
+                  <span className="next-step__mark">
+                    <Icon name="fridge" size={12} />
+                  </span>
+                  <span className="next-step__what">
+                    Достать {r.title}
+                    <span className="next-step__detail muted small">
+                      {WEEKDAYS_FULL[r.day]}
+                      {r.hours >= 8 ? ' вечером' : ' утром'}
+                      {r.day !== r.forDay ? ` — на ${WEEKDAYS_ACC[r.forDay]}` : ''}
+                    </span>
+                  </span>
+                </div>
+              ))}
+
               <p className="hint" style={{ marginBottom: 0 }}>
-                Надпись на контейнере уже готова — перепишите её на стикер. Срок считается от
-                сегодняшней готовки.
+                Сегодняшнюю порцию раскладывать незачем — её едят с тарелки. Надпись на контейнер
+                уже готова: срок считается от сегодняшней готовки.
               </p>
             </Card>
           )}
 
-          {current.thaw.length > 0 && (
-            <Card>
-              <div className="section-title">
-                <Icon name="fridge" size={16} />
-                Достать из морозилки
-              </div>
-              {current.thaw.map((r) => (
-                <div
-                  className="row row--between"
-                  key={`${r.recipeId}-${r.day}`}
-                  style={{ padding: '6px 0' }}
-                >
-                  <span>
-                    {WEEKDAYS_FULL[r.day]}
-                    {r.hours >= 8 ? ' вечером' : ' утром'}
-                  </span>
-                  <b>
-                    {r.title}
-                    {r.day !== r.forDay && (
-                      <span className="muted small"> — на {WEEKDAYS_ACC[r.forDay]}</span>
-                    )}
-                  </b>
-                </div>
-              ))}
-              <p className="hint" style={{ marginBottom: 0 }}>
-                Иначе в нужный день блюдо придётся размораживать второпях.
-              </p>
-            </Card>
-          )}
         </div>
 
         <div className="workspace__rail">
@@ -407,7 +441,13 @@ export function PlanScreen({
               </span>
               Что приготовим
             </div>
-            {current.dishes.map((d) => {
+            {/*
+              * Первые четыре блюда и ссылка на остальные. Девять строк с
+              * минутами и контейнерами — это уже не сводка, а вторая таблица
+              * сбоку от плана: рейка должна отвечать «что получится», а не
+              * пересказывать весь день.
+              */}
+            {(railDishes ? current.dishes : current.dishes.slice(0, RAIL_DISHES)).map((d) => {
               const recipe = recipeById(d.recipeId)
               const work = workloads.get(d.recipeId)
               const packed = current.pack.find((p) => p.recipeId === d.recipeId)
@@ -448,9 +488,14 @@ export function PlanScreen({
                 </div>
               )
             })}
-            <p className="hint" style={{ margin: 0 }}>
-              Минуты — те, что руки заняты этим блюдом; вместе они и складываются в «руки заняты».
-            </p>
+            {current.dishes.length > RAIL_DISHES && (
+              <button className="rail-more" onClick={() => setRailDishes((v) => !v)}>
+                {railDishes
+                  ? 'Свернуть'
+                  : `Все ${current.dishes.length} ${plural(current.dishes.length, ['блюдо', 'блюда', 'блюд'])}`}
+                <Icon name={railDishes ? 'back' : 'forward'} size={14} />
+              </button>
+            )}
           </div>
 
           <div className="rail-card">
