@@ -541,14 +541,24 @@ select {
   min-width: 0;
 }
 
+/*
+ * Булавка с подписью и в ряду действий, а не немым значком сбоку. В 18 px
+ * её приняли за колокольчик и решили, что это напоминание: значок без слова
+ * не сообщает ничего, кроме того, что он есть.
+ */
 .dish__pin {
   border: none;
   background: transparent;
   color: var(--muted);
-  padding: 0 14px;
-  display: grid;
-  place-items: center;
+  padding: 10px 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
   flex: 0 0 auto;
+  align-self: flex-start;
 }
 
 .dish__pin[data-on='true'] {
@@ -2814,4 +2824,17 @@ select {
   border-top: 1px solid var(--line);
   padding-top: 6px;
   margin-top: 2px;
+}
+
+
+/*
+ * Карточка КБЖУ держится при прокрутке: это единственное число, за которым
+ * следят, пролистывая день, — а список блюд на широком экране длиннее рейки.
+ * На телефоне рейка идёт над списком, там закреплять нечего.
+ */
+@media (min-width: 900px) {
+  .day-rail {
+    position: sticky;
+    top: 20px;
+  }
 }
