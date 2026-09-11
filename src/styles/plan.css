@@ -395,3 +395,67 @@
 .load-dots i[data-busy='true'] {
   background: var(--green);
 }
+
+
+/* ── План по времени ──────────────────────────────────────────────────────
+ *
+ * Главное на экране. Слева время блока, справа — что делать; шаги внутри
+ * идут в том порядке, в каком их и выполняют.
+ */
+.plan-block {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+
+.plan-block__time {
+  flex: 0 0 auto;
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--green-dark);
+  /* колонка времени одинаковой ширины: иначе заголовки скачут по блокам */
+  min-width: 52px;
+}
+
+.plan-block__head b {
+  display: block;
+  font-size: 17px;
+}
+
+/* Четвёртая плитка сводки не должна ужимать остальные до нечитаемых */
+.plan-stats {
+  flex-wrap: wrap;
+}
+
+.plan-stats .plan-stat {
+  min-width: 132px;
+}
+
+/* Диаграмма — по кнопке, и кнопка выглядит как переключатель, а не действие */
+.plan-gantt-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+}
+
+/* Завершающий этап: те же строки, но помечены отдельно — это не готовка */
+.next-step--after .next-step__mark {
+  background: var(--card-soft);
+  color: var(--muted);
+}
+
+/* «Все 9 блюд» — ссылка, а не кнопка: она не делает, а раскрывает */
+.rail-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  color: var(--green-dark);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 6px 0;
+  align-self: flex-start;
+}
