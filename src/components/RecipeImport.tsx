@@ -3,7 +3,7 @@ import type { Recipe, RecipeItem } from '../types'
 import { CATEGORY_LABEL, CATEGORY_ORDER, INGREDIENTS, INGREDIENT_BY_ID } from '../data/ingredients'
 import { parseRecipeText, resolveLine } from '../lib/recipeText'
 import { statsOf } from '../lib/nutrition'
-import { householdQty } from '../lib/measures'
+import { recipeQty } from '../lib/measures'
 import { plural } from '../lib/format'
 import { Card, Stepper, TextArea } from './ui'
 
@@ -226,14 +226,17 @@ export function RecipeImport({
           items.map((item) => {
             const ing = INGREDIENT_BY_ID[item.ingredientId]
             if (!ing) return null
-            const amount = householdQty(ing, item.qty)
+            const amount = recipeQty(ing, item.qty)
             return (
               <div className="ing-line" key={item.ingredientId}>
                 <span className="muted">{ing.name}</span>
                 <b>
                   {/* тем же языком, что и карточка блюда: «½ луковицы», «по
                       вкусу» — щепотка соли на четверых округлялась в «0 г»,
-                      и это читалось как «соли нет» */}
+                      и это читалось как «соли нет». Но без закупочного
+                      округления штучного: здесь доля порции, а не то, что
+                      кладут в корзину, и «1 шт» вместо 0,5 спорило с
+                      редактором, который открывается следующим нажатием */}
                   {amount.text}
                   {amount.approx ? <span className="muted small"> · {amount.approx}</span> : ''}
                 </b>

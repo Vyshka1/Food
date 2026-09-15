@@ -62,6 +62,17 @@ function expectedWeekLabel(monday: string): string {
     : `${start.getDate()} ${months[start.getMonth()]} — ${end.getDate()} ${months[end.getMonth()]}`
 }
 
+/**
+ * Едок, которого всю неделю нет дома: ни одного приёма ни в один из семи дней.
+ * Это единственный способ получить неделю, на которую нечего покупать.
+ */
+function alwaysAway() {
+  const places: Record<string, string> = {}
+  for (let day = 0; day < 7; day++)
+    for (const slot of ['breakfast', 'lunch', 'dinner']) places[`${day}:${slot}`] = 'away'
+  return { ...eater(), mealPlaces: places }
+}
+
 function household(weekStart: string): Household {
   return {
     eaters: [eater()],
@@ -79,13 +90,33 @@ const MONDAY = thisMonday()
 const HOUSE = household(MONDAY)
 const MENU = buildWeekMenu(HOUSE, 7).menu
 
-function seed() {
+const AWAY_HOUSE = { ...household(MONDAY), eaters: [alwaysAway()] } as unknown as Household
+const AWAY_MENU = buildWeekMenu(AWAY_HOUSE, 7).menu
+
+/** Та же неделя вне дома, но с ежедневным капучино: молоко покупать всё равно. */
+const WITH_COFFEE = {
+  ...AWAY_HOUSE,
+  drinks: [
+    {
+      id: 'd1',
+      eaterId: 'e1',
+      kind: 'cappuccino',
+      volumeMl: 250,
+      sugarTsp: 0,
+      syrupMl: 0,
+      perDay: 2,
+      days: [0, 1, 2, 3, 4, 5, 6],
+    },
+  ],
+} as unknown as Household
+
+function seed(house: Household = HOUSE, menu = MENU) {
   localStorage.setItem(
     KEY,
     JSON.stringify({
       version: SCHEMA_VERSION,
-      household: HOUSE,
-      menu: { ...MENU, weekStart: MONDAY },
+      household: house,
+      menu: { ...menu, weekStart: MONDAY },
       atHome: [],
       pantry: { always: [], stock: [], freezer: [] },
       notifications: false,
@@ -242,6 +273,15 @@ describe('экран «Продукты»', () => {
     expect(screen.getByText('Запасы дома')).toBeTruthy()
   })
 
+  it('поиск без совпадений по-прежнему советует поправить поиск', () => {
+    mount()
+    act(() => {
+      fireEvent.change(screen.getByLabelText('Найти продукт'), { target: { value: 'щщщ' } })
+    })
+    // здесь причина пустоты и правда в фильтре — совет остаётся прежним
+    expect(screen.getByText(/Уберите фильтр или поищите по другому слову/)).toBeTruthy()
+  })
+
   it('отметка «есть дома» убирает позицию из того, что осталось купить', () => {
     mount()
     const before = screen.getByText(/Осталось купить/).textContent ?? ''
@@ -253,6 +293,43 @@ describe('экран «Продукты»', () => {
     const [, leftAfter, totalAfter] = /(\d+) из (\d+)/.exec(after) ?? []
     expect(Number(totalAfter)).toBe(Number(totalBefore) - 1)
     expect(Number(leftAfter)).toBe(Number(leftBefore) - 1)
+  })
+})
+
+describe('неделя, на которую нечего покупать', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    seed(AWAY_HOUSE, AWAY_MENU)
+  })
+
+  it('список и правда пуст — иначе проверять нечего', () => {
+    expect(buildShoppingList(AWAY_MENU, AWAY_HOUSE, emptyPantry()).lines.length).toBe(0)
+  })
+
+  it('экран говорит, что дома никто не ест, а не отправляет снимать фильтр', () => {
+    mount()
+    // ни фильтра, ни поиска человек не ставил: убирать ему нечего, и совет
+    // «уберите фильтр» отправлял его искать несуществующую причину
+    expect(screen.getByText('На этой неделе дома никто не ест — покупать нечего.')).toBeTruthy()
+    expect(screen.queryByText(/Уберите фильтр/)).toBeNull()
+  })
+
+  it('но если покупать всё же есть что, пустоту списка объясняет фильтр', () => {
+    /*
+     * Кофе покупается независимо от того, где человек ест: молоко на неделю
+     * нужно и в командировке. Значит «дома никто не ест» само по себе не
+     * означает «покупать нечего», и говорить это поверх непустого списка
+     * нельзя.
+     */
+    localStorage.clear()
+    seed(WITH_COFFEE, buildWeekMenu(WITH_COFFEE, 7).menu)
+    expect(buildShoppingList(AWAY_MENU, WITH_COFFEE, emptyPantry()).lines.length).toBeGreaterThan(0)
+
+    mount()
+    act(() => {
+      fireEvent.change(screen.getByLabelText('Найти продукт'), { target: { value: 'щщщ' } })
+    })
+    expect(screen.getByText(/Уберите фильтр или поищите по другому слову/)).toBeTruthy()
   })
 })
 
