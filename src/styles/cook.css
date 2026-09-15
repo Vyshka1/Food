@@ -47,3 +47,38 @@
   gap: 8px;
   margin-left: auto;
 }
+
+/* ── Плашка «готовка продолжается» ─────────────────────────────────────── */
+/*
+ * Висит на всех экранах, пока готовка не закрыта. Узкая и негромкая: это не
+ * тревога, а напоминание, что начатое на месте. Зелёный в этом приложении
+ * означает сделанную работу, поэтому здесь его нет.
+ */
+.cook-bar__wrap {
+  min-height: 0;
+  padding-top: 12px;
+  padding-bottom: 0;
+}
+
+.cook-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--ink);
+}
+
+.cook-bar__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+
+.cook-bar .btn {
+  flex: 0 0 auto;
+}

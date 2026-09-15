@@ -425,3 +425,17 @@ export function formatDuration(minutes: number): string {
 export function cookDayLabel(day: number): string {
   return WEEKDAYS_FULL[day] ?? ''
 }
+
+/**
+ * Имена поваров для выбранного их числа.
+ *
+ * Живёт рядом с расписанием, потому что спрашивают об этом двое: экран плана,
+ * когда запускает готовку, и плашка «готовка продолжается», когда возвращает
+ * в неё после перезагрузки. Две копии этой строчки разошлись бы на первой же
+ * правке — и человек увидел бы разных поваров до и после обновления страницы.
+ */
+export function cookNamesOf(household: Household, cooks: number): string[] {
+  return cooks === 1
+    ? [household.eaters[0]?.name ?? 'Повар']
+    : household.eaters.slice(0, 2).map((e) => e.name)
+}

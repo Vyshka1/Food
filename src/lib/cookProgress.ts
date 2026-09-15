@@ -208,6 +208,15 @@ export interface CookRun {
   pauses: CookPause[]
   /** Ключи закрытых шагов. */
   done: string[]
+  /**
+   * Сколько поваров было выбрано, когда готовку начали.
+   *
+   * Без этого вернуться в начатую готовку нельзя: вдвоём расписание другое,
+   * шаги стоят в другие минуты, а ключ шага включает минуту — отметки просто
+   * не совпали бы. В старых записях поля нет, там читается один повар: это
+   * значение по умолчанию на экране плана.
+   */
+  cooks: number
 }
 
 /**
@@ -221,8 +230,13 @@ export interface CookRun {
  */
 const RUN_MAX_AGE_MS = 24 * 60 * 60 * 1000
 
-export function newCookRun(id: string, now: number, done: string[] = []): CookRun {
-  return { id, startedAt: now, pausedAt: null, pausedTotal: 0, pauses: [], done }
+export function newCookRun(
+  id: string,
+  now: number,
+  done: string[] = [],
+  cooks = 1,
+): CookRun {
+  return { id, startedAt: now, pausedAt: null, pausedTotal: 0, pauses: [], done, cooks }
 }
 
 /** Секунды от старта готовки с вычетом пауз. */
@@ -252,7 +266,7 @@ const isNum = (value: unknown): value is number =>
  * этих случаев не должен кончаться белым экраном, поэтому любое сомнение —
  * «хода нет», и готовка начинается заново.
  */
-export function parseCookRun(raw: string | null, id: string, now: number): CookRun | null {
+export function parseCookRun(raw: string | null, id: string | null, now: number): CookRun | null {
   if (!raw) return null
   let value: unknown
   try {
@@ -262,7 +276,10 @@ export function parseCookRun(raw: string | null, id: string, now: number): CookR
   }
   if (typeof value !== 'object' || value === null) return null
   const run = value as Partial<CookRun>
-  if (run.id !== id) return null
+  // id === null — «чей угодно ход»: так его читает плашка, которая ещё не
+  // знает, какой это день, и узнаёт его из самой записи
+  if (typeof run.id !== 'string') return null
+  if (id !== null && run.id !== id) return null
   if (!isNum(run.startedAt) || !isNum(run.pausedTotal) || run.pausedTotal < 0) return null
   if (run.startedAt > now || now - run.startedAt > RUN_MAX_AGE_MS) return null
   if (run.pausedAt !== null && !isNum(run.pausedAt)) return null
@@ -276,7 +293,8 @@ export function parseCookRun(raw: string | null, id: string, now: number): CookR
     pauses.push({ at, seconds })
   }
   return {
-    id,
+    id: run.id,
+    cooks: isNum(run.cooks) && run.cooks >= 1 ? Math.round(run.cooks) : 1,
     startedAt: run.startedAt,
     pausedAt: run.pausedAt ?? null,
     pausedTotal: run.pausedTotal,
@@ -290,6 +308,21 @@ export function loadCookRun(id: string, now: number): CookRun | null {
     return parseCookRun(localStorage.getItem(COOK_RUN_KEY), id, now)
   } catch {
     // localStorage бывает запрещён целиком — это не повод не дать готовить
+    return null
+  }
+}
+
+/**
+ * Отложенный ход, какой бы день он ни описывал.
+ *
+ * Плашка «готовка продолжается» висит на всех экранах и не знает заранее, про
+ * какой день речь: день она узнаёт из самой записи. Проверки те же, что и при
+ * обычном чтении, — кроме совпадения дня.
+ */
+export function peekCookRun(now: number): CookRun | null {
+  try {
+    return parseCookRun(localStorage.getItem(COOK_RUN_KEY), null, now)
+  } catch {
     return null
   }
 }

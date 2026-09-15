@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { StoreProvider, useStore } from './store'
 import { Onboarding } from './screens/Onboarding'
 import { MenuScreen } from './screens/MenuScreen'
@@ -8,6 +8,8 @@ import { ProfileScreen } from './screens/ProfileScreen'
 import { MyRecipesScreen } from './screens/MyRecipesScreen'
 import { ShoppingModeScreen } from './screens/ShoppingModeScreen'
 import { CookNowScreen } from './screens/CookNowScreen'
+import { buildCookingPlans, cookNamesOf } from './lib/cookingPlan'
+import { cookProgress, peekCookRun, runElapsed } from './lib/cookProgress'
 import { Icon, type IconName } from './components/icons'
 import { StorageNotice } from './components/StorageNotice'
 import type { CookingPlan } from './types'
@@ -22,7 +24,7 @@ const TABS: { id: Tab; label: string; icon: IconName }[] = [
 ]
 
 function Shell() {
-  const { household, menu, saveHousehold, importProfile } = useStore()
+  const { household, menu, pantry, saveHousehold, importProfile } = useStore()
   const [imported, setImported] = useState<'ok' | 'fail' | null>(null)
 
   // Ссылка вида …#data=… переносит анкету с другого устройства
@@ -42,6 +44,46 @@ function Shell() {
    * готовки.
    */
   const [cooking, setCooking] = useState<{ plan: CookingPlan; cookNames: string[] } | null>(null)
+
+  /*
+   * Начатая и не закрытая готовка — про неё нужно говорить на всех экранах.
+   *
+   * Ход переживает перезагрузку, а сам режим готовки после неё не
+   * открывается: распахивать его на весь экран при каждой загрузке нельзя,
+   * человек мог обновить страницу, чтобы посмотреть меню. Но и молчать
+   * нельзя — обновление читается как «всё пропало», и человек начинает
+   * заново поверх целых отметок.
+   *
+   * День и число поваров берём из самой записи: расписание вдвоём другое, и
+   * вернуться в ту же готовку можно только с тем же числом поваров. Плана
+   * своего здесь не считаем — зовём ту же `buildCookingPlans`, что и экран
+   * плана, иначе два экрана разошлись бы во времени шагов.
+   */
+  const resume = useMemo(() => {
+    if (!household || !menu || cooking) return null
+    const run = peekCookRun(Date.now())
+    if (!run) return null
+    const [week, day] = run.id.split('|')
+    if (week !== menu.weekStart) return null
+    const plan = buildCookingPlans(menu, household, run.cooks, pantry).find(
+      (p) => p.cookDay === Number(day),
+    )
+    if (!plan) return null
+    /*
+     * Сколько отмечено — спрашиваем у того же `cookProgress`, что и экран
+     * готовки, а не считаем длину списка отметок. В списке могут лежать ключи
+     * шагов, которых в сегодняшнем расписании уже нет: план пересобирается,
+     * когда меняется кладовая. Плашка, обещающая «отмечено 5», после которой
+     * на экране стоит «0 из 24», хуже, чем её отсутствие.
+     */
+    const { doneCount, totalCount } = cookProgress(
+      plan.steps,
+      run.done,
+      runElapsed(run, Date.now()),
+      run.pauses,
+    )
+    return { plan, cookNames: cookNamesOf(household, run.cooks), doneCount, totalCount }
+  }, [household, menu, pantry, cooking])
 
   if (!household || !menu || editing) {
     return (
@@ -85,6 +127,27 @@ function Shell() {
               onClick={() => setImported(null)}
             >
               Понятно
+            </button>
+          </div>
+        </div>
+      )}
+      {resume && (
+        <div className="app cook-bar__wrap">
+          <div className="cook-bar">
+            <Icon name="pot" size={20} />
+            <span className="cook-bar__text">
+              <b>Готовка продолжается</b>
+              <span className="muted small">
+                отмечено шагов: {resume.doneCount} из {resume.totalCount}
+              </span>
+            </span>
+            <button
+              className="btn btn--small"
+              onClick={() =>
+                setCooking({ plan: resume.plan, cookNames: resume.cookNames })
+              }
+            >
+              Вернуться
             </button>
           </div>
         </div>

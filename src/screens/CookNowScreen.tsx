@@ -76,7 +76,10 @@ export function CookNowScreen({
   /** Какая это готовка: чужой ход (другая неделя, другой день) не подхватываем. */
   const runId = `${menu?.weekStart ?? 'без-недели'}|${plan.cookDay}`
   const [run, setRun] = useState<CookRun>(
-    () => loadCookRun(runId, Date.now()) ?? newCookRun(runId, Date.now(), alreadyCooked()),
+    () =>
+      loadCookRun(runId, Date.now()) ??
+      // сколько поваров — запоминаем: иначе вернуться в эту же готовку нельзя
+      newCookRun(runId, Date.now(), alreadyCooked(), cookNames.length),
   )
   const [voice, setVoice] = useState(false)
   const [tick, setTick] = useState(0)

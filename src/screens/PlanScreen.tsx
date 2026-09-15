@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { WEEKDAYS, WEEKDAYS_ACC, WEEKDAYS_FULL, cookTaskId } from '../lib/menu'
-import { buildCookingPlans, formatDuration } from '../lib/cookingPlan'
+import { buildCookingPlans, cookNamesOf, formatDuration } from '../lib/cookingPlan'
 import { loadCookRun } from '../lib/cookProgress'
 import { dishWorkloads, kitchenLoad } from '../lib/kitchenLoad'
 import { plural } from '../lib/format'
@@ -111,10 +111,7 @@ export function PlanScreen({
   if (!household || !menu) return null
   if (!current) return <div className="app">Меню пока пустое.</div>
 
-  const cookNames =
-    cooks === 1
-      ? [household.eaters[0]?.name ?? 'Повар']
-      : household.eaters.slice(0, 2).map((e) => e.name)
+  const cookNames = cookNamesOf(household, cooks)
 
   /*
    * Свободные минуты — одно число на весь экран: и подсказка под плитками, и
