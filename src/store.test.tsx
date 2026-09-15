@@ -6,8 +6,11 @@ import { STORAGE_KEYS, StoreProvider, useStore } from './store'
 import { SCHEMA_VERSION } from './lib/persist'
 import { encodeProfile } from './lib/transfer'
 import { addFreezer, emptyPantry } from './lib/pantry'
-import type { FreezerItem } from './types'
+import type { FreezerItem, Household, Recipe } from './types'
 import { recipeById } from './data/recipeRegistry'
+import { buildWeekMenu, defaultRepeats } from './lib/menu'
+import { buildShoppingList } from './lib/shopping'
+import { defaultOils } from './lib/oil'
 import { parseIso } from './lib/day'
 
 /*
@@ -27,6 +30,9 @@ declare global {
   interface Window {
     __link?: string
     __ban?: string
+    /** Запись меню, которую закрепляем: id известен только после сборки. */
+    __pin?: string
+    __recipe?: Recipe
   }
 }
 
@@ -47,6 +53,18 @@ function Probe() {
       <span data-testid="frozen">
         {store.menu?.entries.filter((e) => e.fromFreezer).length ?? -1}
       </span>
+      <span data-testid="bought">{store.bought.join(',')}</span>
+      <span data-testid="at-home">{store.atHome.join(',')}</span>
+      <span data-testid="stock">{store.pantry.stock.reduce((sum, i) => sum + i.qty, 0)}</span>
+      <span data-testid="pins">
+        {(store.menu?.entries ?? []).filter((e) => e.pinned).map((e) => e.id).join(',')}
+      </span>
+      <button onClick={store.storeBought}>разложить</button>
+      <button onClick={() => store.togglePin(window.__pin ?? '')}>закрепить</button>
+      <button onClick={() => store.saveCustomRecipe(window.__recipe!)}>сохранить рецепт</button>
+      <button onClick={() => store.deleteCustomRecipe(window.__recipe?.id ?? '')}>
+        удалить рецепт
+      </button>
       <button onClick={() => store.setNotifications(true)}>изменить</button>
       {/*
         * Без try: анкета из ссылки чинится при разборе, а если это сломается,
@@ -517,5 +535,182 @@ describe('скрыть блюдо', () => {
     act(() => screen.getByText('вернуть').click())
 
     expect(Number(at('frozen'))).toBe(before)
+  })
+})
+
+/**
+ * Неделя с настоящим меню: у покупок должен быть список, а пустое меню ничего
+ * не покупает. Анкета здесь полная — кухня, масло, повторы, — ровно такая, по
+ * какой меню собирается и в приложении.
+ */
+function fullHousehold(weekStart: string): Household {
+  return {
+    eaters: [eater()],
+    cookingDays: [2, 6],
+    meals: ['breakfast', 'lunch', 'dinner'],
+    kitchen: {
+      burners: 4,
+      ovens: 1,
+      hasAirfryer: false,
+      hasMulticooker: false,
+      hasBlender: true,
+      hasProcessor: false,
+      hasMicrowave: true,
+      hasDishwasher: false,
+      containers: 8,
+      hasFreezer: true,
+    },
+    budgetPerWeek: 0,
+    drinks: [],
+    oils: defaultOils(),
+    repeats: defaultRepeats(),
+    extras: [],
+    weekStart,
+  } as unknown as Household
+}
+
+/** Сохранение с собранным меню и список того, что по нему придётся купить. */
+function weekData(patch: Record<string, unknown> = {}, weekStart = thisMonday()) {
+  const household = fullHousehold(weekStart)
+  const menu = buildWeekMenu(household, 7).menu
+  const lines = buildShoppingList(menu, household, emptyPantry()).lines.filter((l) => !l.staple)
+  return {
+    raw: JSON.stringify({
+      ...JSON.parse(goodData(weekStart)),
+      household,
+      menu: { ...menu, weekStart },
+      ...patch,
+    }),
+    ids: lines.map((l) => l.ingredientId),
+  }
+}
+
+describe('поход в магазин', () => {
+  /*
+   * Ревизия: 33 позиции на 4726 ₽, всё отмечено, «Всё собрано» → «Разложить
+   * покупки». После этого «Продукты» снова просили купить 33 позиции из 33,
+   * следующий заход в магазин раскладывал ту же покупку ещё раз (3193 ₽, потом
+   * 2418 ₽), а кладовая росла 3970 → 6665 → 7950 г за одну и ту же неделю.
+   * То есть состояние «продукты на неделю куплены» было недостижимо в
+   * принципе, а запасы надувались из воздуха.
+   */
+  it('«разложить покупки» не стирает отметки купленного', () => {
+    const week = weekData()
+    localStorage.setItem(KEY, weekData({ bought: week.ids }).raw)
+    mount()
+
+    act(() => screen.getByText('разложить').click())
+
+    expect(at('bought')).toBe(week.ids.join(','))
+    // излишек упаковок при этом переехал в запасы — ради этого всё и затевалось
+    expect(Number(at('stock'))).toBeGreaterThan(0)
+  })
+
+  it('и раскладывает одну и ту же покупку ровно один раз', () => {
+    const week = weekData()
+    localStorage.setItem(KEY, weekData({ bought: week.ids }).raw)
+    mount()
+
+    act(() => screen.getByText('разложить').click())
+    const after = Number(at('stock'))
+    act(() => screen.getByText('разложить').click())
+    act(() => screen.getByText('разложить').click())
+
+    expect(after).toBeGreaterThan(0)
+    expect(Number(at('stock'))).toBe(after)
+  })
+
+  /*
+   * Снятая и поставленная заново галочка продуктов дома не меняет: раскладка
+   * помнит, что уже разложено, а не то, что сейчас отмечено.
+   */
+  it('и не раскладывает заново из-за переставленной галочки', () => {
+    const week = weekData()
+    localStorage.setItem(KEY, weekData({ bought: week.ids, stored: week.ids }).raw)
+    mount()
+
+    act(() => screen.getByText('разложить').click())
+
+    expect(Number(at('stock'))).toBe(0)
+  })
+
+  /*
+   * «Уже есть дома» отмечали про один кабачок и на одну неделю, а действовала
+   * отметка вечно и на любые количества: «Болгарский перец — нужно 1,4 кг —
+   * есть дома», продукт вычтен из чека и в режиме магазина не показан вовсе.
+   * Семья уезжала из магазина без полутора килограммов перца.
+   */
+  it('«уже есть дома» не переезжает на следующую неделю', () => {
+    const week = weekData({}, lastMonday())
+    localStorage.setItem(
+      KEY,
+      weekData({ atHome: [week.ids[0]], bought: [week.ids[1]] }, lastMonday()).raw,
+    )
+
+    mount()
+
+    expect(at('week')).toBe(thisMonday())
+    expect(at('at-home')).toBe('')
+    expect(at('bought')).toBe('')
+  })
+})
+
+describe('закрепления переживают пересборку', () => {
+  /** Закрепить первое блюдо недели и вернуть его id. */
+  function pinFirst(): string {
+    const entries = JSON.parse(at('dishes') ?? '[]') as { id: string; recipeId: string }[]
+    window.__pin = entries[0].id
+    act(() => screen.getByText('закрепить').click())
+    return entries[0].id
+  }
+
+  /*
+   * «Профиль» → «Мои рецепты» → «Сохранить» пересобирало неделю целиком с
+   * пустым `keep`: закреплений оставалось ноль, и об этом нигде не говорилось.
+   */
+  it('сохранение своего рецепта их не снимает', () => {
+    localStorage.setItem(KEY, weekData().raw)
+    mount()
+    const pinned = pinFirst()
+    expect(at('pins')).toBe(pinned)
+    window.__recipe = { ...recipeById('lentil_soup')!, id: 'my_dish', title: 'Моё блюдо' }
+
+    act(() => screen.getByText('сохранить рецепт').click())
+
+    expect(at('pins')).toBe(pinned)
+  })
+
+  it('и удаление своего рецепта тоже', () => {
+    window.__recipe = { ...recipeById('lentil_soup')!, id: 'my_dish', title: 'Моё блюдо' }
+    localStorage.setItem(KEY, weekData({ customRecipes: [window.__recipe] }).raw)
+    mount()
+    const pinned = pinFirst()
+
+    act(() => screen.getByText('удалить рецепт').click())
+
+    expect(at('pins')).toBe(pinned)
+  })
+
+  /*
+   * Кроме закрепления на само скрытое блюдо: закреплённое ставится в клетку до
+   * всякого подбора, и «не показывать это блюдо» иначе не значило бы ничего.
+   */
+  it('а «не показывать блюдо» снимает закрепление только с него', () => {
+    localStorage.setItem(KEY, weekData().raw)
+    mount()
+    const entries = JSON.parse(at('dishes') ?? '[]') as { id: string; recipeId: string }[]
+    const first = entries[0]
+    const other = entries.find((e) => e.recipeId !== first.recipeId)!
+    for (const entry of [first, other]) {
+      window.__pin = entry.id
+      act(() => screen.getByText('закрепить').click())
+    }
+    expect(at('pins')).toBe(`${first.id},${other.id}`)
+
+    window.__ban = first.recipeId
+    act(() => screen.getByText('скрыть').click())
+
+    expect(at('pins')).toBe(other.id)
+    expect(at('dishes')).not.toContain(`"${first.recipeId}"`)
   })
 })
