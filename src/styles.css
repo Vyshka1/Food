@@ -1,6 +1,7 @@
 @import './styles/products.css';
 @import './styles/plan.css';
 @import './styles/shopping.css';
+@import './styles/cook.css';
 
 :root {
   --bg: #f3f1e7;
