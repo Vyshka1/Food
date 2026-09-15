@@ -246,7 +246,15 @@ describe('план недели — единственный расчёт гот
       const cooking = week.tasks[0]
       expect(cooking.servings).toBeGreaterThan(0)
       expect(cooking.cookedGrams).toBeGreaterThan(0)
-      expect(cooking.ingredients.get('potato')).toBeCloseTo(200 * cooking.servings, 5)
+      /*
+       * Расход — это состав, умноженный на доли, плюс досыпанный хвост
+       * упаковки: 440 г картофеля вместо 439.64 — это те 0.36 г, которые иначе
+       * остались бы в пакете. Складываем обе части явно, а не закладываемся на
+       * то, что доли окажутся круглыми: у блюда без подтверждённой партии они
+       * считаются от потребности меню и круглыми не бывают почти никогда.
+       */
+      const absorbed = cooking.absorbed.get('potato') ?? 0
+      expect(cooking.ingredients.get('potato')).toBeCloseTo(200 * cooking.servings + absorbed, 5)
     } finally {
       setCustomRecipes([])
     }
