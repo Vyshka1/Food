@@ -306,6 +306,11 @@
   line-height: 1.35;
 }
 
+/* Подробности шага — отдельной строкой: иначе «баклажан20 мин» слипается. */
+.next-step__detail {
+  display: block;
+}
+
 .next-step__dish {
   flex: 0 0 auto;
   margin-left: auto;
@@ -315,9 +320,16 @@
 }
 
 /* ── Рейка: что приготовим ────────────────────────────────────────────── */
+/*
+ * Название, упаковка и отметка «Приготовлено» не влезают в одну строку рейки:
+ * при ширине колонки в 320 px заголовку оставалось шестьдесят, и «Овсяная
+ * запеканка с яблоком» ломалась по слову на строку. Отметка уходит на свою
+ * строку — это и есть действие, а не подпись.
+ */
 .rail-dish {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -327,7 +339,7 @@
 }
 
 .rail-dish__name {
-  flex: 1 1 auto;
+  flex: 1 1 140px;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -394,4 +406,112 @@
 
 .load-dots i[data-busy='true'] {
   background: var(--green);
+}
+
+
+/* ── План по времени ──────────────────────────────────────────────────────
+ *
+ * Главное на экране. Слева время блока, справа — что делать; шаги внутри
+ * идут в том порядке, в каком их и выполняют.
+ */
+.plan-block {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+
+.plan-block__time {
+  flex: 0 0 auto;
+  font-weight: 700;
+  font-size: 17px;
+  color: var(--green-dark);
+  /* колонка времени одинаковой ширины: иначе заголовки скачут по блокам */
+  min-width: 52px;
+}
+
+.plan-block__head b {
+  display: block;
+  font-size: 17px;
+}
+
+/* Четвёртая плитка сводки не должна ужимать остальные до нечитаемых */
+.plan-stats {
+  flex-wrap: wrap;
+}
+
+.plan-stats .plan-stat {
+  min-width: 132px;
+}
+
+/* Диаграмма — по кнопке, и кнопка выглядит как переключатель, а не действие */
+.plan-gantt-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  align-self: flex-start;
+}
+
+/* Завершающий этап: те же строки, но помечены отдельно — это не готовка */
+.next-step--after .next-step__mark {
+  background: var(--card-soft);
+  color: var(--muted);
+}
+
+/* «Все 9 блюд» — ссылка, а не кнопка: она не делает, а раскрывает */
+.rail-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  color: var(--green-dark);
+  font-size: 14px;
+  font-weight: 600;
+  padding: 6px 0;
+  align-self: flex-start;
+}
+
+
+/* Сообщение о дописанной готовке: отчёт, а не тревога — отсюда и цвет */
+.plan-note {
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  background: var(--green-tint);
+  color: var(--green-dark);
+  margin-bottom: 12px;
+}
+
+.plan-note b {
+  display: block;
+  margin-bottom: 2px;
+}
+
+.plan-note span {
+  font-size: 14px;
+}
+
+
+/* Отметка о готовке: главное действие строки, поэтому словом, а не значком */
+.rail-dish__cooked {
+  flex: 1 0 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--muted);
+  border-radius: var(--radius-sm);
+  padding: 7px 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.rail-dish__cooked[data-on='true'] {
+  background: var(--green-soft);
+  border-color: var(--green-soft);
+  color: var(--green-dark);
 }

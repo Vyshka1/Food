@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react'
 import { recipeById } from '../data/recipeRegistry'
 import { ENTRY_STATUS, MEAL_SLOTS } from '../types'
+import { dishState } from '../lib/dishState'
+import { dayAttendance } from '../lib/attendance'
 import type { MenuEntry } from '../types'
-import { WEEKDAYS, cookTaskId, dayNorms, dayTotals, fedEaters, portionOf, takeawayEaters, totalPortions } from '../lib/menu'
-import { drinkNorms } from '../lib/drinks'
-import { extraNorms, extraStats, extraSummary, extrasAt } from '../lib/extras'
+import { IMPLICIT_COOK_NOTE, WEEKDAYS, WEEKDAYS_FULL, cookTaskId, dayNorms, isFed, dayTotals, fedEaters, portionOf, takeawayEaters, totalPortions } from '../lib/menu'
+import { cupStats, drinkNorms, drinkOn, habitLabel } from '../lib/drinks'
+import { extraNorms, extraStats, extraSummary, extrasAt, extrasOf } from '../lib/extras'
 import { cookedGrams, recipeStats } from '../lib/nutrition'
 import { cookedStats, planWeek } from '../lib/weekPlan'
 import { useStore } from '../store'
@@ -14,18 +16,13 @@ import { RebuildSheet } from '../components/RebuildSheet'
 import { WeekOverview } from '../components/WeekOverview'
 import { WeekBoard } from '../components/WeekBoard'
 import { TodayCard } from '../components/TodayCard'
-import { Icon } from '../components/icons'
+import { Icon, drinkIcon, extraIcon } from '../components/icons'
 import { DishThumb } from '../components/DishImage'
 import { plural } from '../lib/format'
 import { MACRO_COLOR } from '../lib/palette'
 import { ReplacePicker } from '../components/ReplacePicker'
 import { daysBetween, parseIso, today, weekLabel } from '../lib/day'
 
-const STORAGE_BADGE: Record<string, { label: string; cls: string } | null> = {
-  fresh: null,
-  fridge: { label: 'из холодильника', cls: 'badge badge--fridge' },
-  freezer: { label: 'из морозилки', cls: 'badge badge--freezer' },
-}
 
 function todayIndex(weekStart: string): number {
   // разность считаем по календарю: в ночь перевода часов сутки не 24 часа, и
@@ -47,8 +44,6 @@ export function MenuScreen() {
     banRecipe,
     togglePin,
     setEntryStatus,
-    completeCookTask,
-    undoCookTask,
   } =
     useStore()
   const [day, setDay] = useState(() => (menu ? todayIndex(menu.weekStart) : 0))
@@ -126,7 +121,17 @@ export function MenuScreen() {
 
   const drinks = useMemo(() => {
     if (!household) return { kcal: 0, protein: 0, fat: 0, carbs: 0 }
-    const who = eater ? [eater] : household.eaters
+    /*
+     * Напитки того, кого сегодня нет дома, в дневной итог не идут — как и его
+     * дополнения, которые это правило уже соблюдали через extraApplies. Два
+     * соседних слагаемых одной суммы жили по разным правилам: у человека,
+     * которого нет весь день, хлеб к обеду исчезал, а латте оставался и
+     * попадал в «всего» рядом с нормой, из которой этот человек вычеркнут
+     * целиком. Число не относилось ни к кому.
+     */
+    const who = (eater ? [eater] : household.eaters).filter((e) =>
+      household.meals.some((slot) => isFed(e, day, slot)),
+    )
     return who.reduce(
       (acc, e) => {
         const d = drinkNorms(household, e.id, day)
@@ -163,6 +168,19 @@ export function MenuScreen() {
   })
 
   const weekTitle = weekLabel(shown.weekStart)
+  /** Кто сегодня ест дома — свойство дня, и говорится оно один раз. */
+  const attendance = dayAttendance(household, day)
+  const partlyIds = new Set(attendance.partly.map((e) => e.id))
+  /** Сегодняшний день недели — им и меряются состояния блюд, а не выбранным. */
+  const realToday = todayIndex(menu.weekStart)
+  /** «Сегодня» или название дня: слово должно быть правдой. */
+  const dayWord = !preview && day === realToday ? 'Сегодня' : `${WEEKDAYS_FULL[day]}:`
+  /** Напитки и дополнения этого дня — они и сидят в дневной норме. */
+  const eating = eater ? [eater] : household.eaters
+  const dayDrinks = household.drinks.filter(
+    (d) => eating.some((e) => e.id === d.eaterId) && drinkOn(d, day),
+  )
+  const dayExtras = eating.flatMap((e) => extrasOf(household, e.id, day))
 
   // план и факт: пока отметок нет, показываем состав недели, потом — что съели
   const eatenCount = shown.entries.filter((e) => e.status === 'eaten').length
@@ -171,6 +189,26 @@ export function MenuScreen() {
 
   const pct = (fact: number, norm: number) => Math.round((fact / Math.max(1, norm)) * 100)
   const percent = pct(totals.kcal, norms.kcal)
+  /*
+   * Клетчатка за день целиком: и дополнения, и блюда — с обеих сторон.
+   *
+   * `norms.fiber` приходит из foodNorm, где клетчатка дополнений уже вычтена:
+   * овощная тарелка честно закрывает часть нормы. Прибавить дополнения только
+   * к факту значит посчитать их дважды — плюсом к съеденному и минусом из
+   * требования. Я так и сделал, и «26 из 26 г» превратилось в «26 / 19 г
+   * 137%»; хуже другое — настоящий недобор при этом показывался бы как 100%.
+   */
+  const fiberFact = totals.fiber + extras.fiber
+  const fiberNorm = norms.fiber + extras.fiber
+  /** Кого весь день нет дома — одной строкой, и про выбранного тоже. */
+  const awaySelf = eater ? attendance.awayAllDay.some((e) => e.id === eater.id) : false
+  const awayOthers = attendance.awayAllDay.filter((e) => e.id !== eater?.id)
+  const awayNote = [
+    awaySelf ? 'Весь день ест не дома' : null,
+    awayOthers.length ? `${awayOthers.map((e) => e.name).join(', ')} не дома весь день` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ')
   /** Отклонение больше 15% подсвечиваем: «99% нормы» не должно скрывать перекос по БЖУ. */
   const off = (value: number) => (Math.abs(value - 100) > 15 ? { color: 'var(--warn)' } : undefined)
   const macros = [
@@ -225,7 +263,7 @@ export function MenuScreen() {
             ту неделю, на которую человек смотрит. */}
         {!preview && (
           <button className="btn btn--soft btn--small" onClick={() => setRebuilding(true)}>
-            Пересобрать
+            Изменить меню
           </button>
         )}
       </div>
@@ -293,7 +331,15 @@ export function MenuScreen() {
         </div>
       )}
 
-      <Warnings items={preview ? preview.warnings : warnings} />
+      {/*
+        * Сообщение про понедельничную готовку сюда не попадает: человек
+        * смотрит меню на пятницу, а речь про другой день, и это отчёт о
+        * сделанном, а не предупреждение. Его место — на экране готовки, рядом
+        * с тем самым планом.
+        */}
+      <Warnings
+        items={(preview ? preview.warnings : warnings).filter((w) => w !== IMPLICIT_COOK_NOTE)}
+      />
 
       {/*
         * Две колонки на мониторе и одна на телефоне — одна и та же разметка.
@@ -309,7 +355,94 @@ export function MenuScreen() {
 
           {note && <div className="shop__note">{note}</div>}
 
+          {/*
+            * Контекст дня. Напитки и дополнения считаются в дневной норме, но
+            * на экране их не было видно нигде: человек видел «2468 ккал» и не
+            * мог сойтись с суммой блюд. А готовка — единственное, что сегодня
+            * нужно сделать руками, и знать об этом лучше сразу.
+            */}
+          {(dayDrinks.length > 0 || dayExtras.length > 0) && (
+            <Card>
+              {/*
+                * «День», а не «Сегодня»: карточка напоминаний рядом уже
+                * называется «Сегодня», и два одинаковых заголовка в одной
+                * рейке читались бы как одна разорванная карточка. А ещё эта
+                * показывает выбранный день, который сегодняшним может и не
+                * быть.
+                */}
+              <div className="section-title">
+                {!preview && day === realToday ? 'Сегодня' : WEEKDAYS_FULL[day]}
+              </div>
+              {/*
+                * Про готовку здесь молчим: то же самое число считает и
+                * печатает карточка «Сегодня» (remindersFor). Две соседние
+                * карточки в одной рейке говорили «Сегодня готовим 7 блюд»
+                * дважды подряд — и считали это двумя одинаковыми строками
+                * кода.
+                */}
+              {dayDrinks.map((d) => (
+                <div className="today-row" key={d.id}>
+                  <Icon name={drinkIcon(d.kind)} size={17} />
+                  <span>
+                    <b>{habitLabel(d)}</b>
+                    <span className="muted small">
+                      {Math.round(cupStats(d).kcal * d.perDay)} ккал · {d.perDay} × в день
+                    </span>
+                  </span>
+                </div>
+              ))}
+              {dayExtras.map((x) => (
+                <div className="today-row" key={x.id}>
+                  <Icon name={extraIcon(x.kind)} size={17} />
+                  <span>
+                    <b>{extraSummary(x)}</b>
+                    <span className="muted small">{extraStats(x).kcal} ккал</span>
+                  </span>
+                </div>
+              ))}
+            </Card>
+          )}
+
           <Card>
+        {/*
+          * Заголовок отвечает на вопрос, который карточка раньше оставляла
+          * без ответа: чья это норма. «2468 из 2432» при выбранной вкладке
+          * «Семья» и строке «Кирилл не дома» можно было прочитать тремя
+          * способами — норма Юлии, норма присутствующих или семейная за
+          * вычетом Кирилла. Теперь сказано прямо, по кому считано.
+          */}
+        <div className="day-who">
+          <b>
+            {/*
+              * «Сегодня» — только когда день и правда сегодняшний. На
+              * пролистанном дне и в предпросмотре следующей недели это слово
+              * было прямой неправдой.
+              */}
+            {eater
+              ? `Норма: ${eater.name}`
+              : attendance.home.length === 0
+                ? `${dayWord} дома никто не ест`
+                : `${dayWord} едят дома: ${attendance.home.map((e) => e.name).join(', ')}`}
+          </b>
+          {/*
+            * Отсутствие видно и когда выбран один едок. Раньше эта строка
+            * пряталась за `!eater`, и в личном режиме порции молча
+            * уменьшались: кастрюля меньше, а почему — нигде. Свойство дня не
+            * перестаёт быть правдой оттого, что смотрят одного человека.
+            */}
+          {awayNote && (
+            <span className="muted small">
+              {/*
+                * Про самого выбранного — без повтора имени из строки выше, но
+                * и не вместо остальных: когда весь день нет двоих, сказать
+                * надо про обоих. Раньше здесь стояло «все отсутствующие — это
+                * я», и на вкладке Кирилла выходило «Норма: Кирилл · Оля не
+                * дома весь день» — про самого Кирилла ни слова.
+                */}
+              {awayNote}
+            </span>
+          )}
+        </div>
         <div className="ring-row">
           <CalorieRing {...totals} label={`из ${norms.kcal} ккал`} />
           <div style={{ flex: 1 }}>
@@ -327,36 +460,44 @@ export function MenuScreen() {
                 </b>
               </div>
             ))}
+            {/*
+              * Из чего сложилось число дня — одной строкой вместо трёх.
+              *
+              * Кольцо показывает только блюда: напитки и дополнения в него не
+              * подмешаны, а вычтены из нормы (см. foodNorm). Поэтому здесь они
+              * складываются, а не вычитаются — я сначала написал наоборот и
+              * получил «блюда 4254» там, где на тарелках 4448.
+              */}
+            {(drinks.kcal > 0 || extras.kcal > 0) && (
+              <div className="macro muted small day-parts">
+                <span>
+                  блюда {totals.kcal}
+                  {drinks.kcal > 0 ? ` · напитки ${drinks.kcal}` : ''}
+                  {extras.kcal > 0 ? ` · дополнения ${extras.kcal}` : ''}
+                </span>
+                <b>всего {totals.kcal + drinks.kcal + extras.kcal}</b>
+              </div>
+            )}
             <div className="macro muted small">
               <span style={off(percent)}>калории {percent}%</span>
               <span>≈ {totals.price} ₽</span>
             </div>
-            {drinks.kcal > 0 && (
-              <div className="macro muted small">
-                <span>напитки {drinks.kcal} ккал</span>
-                <span>всего {totals.kcal + drinks.kcal}</span>
-              </div>
-            )}
-            {extras.kcal > 0 && (
-              <div className="macro muted small">
-                <span>дополнения {extras.kcal} ккал</span>
-                <span>всего {totals.kcal + drinks.kcal + extras.kcal}</span>
-              </div>
-            )}
-            {/* Клетчатка без четвёртого кольца: она важна, но не настолько,
-                чтобы спорить за место с калориями. */}
+            {/*
+              * Клетчатка без четвёртого кольца: она важна, но не настолько,
+              * чтобы спорить за место с калориями.
+              *
+              * Процент показан как у остальных нутриентов: «166 из 61 г» без
+              * него читается как ошибка счёта, хотя это настоящая чечевица —
+              * 30 г клетчатки на 100 г сухой.
+              */}
             <div className="macro muted small">
               <span>клетчатка</span>
-              <span
-                style={
-                  totals.fiber + extras.fiber < norms.fiber + extras.fiber
-                    ? { color: 'var(--warn)' }
-                    : undefined
-                }
-              >
-                {Math.round(totals.fiber + extras.fiber)} из{' '}
-                {Math.round(norms.fiber + extras.fiber)} г
-              </span>
+              <b>
+                {Math.round(fiberFact)} / {Math.round(fiberNorm)} г{' '}
+                <span className="small" style={off(pct(fiberFact, fiberNorm))}>
+                  {pct(fiberFact, fiberNorm)}%
+                </span>
+              </b>
             </div>
           </div>
         </div>
@@ -379,9 +520,19 @@ export function MenuScreen() {
                   {withMe.map((e) => e.name).join(', ')} — с собой
                 </span>
               )}
-              {away.length > 0 && (
+              {/*
+                * Про отсутствие здесь — только если расписание внутри дня
+                * различается. «Кирилла нет весь день» сказано один раз над
+                * меню: это свойство дня, и повторять его у каждого из четырёх
+                * приёмов значит превращать факт в шум.
+                */}
+              {away.some((e) => partlyIds.has(e.id)) && (
                 <span className="meal-head__away">
-                  {away.map((e) => e.name).join(', ')} не дома
+                  {away
+                    .filter((e) => partlyIds.has(e.id))
+                    .map((e) => e.name)
+                    .join(', ')}{' '}
+                  не дома
                 </span>
               )}
             </div>
@@ -396,32 +547,78 @@ export function MenuScreen() {
               if (!recipe) return null
               const stats = recipeStats(recipe)
               const factor = eater ? portionOf(entry, eater.id) : totalPortions(entry)
-              // заготовка с прошлых недель — это не «доедаем приготовленное»,
-              // а «сегодня не готовим вовсе»
-              const badge = entry.fromFreezer
-                ? { label: 'готово, из морозилки', cls: 'badge badge--freezer' }
-                : STORAGE_BADGE[entry.storage]
-              // отметка о готовке — свойство всей готовки, а не этой записи
+              /*
+               * Одна плашка вместо двух спорящих. «из холодильника» рядом с
+               * «готовим Ср» читалось как противоречие: его ещё готовят или
+               * оно уже лежит? Это не два свойства, а одно состояние во
+               * времени — им и занимается dishState.
+               */
               const taskId = cookTaskId(shown.weekStart, entry.recipeId, entry.cookDay)
               const cooked = cookEvents.some((e) => e.taskId === taskId)
+              /*
+               * Третий довод — сегодняшний день, а не выбранный. Сначала я
+               * передавал сюда `day`, и подпись врала на всех днях, кроме
+               * сегодняшнего: на понедельнике в пятницу стояло «Готовим
+               * сегодня», а в предпросмотре следующей недели — тоже
+               * «сегодня», рядом с баннером «неделя ещё не наступила».
+               *
+               * Для предпросмотра сегодняшнего дня нет вовсе: та неделя
+               * целиком впереди, и любой её день — план.
+               */
+              const state = dishState(entry, cooked, preview ? -1 : realToday)
+              /*
+               * Кто ест именно это блюдо — тот же `fed`, что и в строке выше.
+               * Доли из `portionOf` сегодня дают тот же список (portionsFor
+               * строит их из isFed), но список «кто ест» на экране должен
+               * считаться один раз, а не двумя способами рядом.
+               */
+              const eatingDish = fed.map((person) => ({
+                person,
+                share: portionOf(entry, person.id),
+              }))
               const body = (
                 <>
                   <DishThumb recipe={recipe} />
                   <span style={{ flex: 1 }}>
                     <span className="dish__title">{recipe.title}</span>
+                    {/*
+                      * «На всех» ничего не говорит о том, кто эти все. В
+                      * семейном режиме показываем строки по людям — и берём
+                      * их из расписания, а не из новых отметок: кто ест, уже
+                      *знает анкета, и второй источник правды тут завёл бы
+                      * расхождение с первой же недели.
+                      */}
                     <span className="dish__meta">
-                      {eater && factor === 0
-                        ? 'ест не дома'
-                        : eater
-                          ? `${cookedGrams(recipe, factor)} г · ${Math.round(stats.kcal * factor)} ккал`
-                          : `на всех: ${Math.round(stats.kcal * factor)} ккал · ≈ ${Math.round(stats.price * factor)} ₽`}
+                      {eater
+                        ? factor === 0
+                          ? 'ест не дома'
+                          : `${cookedGrams(recipe, factor)} г · ${Math.round(stats.kcal * factor)} ккал`
+                        : `${fed.map((e) => e.name).join(', ')} · ${Math.round(stats.kcal * factor)} ккал · ≈ ${Math.round(stats.price * factor)} ₽`}
                     </span>
-                    <br />
-                    {badge && <span className={badge.cls}>{badge.label}</span>}
-                    {entry.cookDay !== entry.day && (
-                      <span className="badge">готовим {WEEKDAYS[entry.cookDay]}</span>
+                    {/*
+                      * Здесь только те, кто это ест. Отсутствие сказано один
+                      * раз там, где оно случилось: весь день — в шапке дня,
+                      * на отдельный приём — в заголовке приёма. Строка «Кирилл
+                      * — не дома» у каждого из семи блюд повторяла один и тот
+                      * же факт семь раз.
+                      *
+                      * И только когда едят двое и больше: при одном едоке
+                      * строка повторила бы калории из строки выше.
+                      */}
+                    {!eater && eatingDish.length > 1 && (
+                      <span className="dish__who">
+                        {eatingDish.map(({ person, share }) => (
+                          <span key={person.id}>
+                            {person.name} — {Math.round(stats.kcal * share)} ккал
+                          </span>
+                        ))}
+                      </span>
                     )}
-                    {entry.pinned && <span className="badge">оставлено</span>}
+                    <br />
+                    <span className="badge" data-stage={state.stage} data-warn={state.warn}>
+                      {state.label}
+                    </span>
+
                   </span>
                 </>
               )
@@ -455,37 +652,37 @@ export function MenuScreen() {
                       onClick={() => togglePin(entry.id)}
                       aria-label={
                         entry.pinned
-                          ? 'снять закрепление блюда'
-                          : 'оставить это блюдо при пересборке'
+                          ? `${recipe.title}: снять закрепление`
+                          : `${recipe.title}: оставить при смене меню`
                       }
+                      aria-pressed={!!entry.pinned}
                       title={
                         entry.pinned
-                          ? 'Пересборка меню его не тронет'
-                          : 'Оставить это блюдо при пересборке'
+                          ? 'Смена меню это блюдо не тронет'
+                          : 'Оставить это блюдо при смене меню'
                       }
                     >
-                      <Icon name="pin" size={18} />
+                      {/*
+                        * Значок с подписью, а не сам по себе. Булавка в 18 px
+                        * читается как колокольчик — её и приняли за
+                        * напоминание; немой значок у каждого блюда не сообщает
+                        * ничего, кроме того, что он есть.
+                        */}
+                      <Icon name="pin" size={16} />
+                      <span>{entry.pinned ? 'Оставлено' : 'Оставить'}</span>
                     </button>
                   )}
                   {!preview && (
                     <div className="dish__status">
                       {/*
-                        «Приготовлено» — про всю готовку сразу: одно блюдо
-                        закрывает несколько приёмов, а продукты списываются один
-                        раз. «Съедено» и «пропущено» — про эту тарелку.
+                        «Приготовлено» отсюда убрано намеренно. Это факт про
+                        всю готовку сразу — одно блюдо закрывает несколько
+                        приёмов, и продукты списываются один раз, — поэтому
+                        его место в «Готовке». Рядом со «съедено» оно
+                        выглядело третьим равным состоянием, хотя блюдо
+                        сначала готовят, а потом едят: это два слоя, а не один
+                        переключатель.
                       */}
-                      {!entry.fromFreezer && (
-                        <button
-                          data-on={cooked}
-                          onClick={() => (cooked ? undoCookTask(taskId) : completeCookTask(taskId))}
-                          title="Приготовлено"
-                          aria-label={`${recipe.title}: приготовлено`}
-                          aria-pressed={cooked}
-                        >
-                          <Icon name="pot" size={15} />
-                          <span>Приготовлено</span>
-                        </button>
-                      )}
                       {ENTRY_STATUS.map((st) => (
                         <button
                           key={st.id}

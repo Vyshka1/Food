@@ -4,6 +4,7 @@ import { act, cleanup, render, screen } from '@testing-library/react'
 import { STORAGE_KEYS, StoreProvider } from '../store'
 import { SCHEMA_VERSION } from '../lib/persist'
 import { MenuScreen } from './MenuScreen'
+import { dailyNorm } from '../lib/nutrition'
 
 /*
  * Предпросмотр следующей недели на экране.
@@ -135,17 +136,21 @@ describe('экран меню: следующая неделя', () => {
 
   it('на ненаступившей неделе нечего отметить и нечего испортить', () => {
     mount()
-    expect(screen.queryAllByText('Приготовлено').length).toBeGreaterThan(0)
     expect(screen.queryAllByText('Съедено').length).toBeGreaterThan(0)
-    expect(screen.queryByText('Пересобрать')).toBeTruthy()
+    expect(screen.queryByText('Изменить меню')).toBeTruthy()
+    /*
+     * «Приготовлено» из меню убрано насовсем: это факт про всю готовку, и
+     * место ему в «Готовке». Рядом со «съедено» оно читалось третьим равным
+     * состоянием, хотя блюдо сначала готовят, а потом едят.
+     */
+    expect(screen.queryAllByText('Приготовлено')).toHaveLength(0)
 
     click('Следующая неделя')
 
-    expect(screen.queryAllByText('Приготовлено')).toHaveLength(0)
     expect(screen.queryAllByText('Съедено')).toHaveLength(0)
     expect(screen.queryAllByText('Пропущено')).toHaveLength(0)
     // пересборка меняет сохранённое меню — то есть не ту неделю, что открыта
-    expect(screen.queryByText('Пересобрать')).toBeNull()
+    expect(screen.queryByText('Изменить меню')).toBeNull()
     // и блюдо не открывается: карточка считает партию по сохранённой неделе
     expect(document.querySelectorAll('button.dish__open')).toHaveLength(0)
   })
@@ -203,5 +208,312 @@ describe('экран меню: следующая неделя', () => {
 
     expect(localStorage.getItem(KEY)).toBe(before)
     expect(JSON.parse(before ?? '{}').menu.weekStart).toBe(THIS_WEEK)
+  })
+})
+
+describe('экран меню: кто ест и что с блюдом', () => {
+  /** Тот же день, но в доме двое, и одного нет весь день. */
+  function twoEaters(): string {
+    const data = JSON.parse(saved(LAST_WEEK)) as {
+      household: { eaters: Record<string, unknown>[]; meals: string[] }
+    }
+    const second: Record<string, unknown> = {
+      ...data.household.eaters[0],
+      id: 'e2',
+      name: 'Кирилл',
+      sex: 'male',
+    }
+    const away: Record<string, string> = {}
+    for (let d = 0; d < 7; d++) for (const m of data.household.meals) away[`${d}:${m}`] = 'away'
+    second.mealPlaces = away
+    data.household.eaters.push(second)
+    return JSON.stringify(data)
+  }
+
+  it('«не дома весь день» сказано один раз, а не у каждого приёма', () => {
+    localStorage.setItem(KEY, twoEaters())
+    mount()
+
+    const day = document.querySelector('.day-who')?.textContent ?? ''
+    expect(day).toContain('Сегодня едят дома')
+    expect(day).toContain('Кирилл не дома весь день')
+    /*
+     * Это свойство дня. Пока строка повторялась у всех четырёх приёмов, она
+     * читалась как шум и ничего не добавляла.
+     */
+    expect(document.querySelectorAll('.meal-head__away')).toHaveLength(0)
+  })
+
+  it('у приёма про отсутствие говорят, только если день неоднородный', () => {
+    const data = JSON.parse(twoEaters()) as {
+      household: { eaters: Record<string, unknown>[] }
+    }
+    /*
+     * Часы в этом файле стоят на среде, а неделя начинается с понедельника —
+     * значит экран открыт на дне 2. Кирилл дома весь день, кроме обеда: вот
+     * теперь у обеда про это и стоит сказать.
+     */
+    data.household.eaters[1].mealPlaces = { '2:lunch': 'away' }
+    localStorage.setItem(KEY, JSON.stringify(data))
+    mount()
+
+    const notes = [...document.querySelectorAll('.meal-head__away')].map((n) => n.textContent)
+    expect(notes.length).toBeGreaterThan(0)
+    expect(notes.join(' ')).toContain('Кирилл')
+    expect(document.querySelector('.day-who')?.textContent).not.toContain('весь день')
+  })
+
+  it('в семейном режиме видно, сколько достаётся каждому', () => {
+    // оба дома: разбивка по людям отвечает на вопрос «сколько кому»
+    const data = JSON.parse(twoEaters()) as { household: { eaters: Record<string, unknown>[] } }
+    data.household.eaters[1].mealPlaces = {}
+    localStorage.setItem(KEY, JSON.stringify(data))
+    mount()
+
+    const rows = document.querySelector('.dish__who')?.textContent ?? ''
+    expect(rows).toContain(data.household.eaters[0].name as string)
+    expect(rows).toContain('Кирилл')
+    expect(rows).toMatch(/ккал/)
+  })
+
+  /*
+   * «Кирилл не дома» звучало в шапке дня и ещё раз у каждого блюда — на
+   * семи блюдах восемь повторов одного и того же факта. Отсутствие говорится
+   * там, где оно случилось, а в строках по людям остаются те, кто ест.
+   */
+  it('про отсутствие у блюд не повторяются', () => {
+    localStorage.setItem(KEY, twoEaters())
+    mount()
+
+    const rows = [...document.querySelectorAll('.dish__who')].map((n) => n.textContent ?? '')
+    expect(rows.join(' ')).not.toContain('не дома')
+    for (const row of rows) expect(row).not.toContain('Кирилл')
+    expect(document.querySelector('.day-who')?.textContent).toContain('Кирилл не дома весь день')
+  })
+
+  /*
+   * Когда весь день нет двоих, сказать надо про обоих. Условие «все
+   * отсутствующие — это я» тут ломалось: на вкладке Кирилла выходило
+   * «Норма: Кирилл · Оля не дома весь день», про самого Кирилла ни слова.
+   */
+  it('отсутствие выбранного не теряется рядом с чужим', () => {
+    const data = JSON.parse(twoEaters()) as { household: { eaters: Record<string, unknown>[] } }
+    data.household.eaters.push({ ...data.household.eaters[1], id: 'e3', name: 'Оля' })
+    localStorage.setItem(KEY, JSON.stringify(data))
+    mount()
+    const tab = [...document.querySelectorAll('.segmented button')].find(
+      (b) => b.textContent === 'Кирилл',
+    ) as HTMLButtonElement
+    act(() => tab.click())
+
+    const text = document.querySelector('.day-who')?.textContent ?? ''
+    expect(text).toContain('Весь день ест не дома')
+    expect(text).toContain('Оля не дома весь день')
+  })
+
+  /*
+   * Строка по людям, когда ест один, дословно повторяла бы калории из строки
+   * выше: «Я · 558 ккал» и под ней «Я — 558 ккал».
+   */
+  it('строк по людям нет, когда блюдо ест один', () => {
+    const data = JSON.parse(twoEaters()) as { household: { eaters: Record<string, unknown>[] } }
+    // Кирилла нет только на обеде среды — остальные приёмы он дома
+    data.household.eaters[1].mealPlaces = { '2:lunch': 'away' }
+    localStorage.setItem(KEY, JSON.stringify(data))
+    mount()
+
+    const meals = [...document.querySelectorAll('.meal-head')].map((n) => n.textContent ?? '')
+    const lunch = meals.findIndex((t) => t.includes('Обед'))
+    expect(lunch).toBeGreaterThanOrEqual(0)
+    // у блюд обеда строк по людям нет, у остальных приёмов — есть
+    const blocks = [...document.querySelectorAll('.day-main > div')]
+    const lunchWho = blocks[lunch].querySelectorAll('.dish__who')
+    expect(lunchWho).toHaveLength(0)
+    expect(document.querySelectorAll('.dish__who').length).toBeGreaterThan(0)
+  })
+
+  /*
+   * Клетчатка дополнений уже вычтена из нормы (foodNorm), поэтому прибавлять
+   * их только к факту — считать дважды: «26 из 26 г» становилось «26 / 19 г»,
+   * а настоящий недобор показывался бы как ровно сто процентов.
+   */
+  it('клетчатку считаем с обеих сторон одинаково', () => {
+    const data = JSON.parse(saved(LAST_WEEK)) as {
+      household: { extras: Record<string, unknown>[] }
+    }
+    data.household.extras = [
+      { id: 'x1', eaterId: 'e1', kind: 'veg_plate', amount: 200, slot: 'lunch', days: [] },
+    ]
+    localStorage.setItem(KEY, JSON.stringify(data))
+    mount()
+
+    const line = [...document.querySelectorAll('.macro')].find((n) =>
+      n.textContent?.startsWith('клетчатка'),
+    )
+    const shown = /(\d+) \/ (\d+) г/.exec(line?.textContent ?? '')
+    expect(shown).not.toBeNull()
+    const eater = JSON.parse(saved(LAST_WEEK)).household.eaters[0]
+    // справа — дневная норма человека, а не она же за вычетом овощной тарелки
+    expect(Number(shown![2])).toBe(Math.round(dailyNorm(eater).fiber))
+  })
+
+  /*
+   * Личный режим не отменяет фактов про день: порции в нём меньше именно
+   * потому, что второго нет дома, и раньше об этом нигде не было сказано.
+   */
+  it('в режиме одного едока отсутствие второго всё равно видно', () => {
+    localStorage.setItem(KEY, twoEaters())
+    mount()
+    const tab = [...document.querySelectorAll('.segmented button')].find(
+      (b) => b.textContent === 'Кирилл',
+    ) as HTMLButtonElement
+    act(() => tab.click())
+
+    const text = document.querySelector('.day-who')?.textContent ?? ''
+    expect(text).toContain('Норма: Кирилл')
+    // про него самого — без повтора имени: «Норма: Кирилл. Кирилл не дома…»
+    expect(text).toContain('Весь день ест не дома')
+    expect(text).not.toContain('Кирилл не дома')
+
+    // а у того, кто дома, отсутствие второго названо по имени
+    const me = [...document.querySelectorAll('.segmented button')].find(
+      (b) => b.textContent === 'Я',
+    ) as HTMLButtonElement
+    act(() => me.click())
+    expect(document.querySelector('.day-who')?.textContent).toContain('Кирилл не дома весь день')
+  })
+
+  /*
+   * Когда весь день нет двоих, сказать надо про обоих. Условие «все
+   * отсутствующие — это я» тут ломалось: на вкладке Кирилла выходило
+   * «Норма: Кирилл · Оля не дома весь день», про самого Кирилла ни слова.
+   */
+  it('отсутствие выбранного не теряется рядом с чужим', () => {
+    const data = JSON.parse(twoEaters()) as { household: { eaters: Record<string, unknown>[] } }
+    data.household.eaters.push({ ...data.household.eaters[1], id: 'e3', name: 'Оля' })
+    localStorage.setItem(KEY, JSON.stringify(data))
+    mount()
+    const tab = [...document.querySelectorAll('.segmented button')].find(
+      (b) => b.textContent === 'Кирилл',
+    ) as HTMLButtonElement
+    act(() => tab.click())
+
+    const text = document.querySelector('.day-who')?.textContent ?? ''
+    expect(text).toContain('Весь день ест не дома')
+    expect(text).toContain('Оля не дома весь день')
+  })
+
+  it('у блюда одна плашка состояния, а не две спорящие', () => {
+    mount()
+    const badges = [...document.querySelectorAll('.dish--row .badge[data-stage]')]
+    expect(badges.length).toBeGreaterThan(0)
+    for (const badge of badges) {
+      const text = badge.textContent ?? ''
+      // «из холодильника» рядом с «готовим Ср» — это и было противоречие
+      expect(text.includes('холодильника') && text.includes('Готовим')).toBe(false)
+    }
+    // и рядом с ними нет второй плашки про день готовки
+    expect(document.querySelectorAll('.dish--row .badge').length).toBe(badges.length)
+  })
+
+  it('разбивка дня складывается, а не вычитается', () => {
+    const data = JSON.parse(twoEaters()) as {
+      household: { drinks: unknown[]; extras: unknown[]; eaters: { id: string }[] }
+    }
+    data.household.drinks = [
+      { id: 'd1', eaterId: data.household.eaters[0].id, kind: 'cappuccino', volumeMl: 250,
+        sugarTsp: 0, syrupMl: 0, perDay: 2, days: [0, 1, 2, 3, 4, 5, 6] },
+    ]
+    // и дополнения тоже: без них слагаемое «дополнения» в «всего» не проверено
+    data.household.extras = [
+      { id: 'x1', eaterId: data.household.eaters[0].id, kind: 'veg_plate', amount: 200,
+        slot: 'dinner', days: [0, 1, 2, 3, 4, 5, 6] },
+    ]
+    localStorage.setItem(KEY, JSON.stringify(data))
+    mount()
+
+    const parts = document.querySelector('.day-parts')?.textContent ?? ''
+    const nums = [...parts.matchAll(/(\d+)/g)].map((m) => Number(m[1]))
+    expect(nums.length).toBeGreaterThanOrEqual(3)
+    /*
+     * Кольцо показывает только блюда: напитки в него не подмешаны, а вычтены
+     * из нормы. Значит «всего» — это сумма, а не разность. Я сначала написал
+     * наоборот и получил «блюда 4254» там, где на тарелках 4448.
+     */
+    const total = nums[nums.length - 1]
+    const summed = nums.slice(0, -1).reduce((a, b) => a + b, 0)
+    expect(total).toBe(summed)
+    expect(parts).toContain('блюда')
+    expect(parts).toContain('напитки')
+    expect(parts).toContain('дополнения')
+    expect(nums.length).toBe(4)
+  })
+
+  it('напитки того, кого нет дома, в дневной итог не идут', () => {
+    const data = JSON.parse(twoEaters()) as {
+      household: { drinks: unknown[]; extras: unknown[]; eaters: { id: string }[] }
+    }
+    // латте у Кирилла, которого нет весь день
+    data.household.drinks = [
+      { id: 'd2', eaterId: 'e2', kind: 'latte', volumeMl: 250, sugarTsp: 0, syrupMl: 0,
+        perDay: 1, days: [0, 1, 2, 3, 4, 5, 6] },
+    ]
+    localStorage.setItem(KEY, JSON.stringify(data))
+    mount()
+
+    /*
+     * Дополнения отсутствующего отбрасывались через extraApplies, а напитки —
+     * нет: хлеб Кирилла исчезал, а латте оставалось и попадало в «всего»
+     * рядом с нормой, из которой Кирилл вычеркнут целиком. Число не
+     * относилось ни к кому.
+     */
+    const parts = document.querySelector('.day-parts')?.textContent ?? ''
+    expect(parts).not.toContain('напитки')
+  })
+
+  it('«сегодня» сказано только про сегодня', () => {
+    mount()
+    expect(document.querySelector('.day-who')?.textContent).toContain('Сегодня')
+
+    // листаем на другой день — слово «сегодня» становится неправдой
+    const days = [...document.querySelectorAll('.wd')].map((n) => n.parentElement as HTMLElement)
+    const other = days.find((b) => b.getAttribute('data-active') !== 'true')!
+    act(() => other.click())
+
+    expect(document.querySelector('.day-who')?.textContent).not.toContain('Сегодня')
+  })
+
+  it('«готовим сегодня» не переезжает вместе с пролистыванием дней', () => {
+    mount()
+    const state = JSON.parse(localStorage.getItem(KEY) ?? '{}') as {
+      menu: { entries: { day: number; cookDay: number }[] }
+    }
+    const stages = () =>
+      [...document.querySelectorAll('.dish--row .badge[data-stage]')].map((n) =>
+        n.getAttribute('data-stage'),
+      )
+
+    /*
+     * Состояние блюда меряется сегодняшним днём, а не открытым. Часы в этом
+     * файле стоят на среде, дни готовки — среда и воскресенье. Значит на
+     * воскресенье готовка ещё впереди: это «Приготовим в воскресенье», а не
+     * «Готовим сегодня». Пока сюда передавали выбранный день, «сегодня»
+     * стояло на каждом дне недели.
+     */
+    const future = state.menu.entries.filter((e) => e.day === 6 && e.cookDay === 6)
+    expect(future.length).toBeGreaterThan(0)
+
+    const days = [...document.querySelectorAll('.wd')].map((n) => n.parentElement as HTMLElement)
+    act(() => days[6].click())
+
+    expect(stages()).toContain('planned')
+    expect(stages()).not.toContain('today')
+  })
+
+  it('факт готовки из меню убран: это другой слой', () => {
+    mount()
+    expect(screen.queryAllByText('Приготовлено')).toHaveLength(0)
+    const actions = [...document.querySelectorAll('.dish__status button')].map((b) => b.textContent)
+    expect(new Set(actions)).toEqual(new Set(['Съедено', 'Пропущено']))
   })
 })
