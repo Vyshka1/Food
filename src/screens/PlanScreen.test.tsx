@@ -518,4 +518,37 @@ describe('план готовки: отметка о готовке', () => {
     const plans = buildCookingPlans(state.menu!, state.household!, 1, state.pantry)
     expect(saved.cookEvents[0].taskId).toContain(`|${plans[1].cookDay}`)
   })
+  /*
+   * Ход готовки переживает перезагрузку, но сам экран после неё не
+   * открывается. Если про это не сказать, человек видит прежнюю кнопку
+   * «Готовлю сейчас» и начинает заново, хотя отметки целы.
+   */
+  it('начатая готовка видна на входе, а не только внутри', () => {
+    mount()
+    const { plan } = planOnScreen()
+    const weekStart = (JSON.parse(localStorage.getItem(KEY) ?? '{}') as AppState).menu?.weekStart
+    const before = document.querySelector('.rail-cta')?.textContent ?? ''
+    expect(before).toContain('Готовы начать?')
+    expect(before).toContain('Готовлю сейчас')
+    cleanup()
+
+    // ход, отложенный прошлым заходом: та же неделя и тот же день готовки
+    localStorage.setItem(
+      'menu-nedelya.cook.v1',
+      JSON.stringify({
+        id: `${weekStart}|${plan.cookDay}`,
+        startedAt: Date.now() - 5 * 60_000,
+        pausedAt: null,
+        pausedTotal: 0,
+        pauses: [],
+        done: ['a', 'b'],
+      }),
+    )
+    mount()
+    const after = document.querySelector('.rail-cta')?.textContent ?? ''
+    expect(after).toContain('Готовка идёт')
+    expect(after).toContain('Отмечено шагов: 2')
+    expect(after).toContain('Вернуться к готовке')
+  })
+
 })
