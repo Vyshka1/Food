@@ -4,12 +4,12 @@ import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { STORAGE_KEYS, StoreProvider } from '../store'
 import { SCHEMA_VERSION } from '../lib/persist'
 import { buildWeekMenu } from '../lib/menu'
-import { buildShoppingList } from '../lib/shopping'
+import { CATEGORY_HEADS_FROM, buildShoppingList, categoryHeads } from '../lib/shopping'
 import { CATEGORY_LABEL, CATEGORY_ORDER } from '../data/ingredients'
 import { STORE_LABEL, STORE_ORDER, categoriesOf, storeOf } from '../lib/stores'
 import { emptyPantry } from '../lib/pantry'
 import type { Household, IngredientCategory, ShoppingLine } from '../types'
-import { CATEGORY_HEADS_FROM, ShoppingModeScreen } from './ShoppingModeScreen'
+import { ShoppingModeScreen } from './ShoppingModeScreen'
 
 /*
  * Режим магазина проверяем тем, чем он и отличается от списка на экране
@@ -254,6 +254,76 @@ describe('подзаголовки категорий внутри отдела'
     expect(short).toBeTruthy()
     expect(shown.get(STORE_LABEL[short])).toEqual([])
   })
+
+  /*
+   * Порог считается по всему походу, а не по видимым строкам: подзаголовок —
+   * ориентир в зале, и пропадать он должен вместе с отделом, а не от
+   * переключателя под рукой.
+   */
+  it('«прятать купленное» не перестраивает отдел', () => {
+    const big = expectedStores().find((kind) => {
+      const mine = TO_BUY.filter((l) => storeOf(l.category) === kind)
+      const cats = categoriesOf(kind).filter((c) => mine.some((l) => l.category === c))
+      return mine.length >= CATEGORY_HEADS_FROM && cats.length > 1
+    })!
+    expect(big).toBeTruthy()
+
+    const mine = TO_BUY.filter((l) => storeOf(l.category) === big)
+    const cats = categoriesOf(big).filter((c) => mine.some((l) => l.category === c))
+    // оставляем по одной строке на категорию: видимых становится меньше
+    // порога, но ни одна категория не исчезает — проверяем именно порог
+    const keep = cats.map((c) => mine.find((l) => l.category === c)!.ingredientId)
+    expect(keep.length).toBeLessThan(CATEGORY_HEADS_FROM)
+    seed({ bought: mine.filter((l) => !keep.includes(l.ingredientId)).map((l) => l.ingredientId) })
+    mount()
+
+    const expected = cats.map((c) => CATEGORY_LABEL[c])
+    expect(subheads().get(STORE_LABEL[big])).toEqual(expected)
+
+    act(() => fireEvent.click(screen.getByLabelText('Прятать купленное')))
+
+    // строк в отделе стало меньше порога — и подзаголовки всё равно на месте
+    expect(
+      flow().filter((i) => i.kind === 'row').length,
+    ).toBeLessThan(TO_BUY.length)
+    expect(subheads().get(STORE_LABEL[big])).toEqual(expected)
+  })
+})
+
+/*
+ * Правило подзаголовков проверяем на подписях, а не на настоящих данных:
+ * совпадение имени категории с именем отдела зависит от `ingredients.ts`, и
+ * проверка, которая молча проходит, пока имена разные, не стережёт ничего.
+ */
+describe('categoryHeads', () => {
+  it('в коротком отделе и в отделе из одной категории подзаголовков нет', () => {
+    expect(categoryHeads('Бакалея', ['Крупы и мука', 'Бобовые'], CATEGORY_HEADS_FROM - 1)).toEqual(
+      [],
+    )
+    expect(categoryHeads('Хлеб', ['Хлеб'], 20)).toEqual([])
+  })
+
+  it('делит большой отдел на части', () => {
+    expect(categoryHeads('Молочное', ['Молочное', 'Яйца'], 10)).toEqual(['Яйца'])
+    expect(categoryHeads('Мясо и рыба', ['Мясо и птица', 'Рыба'], 10)).toEqual([
+      'Мясо и птица',
+      'Рыба',
+    ])
+  })
+
+  it('не повторяет заголовок отдела первой же строкой', () => {
+    expect(categoryHeads('Бакалея', ['Бакалея', 'Крупы и мука'], 12)).toEqual(['Крупы и мука'])
+  })
+
+  it('но в середине отдела тот же подзаголовок остаётся', () => {
+    // без него масло и специи встанут под «Орехами и семечками» — эхо
+    // заголовка через полэкрана неловко, чужая подпись неправдива
+    expect(categoryHeads('Бакалея', ['Крупы и мука', 'Орехи и семечки', 'Бакалея'], 14)).toEqual([
+      'Крупы и мука',
+      'Орехи и семечки',
+      'Бакалея',
+    ])
+  })
 })
 
 describe('режим магазина: что экран умел раньше', () => {
@@ -332,6 +402,125 @@ describe('режим магазина: что экран умел раньше',
   it('пока не всё куплено, «Всё собрано» не показывается', () => {
     mount()
     expect(screen.queryByText('Всё собрано')).toBeNull()
+  })
+})
+
+/*
+ * Экран отвечает на один вопрос — «что ещё осталось купить», — и отвечать на
+ * него должен одинаково и счётчиком над кнопкой, и тем, что уезжает в
+ * мессенджер. Раньше ответов было два: счётчик вычитал отмеченное, текст — нет.
+ */
+describe('«Отправить» шлёт то же, что написано над кнопкой', () => {
+  /** `navigator.share` в jsdom нет, поэтому экран уходит в буфер — его и ловим. */
+  function clipboard(): { text: string } {
+    const box = { text: '' }
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: (text: string) => {
+          box.text = text
+          return Promise.resolve()
+        },
+      },
+    })
+    return box
+  }
+
+  async function send(): Promise<string> {
+    const box = clipboard()
+    await act(async () => {
+      fireEvent.click(screen.getByRole('button', { name: 'Отправить' }))
+    })
+    return box.text
+  }
+
+  /** Строки списка и итог из отправленного текста. */
+  function parse(text: string): { rows: number; total: number } {
+    const rows = text.split('\n').filter((s) => s.startsWith('— ')).length
+    const total = Number(text.match(/Итого примерно (\d+) ₽/)?.[1] ?? NaN)
+    return { rows, total }
+  }
+
+  /** Что сейчас обещает счётчик: «17 позиций · ≈ 3642 ₽». */
+  function counter(): { count: number; total: number } {
+    const box = document.querySelector('.shop__counter')
+    return {
+      count: Number(box?.querySelector('b')?.textContent),
+      total: Number(box?.textContent?.match(/≈\s*(\d+)\s*₽/)?.[1] ?? NaN),
+    }
+  }
+
+  it('до магазина уходит весь список: «зайди по дороге»', async () => {
+    mount()
+    const text = await send()
+    expect(text).toContain('Продукты на неделю')
+    expect(parse(text)).toEqual({ rows: TO_BUY.length, total: counter().total })
+  })
+
+  it('из магазина уходит только то, что ещё не в тележке', async () => {
+    // отмечаем половину списка — ровно тот сценарий, где экран расходился сам
+    // с собой: «18 позиций · ≈ 3217 ₽» над кнопкой и 35 строк в сообщении
+    const half = TO_BUY.filter((_, i) => i % 2 === 0)
+    seed({ bought: half.map((l) => l.ingredientId) })
+    mount()
+
+    const shown = counter()
+    expect(shown.count).toBe(TO_BUY.length - half.length)
+    expect(shown.count).toBeLessThan(TO_BUY.length)
+
+    const text = await send()
+    expect(parse(text)).toEqual({ rows: shown.count, total: shown.total })
+    for (const line of half) expect(text).not.toContain(`— ${line.name},`)
+  })
+
+  it('отмеченный список назван остатком, а не продуктами на неделю', async () => {
+    seed({ bought: [TO_BUY[0].ingredientId] })
+    mount()
+    expect(await send()).toContain('Осталось купить на неделю')
+  })
+})
+
+describe('когда покупать нечего', () => {
+  /** Пустая неделя: вся семья ест не дома, готовок нет, список пуст. */
+  function emptyWeek() {
+    seed({ menu: { ...MENU, weekStart: MONDAY, entries: [] } })
+    mount()
+  }
+
+  it('список пуст — и это видно, иначе проверять нечего', () => {
+    emptyWeek()
+    expect(rowNames()).toEqual([])
+  })
+
+  it('вместо поздравления сказано, почему покупать нечего', () => {
+    emptyWeek()
+    // формулировка та же, что у «Готовки»: третьего названия у этого случая нет
+    expect(screen.getByText('Меню пока пустое')).toBeTruthy()
+    expect(screen.queryByText('Всё собрано')).toBeNull()
+  })
+
+  it('кнопки, которой нечего делать, на экране нет', () => {
+    emptyWeek()
+    // «Разложить покупки» раскладывает купленное; покупок не было
+    expect(screen.queryByRole('button', { name: 'Разложить покупки' })).toBeNull()
+    // и прятать купленное тоже нечего
+    expect(screen.queryByLabelText('Прятать купленное')).toBeNull()
+  })
+
+  it('всё отмечено «есть дома» — это тоже не собранный поход', () => {
+    seed({ atHome: TO_BUY.map((l) => l.ingredientId) })
+    mount()
+    expect(screen.getByText('Всё есть дома')).toBeTruthy()
+    expect(screen.queryByText('Всё собрано')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Разложить покупки' })).toBeNull()
+  })
+
+  it('когда покупки были, «Всё собрано» остаётся на месте', () => {
+    // страховка от лечения пустой недели за счёт настоящего конца похода
+    seed({ bought: TO_BUY.map((l) => l.ingredientId) })
+    mount()
+    expect(screen.getByText('Всё собрано')).toBeTruthy()
+    expect(screen.queryByText('Меню пока пустое')).toBeNull()
   })
 })
 
