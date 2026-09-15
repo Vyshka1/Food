@@ -285,7 +285,10 @@ export const CATEGORY_LABEL: Record<IngredientCategory, string> = {
   legume: 'Бобовые',
   bakery: 'Хлеб',
   nuts: 'Орехи и семечки',
-  pantry: 'Бакалея',
+  // не «Бакалея»: так называется весь отдел, а это его часть — масла,
+  // специи, соусы и консервы. В режиме магазина иначе выходил заголовок
+  // «Бакалея», а под ним подзаголовок «Бакалея».
+  pantry: 'Масло, соусы и специи',
 }
 
 export const CATEGORY_ORDER: IngredientCategory[] = [
