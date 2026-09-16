@@ -4,6 +4,7 @@ import type { IngredientCategory, ShoppingLine } from '../types'
 import { buildShoppingList, formatQty, weekSpending } from '../lib/shopping'
 import { leftoverWorthTelling } from '../lib/purchase'
 import { shoppingByStore, type StoreKind } from '../lib/stores'
+import { dayAttendance } from '../lib/attendance'
 import { plural } from '../lib/format'
 import { weekLabel } from '../lib/day'
 import { useStore } from '../store'
@@ -108,6 +109,20 @@ export function ProductsScreen({ onShoppingMode }: { onShoppingMode: () => void 
   const spending = useMemo(
     () => (menu && household ? weekSpending(menu, household, pantry, atHome) : null),
     [menu, household, pantry, atHome],
+  )
+  /*
+   * Пустой список бывает двух видов, и путать их нельзя. «Ничего не нашлось,
+   * уберите фильтр» — про поиск; но когда всю неделю дома никто не ест, ни
+   * фильтра, ни поиска человек не ставил, и убирать ему нечего. Это тот же
+   * случай, о котором говорят «Меню» и «Готовка», — и сказать о нём надо теми
+   * же словами, а не третьей формулировкой.
+   */
+  const nobodyHome = useMemo(
+    () =>
+      household
+        ? [0, 1, 2, 3, 4, 5, 6].every((day) => dayAttendance(household, day).home.length === 0)
+        : false,
+    [household],
   )
 
   if (!menu || !list || !household || !spending) return null
@@ -235,7 +250,9 @@ export function ProductsScreen({ onShoppingMode }: { onShoppingMode: () => void 
               {shownCategories.length === 0 && (
                 <Card>
                   <p className="hint" style={{ margin: 0 }}>
-                    Ничего не нашлось. Уберите фильтр или поищите по другому слову.
+                    {list.lines.length === 0 && nobodyHome
+                      ? 'На этой неделе дома никто не ест — покупать нечего.'
+                      : 'Ничего не нашлось. Уберите фильтр или поищите по другому слову.'}
                   </p>
                 </Card>
               )}

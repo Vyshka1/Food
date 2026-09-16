@@ -251,7 +251,18 @@ export function cookCard(
   const pieceGrams = cookPieces ? Math.round(cookGrams / cookPieces) : undefined
 
   const perServing = recipeStats(recipe)
-  const cookKcal = Math.round(perServing.kcal * servings)
+  /*
+   * Калории всей готовки — те же, что уйдут в дневной итог, то есть по
+   * фактическому расходу продуктов. Доля рецепта здесь не годится: штучное
+   * округляется вверх (половину яблока не купишь), и блюдо содержит три
+   * яблока там, где рецепт просит два с половиной.
+   *
+   * Это не мелочь счёта. Пока строки «кому и когда» считались долей рецепта,
+   * а итог — расходом, они расходились: замер на 156 карточках дал до 245
+   * ккал разницы. Человек видел «всей готовки 1631», складывал строки и
+   * получал 790.
+   */
+  const cookKcal = plan ? plan.stats.kcal : Math.round(perServing.kcal * servings)
 
   // раскладка: сколько нужно каждому в каждый приём пищи
   const needs: { day: number; eater: Eater; kcal: number }[] = []
@@ -308,7 +319,9 @@ export function cookCard(
         eaterId: need.eater.id,
         eaterName: need.eater.name,
         grams,
-        kcal: Math.round(need.kcal),
+        // калории следуют за граммами этой же строки: два основания в одной
+        // строке — это и есть расхождение, которое человек видит как ошибку
+        kcal: Math.round((grams / Math.max(1, cookGrams)) * cookKcal),
         targetKcal: Math.round(need.kcal),
       })
       placedGrams += grams

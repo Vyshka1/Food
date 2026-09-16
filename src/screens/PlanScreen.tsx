@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { WEEKDAYS, WEEKDAYS_ACC, WEEKDAYS_FULL, cookTaskId } from '../lib/menu'
-import { buildCookingPlans, formatDuration } from '../lib/cookingPlan'
+import { buildCookingPlans, cookNamesOf, formatDuration } from '../lib/cookingPlan'
+import { loadCookRun } from '../lib/cookProgress'
 import { dishWorkloads, kitchenLoad } from '../lib/kitchenLoad'
 import { plural } from '../lib/format'
 import { useStore } from '../store'
@@ -95,14 +96,22 @@ export function PlanScreen({
     [current, household],
   )
   const workloads = useMemo(() => dishWorkloads(current?.steps ?? []), [current])
+  /*
+   * Начатый и не брошенный ход этой готовки, если он есть. Считается до
+   * ранних выходов: хуки не живут в ветках.
+   */
+  const started = useMemo(
+    () =>
+      current
+        ? loadCookRun(`${menu?.weekStart ?? 'без-недели'}|${current.cookDay}`, Date.now())
+        : null,
+    [menu?.weekStart, current],
+  )
 
   if (!household || !menu) return null
   if (!current) return <div className="app">Меню пока пустое.</div>
 
-  const cookNames =
-    cooks === 1
-      ? [household.eaters[0]?.name ?? 'Повар']
-      : household.eaters.slice(0, 2).map((e) => e.name)
+  const cookNames = cookNamesOf(household, cooks)
 
   /*
    * Свободные минуты — одно число на весь экран: и подсказка под плитками, и
@@ -442,16 +451,28 @@ export function PlanScreen({
         </div>
 
         <div className="workspace__rail">
+          {/*
+            * Начатая готовка переживает перезагрузку — ход лежит в своём
+            * ключе, — но сам экран после неё не открывается: распахивать его
+            * на весь экран при каждой загрузке нельзя, человек мог обновить
+            * страницу, чтобы посмотреть меню. Поэтому про начатое говорит
+            * вход: иначе отметки целы, а человек об этом не знает и начинает
+            * заново.
+            */}
           <div className="rail-cta">
             <div className="rail-cta__head">
               <Icon name="pot" size={26} />
               <div>
-                <b>Готовы начать?</b>
-                <span className="muted small">Таймеры и подсказки будут идти по порядку</span>
+                <b>{started ? 'Готовка идёт' : 'Готовы начать?'}</b>
+                <span className="muted small">
+                  {started
+                    ? `Отмечено шагов: ${started.done.length} — продолжим оттуда же`
+                    : 'Таймеры и подсказки будут идти по порядку'}
+                </span>
               </div>
             </div>
             <button className="btn" onClick={() => onCookNow(current, cookNames)}>
-              Готовлю сейчас
+              {started ? 'Вернуться к готовке' : 'Готовлю сейчас'}
             </button>
           </div>
 

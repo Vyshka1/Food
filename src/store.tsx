@@ -19,6 +19,7 @@ import type {
 import {
   buildWeekMenu,
   defaultRepeats,
+  isRecipeAllowed,
   replaceEntryWith,
   totalPortions,
 } from './lib/menu'
@@ -37,7 +38,7 @@ import {
   mealPlaceOf,
   nextPlace,
 } from './lib/attendance'
-import { setCustomRecipes, setOilChoice } from './data/recipeRegistry'
+import { recipeById, setCustomRecipes, setOilChoice } from './data/recipeRegistry'
 import { decodeProfile } from './lib/transfer'
 import { addDays, mondayOf, today as todayIso } from './lib/day'
 import { weekSeed } from './lib/weekSeed'
@@ -139,6 +140,57 @@ function menuFor(
     ...options,
     freezer: pantry.freezer,
   })
+}
+
+/**
+ * Пересобрать меню, не потеряв того, что человек решил сам.
+ *
+ * Пересборок в сторе десяток, и повод у каждой свой: свой рецепт, скрытое
+ * блюдо, другое масло, новый едок, другая неделя. Обещаний же у них два, и
+ * общих: сборка видит морозилку (за это отвечает `menuFor`) и переживает
+ * закрепления. Оба раза, когда пересборку писали в обход общей функции, в
+ * обход терялась морозилка; когда её написали через `menuFor`, но с пустым
+ * `keep`, потерялись закрепления — «Сохранить» в своих рецептах пересобирало
+ * неделю целиком и молча снимало все три закрепления. Поэтому меню собирается
+ * только здесь.
+ *
+ * `keep` — записи, которые остаются на своих местах. Закрепление на время
+ * сборки — приём (так устроена пересборка одного дня), а не решение человека,
+ * поэтому отметки возвращаются такими, какими были: закреплённым остаётся
+ * ровно то, что человек закрепил сам.
+ */
+function rebuildMenu(
+  prev: AppState,
+  household: Household,
+  seed: number,
+  keep: MenuEntry[],
+  options: BuildOptions = {},
+): { menu: WeekMenu; warnings: string[] } {
+  const { menu, warnings } = menuFor(household, seed, keep, prev.pantry, options)
+  const pinned = new Set(keep.filter((e) => e.pinned).map((e) => e.id))
+  const entries = menu.entries.map((e) => ({ ...e, pinned: pinned.has(e.id) || undefined }))
+  return { menu: { ...menu, entries }, warnings }
+}
+
+/**
+ * Что человек закрепил — и что из этого ещё можно есть.
+ *
+ * Закрепление переживает пересборку, но не переживает запрета: закреплённое
+ * блюдо ставится в клетку до всякого подбора, и аллергия, «не показывать это
+ * блюдо» или удалённый свой рецепт иначе не значили бы ничего. Правило одно на
+ * все пересборки — отдельного списка исключений у каждой быть не должно.
+ */
+function pinnedOf(prev: AppState, household: Household): MenuEntry[] {
+  return (prev.menu?.entries ?? []).filter((entry) => {
+    if (!entry.pinned) return false
+    const recipe = recipeById(entry.recipeId)
+    return Boolean(recipe && isRecipeAllowed(recipe, household))
+  })
+}
+
+/** Зерно текущего меню: пересборка не меняет неделю, если её не просили менять. */
+function seedOf(prev: AppState): number {
+  return prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
 }
 
 /**
@@ -316,6 +368,10 @@ function boot(): BootResult {
        * сочетаниях блюд и сроков сдвиг «сегодня» на день менял состав меню в
        * 4.8% случаев. Это и семантически вернее: срок контейнера меряется от
        * дня, когда его собираются съесть.
+       *
+       * Закреплений здесь нет и быть не может: закрепляют блюдо на своей
+       * неделе, и прошлая неделя целиком уезжает в историю. Пустой `keep` —
+       * решение, а не забытый аргумент.
        */
       const { menu, warnings } = menuFor(household, weekSeed(monday), [], state.pantry, {
         today: monday,
@@ -326,7 +382,10 @@ function boot(): BootResult {
         state: rotateWeek(state, monday, menu, warnings, new Date().toISOString()),
       }
     }
-    // меню, собранные до появления личных порций, пересобираем на том же seed
+    // Меню, собранные до появления личных порций, пересобираем на том же seed.
+    // И тоже без закреплений: в тех записях нет `portions` — как раз поэтому мы
+    // их и пересобираем, и ставить такую запись в клетку как закреплённую
+    // значило бы протащить в новое меню ровно то, что чиним.
     if (state.household && state.menu && needsRebuild(state)) {
       const { menu, warnings } = menuFor(state.household, state.menu.seed, [], state.pantry)
       return { ...result, menuProblem: null, state: { ...state, menu, warnings } }
@@ -398,8 +457,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       // анкету поправили — прошлая жалоба на сборку меню больше не про эти данные
       setMenuProblem(null)
       setState((prev) => {
-        const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
-        const { menu, warnings } = menuFor(household, seed, [], prev.pantry)
+        const { menu, warnings } = rebuildMenu(
+          prev,
+          household,
+          seedOf(prev),
+          // анкету правят и ради запретов: аллергия или пропавшая духовка
+          // снимают закрепление сами — это делает `pinnedOf`
+          pinnedOf(prev, household),
+        )
         return { ...prev, household, menu, warnings }
       })
     },
@@ -418,6 +483,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   /**
    * Разложить покупки: излишек упаковок уходит в запасы. До сих пор
    * приложение честно писало «останется 225 г» и на этом о них забывало.
+   *
+   * Отметки о покупках при этом остаются на месте. `bought` и `pantry.stock` —
+   * не два ответа на один вопрос, а два разных вопроса: первый про поход в
+   * магазин («это я уже взял»), второй про дом («столько лежит на полке»).
+   * Пока раскладка отвечала на второй, стирая первый, неделя начиналась
+   * заново: на «Продуктах» снова «осталось купить 33 из 33», а следующий заход
+   * в магазин раскладывал ту же покупку ещё раз — запасы росли 3970 → 6665 →
+   * 7950 г за одну и ту же неделю. Состояние «продукты на неделю куплены» было
+   * недостижимо в принципе.
+   *
+   * Второй раз одну и ту же покупку разложить нельзя: `stored` помнит строки,
+   * излишек которых уже на полке. Помнит именно раскладку, а не галочку —
+   * снятая и поставленная заново отметка «куплено» продуктов дома не меняет.
    */
   const storeBought = useCallback(() => {
     setState((prev) => {
@@ -425,9 +503,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const today = todayIso()
       const list = buildShoppingList(prev.menu, prev.household ?? undefined, prev.pantry)
       const lines = list.lines.filter(
-        (l) => !l.staple && prev.bought.includes(l.ingredientId),
+        (l) =>
+          !l.staple &&
+          prev.bought.includes(l.ingredientId) &&
+          !prev.stored.includes(l.ingredientId),
       )
-      return { ...prev, pantry: storePurchase(prev.pantry, lines, today), bought: [] }
+      if (lines.length === 0) return prev
+      return {
+        ...prev,
+        pantry: storePurchase(prev.pantry, lines, today),
+        stored: [...prev.stored, ...lines.map((l) => l.ingredientId)],
+      }
     })
   }, [])
 
@@ -436,9 +522,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setState((prev) => {
       if (!prev.household) return prev
       const household: Household = { ...prev.household, extras }
-      const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
-      const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
-      const { menu, warnings } = menuFor(household, seed, keep, prev.pantry)
+      const { menu, warnings } = rebuildMenu(prev, household, seedOf(prev), pinnedOf(prev, household))
       return { ...prev, household, menu, warnings }
     })
   }, [])
@@ -448,9 +532,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setState((prev) => {
       if (!prev.household) return prev
       const household: Household = { ...prev.household, repeats }
-      const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
-      const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
-      const { menu, warnings } = menuFor(household, seed, keep, prev.pantry)
+      const { menu, warnings } = rebuildMenu(prev, household, seedOf(prev), pinnedOf(prev, household))
       return { ...prev, household, menu, warnings }
     })
   }, [])
@@ -461,9 +543,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!prev.household) return prev
       const household: Household = { ...prev.household, oils }
       setOilChoice(oils)
-      const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
-      const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
-      const { menu, warnings } = menuFor(household, seed, keep, prev.pantry)
+      const { menu, warnings } = rebuildMenu(prev, household, seedOf(prev), pinnedOf(prev, household))
       return { ...prev, household, menu, warnings }
     })
   }, [])
@@ -473,9 +553,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setState((prev) => {
       if (!prev.household) return prev
       const household: Household = { ...prev.household, drinks }
-      const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
-      const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
-      const { menu, warnings } = menuFor(household, seed, keep, prev.pantry)
+      const { menu, warnings } = rebuildMenu(prev, household, seedOf(prev), pinnedOf(prev, household))
       return { ...prev, household, menu, warnings }
     })
   }, [])
@@ -495,32 +573,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       if (!prev.household) return prev
       const entries = prev.menu?.entries ?? []
       const scope = request.scope ?? { kind: 'week' }
-      const keep = entries
-        .filter((e) => {
-          if (e.pinned) return true
-          if (scope.kind === 'day') return e.day !== scope.day
-          if (scope.kind === 'meal') return e.day !== scope.day || e.slot !== scope.slot
-          return false
-        })
-        .map((e) => ({ ...e, pinned: true }))
-      const { menu, warnings } = menuFor(
+      // закреплённое человеком плюс всё, чего он менять не просил: частичная
+      // пересборка устроена через то же закрепление, отдельного алгоритма
+      // «пересобрать день» нет и не нужно
+      const pins = new Set(pinnedOf(prev, prev.household))
+      const keep = entries.filter((e) => {
+        if (pins.has(e)) return true
+        if (scope.kind === 'day') return e.day !== scope.day
+        if (scope.kind === 'meal') return e.day !== scope.day || e.slot !== scope.slot
+        return false
+      })
+      const { menu, warnings } = rebuildMenu(
+        prev,
         prev.household,
         request.seed ?? Math.floor(Math.random() * 1e9),
         keep,
-        prev.pantry,
         { goal: request.goal, atHome: prev.atHome },
       )
-      // Закрепление на время сборки — приём, а не решение человека: возвращаем
-      // отметки такими, какими они были, иначе после пересборки дня вся
-      // неделя оказалась бы закреплённой.
-      const pinned = new Set(entries.filter((e) => e.pinned).map((e) => e.id))
-      const restored = menu.entries.map((e) => ({ ...e, pinned: pinned.has(e.id) || undefined }))
       return {
         ...prev,
-        menu: { ...menu, entries: restored },
+        menu,
         warnings,
         atHome: prev.atHome,
+        // неделю пересобрали — покупать придётся другое: и отметки, и память о
+        // том, что уже разложено по кладовой, относятся к прежнему списку
         bought: scope.kind === 'week' ? [] : prev.bought,
+        stored: scope.kind === 'week' ? [] : prev.stored,
       }
     })
   }, [])
@@ -563,9 +641,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ...prev.household,
       eaters: prev.household.eaters.map((e) => (e.id === eaterId ? change(e) : e)),
     }
-    const seed = prev.menu?.seed ?? Math.floor(Math.random() * 1e9)
-    const keep = prev.menu?.entries.filter((e) => e.pinned) ?? []
-    const { menu, warnings } = menuFor(household, seed, keep, prev.pantry)
+    const { menu, warnings } = rebuildMenu(prev, household, seedOf(prev), pinnedOf(prev, household))
     return { ...prev, household, menu, warnings }
   }
 
@@ -708,10 +784,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           e.id === eaterId ? { ...e, bannedRecipes: [...new Set([...e.bannedRecipes, recipeId])] } : e,
         ),
       }
-      // через menuFor, как и все остальные пересборки: без морозилки заготовки
-      // исчезли бы из плана, а cookTasks выписал бы готовку и покупку на еду,
-      // которая уже сварена и лежит в контейнере
-      const { menu, warnings } = menuFor(household, prev.menu.seed, [], prev.pantry)
+      /*
+       * Через общую пересборку, как и все остальные: она даёт сборке морозилку
+       * (иначе заготовки исчезли бы из плана, а cookTasks выписал бы готовку и
+       * покупку на еду, которая уже сварена и лежит в контейнере) и сохраняет
+       * закрепления. Само скрытое блюдо закрепление теряет — `pinnedOf`
+       * спрашивает про запреты новой анкеты, а в ней оно уже запрещено.
+       */
+      const { menu, warnings } = rebuildMenu(
+        prev,
+        household,
+        prev.menu.seed,
+        pinnedOf(prev, household),
+      )
       return { ...prev, household, menu, warnings }
     })
   }, [])
@@ -727,7 +812,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           bannedRecipes: e.bannedRecipes.filter((id) => id !== recipeId),
         })),
       }
-      const { menu, warnings } = menuFor(household, prev.menu.seed, [], prev.pantry)
+      const { menu, warnings } = rebuildMenu(
+        prev,
+        household,
+        prev.menu.seed,
+        pinnedOf(prev, household),
+      )
       return { ...prev, household, menu, warnings }
     })
   }, [])
@@ -757,11 +847,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
        * пропадали из плана: cookTasks выписывал готовку и покупку на еду,
        * которая уже сварена и лежит в контейнере.
        */
-      const { menu, warnings } = menuFor(
+      const { menu, warnings } = rebuildMenu(
+        prev,
         household,
         weekSeed(household.weekStart),
-        [],
-        prev.pantry,
+        // закрепление — решение человека, а не свойство анкеты: то, что он
+        // просил оставить, остаётся, если чужая анкета это разрешает есть
+        pinnedOf(prev, household),
       )
       return {
         ...prev,
@@ -769,8 +861,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         customRecipes: payload.customRecipes,
         menu,
         warnings,
+        // список покупок теперь про другую неделю и другую семью
         atHome: [],
         bought: [],
+        stored: [],
       }
     })
     return true
@@ -785,7 +879,12 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         : [...prev.customRecipes, recipe]
       setCustomRecipes(customRecipes)
       if (!prev.household || !prev.menu) return { ...prev, customRecipes }
-      const { menu, warnings } = menuFor(prev.household, prev.menu.seed, [], prev.pantry)
+      const { menu, warnings } = rebuildMenu(
+        prev,
+        prev.household,
+        prev.menu.seed,
+        pinnedOf(prev, prev.household),
+      )
       return { ...prev, customRecipes, menu, warnings }
     })
   }, [])
@@ -795,7 +894,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const customRecipes = prev.customRecipes.filter((r) => r.id !== recipeId)
       setCustomRecipes(customRecipes)
       if (!prev.household || !prev.menu) return { ...prev, customRecipes }
-      const { menu, warnings } = menuFor(prev.household, prev.menu.seed, [], prev.pantry)
+      // удалённый рецепт закрепление теряет сам: `pinnedOf` спрашивает реестр,
+      // а его там больше нет
+      const { menu, warnings } = rebuildMenu(
+        prev,
+        prev.household,
+        prev.menu.seed,
+        pinnedOf(prev, prev.household),
+      )
       return { ...prev, customRecipes, menu, warnings }
     })
   }, [])
@@ -820,13 +926,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setState((prev) => {
       const record = prev.history.find((r) => r.id === recordId)
       if (!record || !prev.household) return prev
+      // повторяем ровно эти блюда: здесь закрепление — и приём сборки, и
+      // решение человека сразу, поэтому оно и остаётся на записях
       const kept = record.menu.entries.map((e) => ({ ...e, pinned: true, status: undefined }))
-      const { menu, warnings } = menuFor(prev.household, record.menu.seed, kept, prev.pantry)
+      const { menu, warnings } = rebuildMenu(prev, prev.household, record.menu.seed, kept)
       return {
         ...prev,
         menu: { ...menu, weekStart: prev.household.weekStart },
         warnings,
+        // блюда другие — и список покупок, и то, что из него уже разложено
         bought: [],
+        stored: [],
       }
     })
   }, [])

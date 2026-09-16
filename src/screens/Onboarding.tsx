@@ -14,6 +14,29 @@ import { MACRO_COLOR } from '../lib/palette'
 
 const STEPS = ['Состав семьи', 'Аллергии и вкусы', 'Что нравится', 'Режим питания', 'Кухня', 'Готово']
 
+/**
+ * Чего не хватает в анкете едока.
+ *
+ * Ноль в росте или весе — это не число, а незаполненное поле: `Number('') || 0`
+ * даёт его на любое очищенное поле. Считать по нему норму нельзя — формула
+ * Миффлина от нулевого роста уходит в минус, и анкета показывала «Норма: −428
+ * ккал в день», а меню собиралось под отрицательную норму: «300 из −428 ккал»,
+ * «калории 30000%» и полный список продуктов к этому.
+ */
+function eaterGaps(eater: Eater): string[] {
+  const gaps: string[] = []
+  if (!(eater.age > 0)) gaps.push('возраст')
+  if (!(eater.heightCm > 0)) gaps.push('рост')
+  if (!(eater.weightKg > 0)) gaps.push('вес')
+  return gaps
+}
+
+/** «рост и вес» — перечисление по-русски, союзом перед последним. */
+function listRu(items: string[]): string {
+  if (items.length < 2) return items.join('')
+  return `${items.slice(0, -1).join(', ')} и ${items[items.length - 1]}`
+}
+
 interface Props {
   initial?: Household | null
   onDone: (household: Household) => void
@@ -55,8 +78,34 @@ export function Onboarding({ initial, onDone, onCancel }: Props) {
     )
   }
 
-  const canNext =
-    step !== 3 || (household.meals.length > 0 && household.cookingDays.length > 0)
+  /**
+   * Что мешает уйти со шага — словами, а не одной погасшей кнопкой.
+   *
+   * Погасшая «Далее» без объяснения — тупик: на «Режиме питания» человек снял
+   * последний день готовки, и кнопка молча перестала нажиматься. Способ
+   * сказать об этом один на все шаги — тот же, что в редакторе своего рецепта:
+   * список того, чего не хватает, и бледная кнопка рядом.
+   */
+  const blockers = useMemo(() => {
+    if (step === 0) {
+      return household.eaters.flatMap((eater) => {
+        const gaps = eaterGaps(eater)
+        if (gaps.length === 0) return []
+        const what = `укажите ${listRu(gaps)}`
+        // имя нужно только когда едоков несколько: иначе оно ничего не уточняет
+        return [household.eaters.length > 1 ? `${what} — ${eater.name}` : what]
+      })
+    }
+    if (step === 3) {
+      const list: string[] = []
+      if (household.meals.length === 0) list.push('отметьте хотя бы один приём пищи')
+      if (household.cookingDays.length === 0) list.push('отметьте хотя бы один день готовки')
+      return list
+    }
+    return []
+  }, [step, household])
+
+  const canNext = blockers.length === 0
 
   /*
    * Колода собирается один раз на едока и на состав анкеты: пересобирать её на
@@ -124,22 +173,28 @@ export function Onboarding({ initial, onDone, onCancel }: Props) {
                     { value: 'male', label: 'Мужчина' },
                   ]}
                 />
+                {/*
+                  * Очищенное поле остаётся пустым, а не превращается в «0»:
+                  * ноль роста человек читает как введённое число и идёт
+                  * дальше, а это единственный признак того, что поле не
+                  * заполнено.
+                  */}
                 <div className="row">
                   <Field
                     label="Возраст"
-                    value={activeEater.age}
+                    value={activeEater.age || ''}
                     onChange={(v) => patchEater(activeEater.id, { age: Number(v) || 0 })}
                   />
                   <Field
                     label="Рост"
                     suffix="см"
-                    value={activeEater.heightCm}
+                    value={activeEater.heightCm || ''}
                     onChange={(v) => patchEater(activeEater.id, { heightCm: Number(v) || 0 })}
                   />
                   <Field
                     label="Вес"
                     suffix="кг"
-                    value={activeEater.weightKg}
+                    value={activeEater.weightKg || ''}
                     onChange={(v) => patchEater(activeEater.id, { weightKg: Number(v) || 0 })}
                   />
                 </div>
@@ -171,7 +226,15 @@ export function Onboarding({ initial, onDone, onCancel }: Props) {
                 </div>
                 <div className="row row--between">
                   <span className="hint">
-                    Норма: <b>{dailyNorm(activeEater).kcal} ккал</b> в день
+                    {/*
+                      * Норма — результат, а не обещание: пока анкета неполная,
+                      * считать нечего, и прочерк честнее минус четырёхсот
+                      * килокалорий. Чего именно не хватает, сказано один раз,
+                      * у кнопки «Далее».
+                      */}
+                    Норма:{' '}
+                    <b>{eaterGaps(activeEater).length > 0 ? '—' : `${dailyNorm(activeEater).kcal} ккал`}</b>{' '}
+                    в день
                   </span>
                   {household.eaters.length > 1 && (
                     <button
@@ -491,6 +554,10 @@ export function Onboarding({ initial, onDone, onCancel }: Props) {
             дни.
           </p>
         </>
+      )}
+
+      {blockers.length > 0 && (
+        <div className="warning">Чтобы продолжить: {blockers.join('; ')}.</div>
       )}
 
       <div className="wizard-footer">

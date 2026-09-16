@@ -3,7 +3,7 @@ import { RECIPES, RECIPE_BY_ID } from '../data/recipes'
 import { INGREDIENTS, INGREDIENT_BY_ID } from '../data/ingredients'
 import { buildOption, planBatch, yieldLabel } from './batch'
 import { leftoverAdvice, packPlan, purchaseInfo } from './purchase'
-import { cookedGrams, recipeStats } from './nutrition'
+import { cookedGrams, cookedYieldPerServing, recipeStats } from './nutrition'
 
 const CONTEXT = { neededGrams: 1080, hasFreezer: true, freezerRoomGrams: 4000 }
 
@@ -146,12 +146,18 @@ describe('выбор партии', () => {
     }
     expect(cases).toBeGreaterThan(100)
     /*
-     * Измерено: пачка в ноль в 45% случаев, средний остаток 79 г. Было 54% и
-     * 72 г, пока потребность считалась в сыром весе: она была завышена, партия
-     * чаще дотягивала до целой пачки, и «хорошая» цифра держалась на лишней
-     * готовке. С честной потребностью еды нужно меньше, и половина упаковки
-     * выбирается чаще — сырой остаток фарша при этом морозится, в отличие от
-     * лишнего готового блюда.
+     * Измерено: пачка в ноль в 48.3% случаев (240 сочетаний), средний остаток
+     * 57 г. Было 45% и 79 г — улучшилось оттого, что в список блюд под упаковку
+     * добавился бефстроганов, а прочие изменения расчёта сдвинули выбор доли.
+     *
+     * Ещё раньше было 54% и 72 г, пока потребность считалась в сыром весе: она
+     * была завышена, партия чаще дотягивала до целой пачки, и «хорошая» цифра
+     * держалась на лишней готовке.
+     *
+     * Здесь же видно, почему у блюд под упаковку нет варианта «ровно под
+     * потребность», который есть у кастрюли: с ним пачка уходит в ноль только
+     * в 39.9% случаев, а средний сырой остаток растёт. Кастрюлю можно
+     * налить на три четверти, пачку нельзя вскрыть на три четверти.
      *
      * Вес сырого остатка в модели стоимости с тех пор не перемерялся: это
      * последний шаг переработки, после того как расчёт станет единым.
@@ -162,10 +168,10 @@ describe('выбор партии', () => {
 
   it('приготовленное всё куда-то девается', () => {
     /*
-     * Тарелки, морозилка, хвост на доесть и то, чему места не нашлось, — в
-     * сумме ровно то, что приготовили. Пока хвост не отделяли от лишнего,
-     * порог заморозки толкал партию вверх: лишь бы остаток дотянул до
-     * контейнера.
+     * Тарелки, морозилка, добавка к тем же тарелкам и то, чему места не
+     * нашлось, — в сумме ровно то, что приготовили. Пока добавку не отделяли
+     * от лишнего, порог заморозки толкал партию вверх: лишь бы остаток дотянул
+     * до контейнера.
      */
     for (const recipe of RECIPES) {
       for (const portions of [2, 4, 6]) {
@@ -296,6 +302,237 @@ describe('свежие блюда', () => {
         perServing * 0.5,
       )
     }
+  })
+
+  it('размер упаковки больше не диктует размер готовки', () => {
+    /*
+     * С этого начался разбор. Два завтрака по 285 г превращались в закладку ×4:
+     * «приготовим примерно 1,0 кг, нужно по меню 570 г, останется 468 г».
+     * Гранола в этом килограмме размокнет, а яблоко потемнеет — собирать блюдо
+     * надо перед едой.
+     *
+     * Четыре блюда здесь неспроста: закладку им задавали разные правила — трём
+     * кастрюля, одному упаковка, — а лечится это одним: партия бывает только
+     * подтверждённая. Проверяем не заголовок, а число: сколько нужно по меню,
+     * столько и сделаем, и ничего не останется.
+     *
+     * Пятого из разбора — «Боула с курицей и киноа» — здесь нет намеренно: его
+     * партию подтвердили, она про компоненты. Курицу и киноа варят пачкой филе,
+     * а собирают боул перед едой — это вторая ось, и проверяется она отдельно.
+     */
+    for (const id of ['yogurt_granola', 'chia_pudding', 'buckwheat_egg', 'nuts_dates']) {
+      const recipe = RECIPE_BY_ID[id]
+      for (const neededGrams of [285, 570, 855, 1200]) {
+        const plan = planBatch(recipe, { neededGrams, hasFreezer: true, freezerRoomGrams: 4000 })!
+        expect(plan.chosen.yieldGrams, `${recipe.title}: нужно ${neededGrams} г`).toBe(neededGrams)
+        expect(plan.chosen.servedGrams, recipe.title).toBe(neededGrams)
+        expect(plan.chosen.tailGrams, recipe.title).toBe(0)
+        expect(plan.chosen.unplacedGrams, recipe.title).toBe(0)
+        expect(plan.chosen.shortfallGrams, recipe.title).toBe(0)
+      }
+    }
+  })
+
+  it('и остаток упаковки остаётся в запасах, а не в блюде', () => {
+    /*
+     * Обратная сторона того же: сделать ровно потребность не значит купить
+     * ровно потребность. Пачку йогурта покупают целой — просто лишнее из неё
+     * не уходит в блюдо. Значит, сырой остаток у такого блюда есть, а готового
+     * излишка нет.
+     */
+    const plan = planBatch(RECIPE_BY_ID['yogurt_granola'], {
+      neededGrams: 570,
+      hasFreezer: true,
+      freezerRoomGrams: 4000,
+    })!
+    const yogurt = plan.chosen.packs.find((l) => l.ingredientId === 'greek_yogurt')!
+    expect(yogurt.buy).toBeGreaterThan(yogurt.buy - yogurt.leftover)
+    expect(yogurt.leftover).toBeGreaterThan(0)
+    expect(plan.chosen.unplacedGrams).toBe(0)
+  })
+})
+
+describe('у каждого приготовленного грамма есть адрес', () => {
+  /*
+   * Адресов ровно четыре: тарелка запланированного приёма пищи, добавка к тем
+   * же тарелкам, морозилка и явное «некуда». Пятого — «доесть в ближайшие
+   * дни» — быть не должно: у таких граммов нет ни человека, ни дня, ни приёма
+   * пищи, и именно под этой формулировкой прятались 468 г йогурта.
+   */
+  const NEEDS = [1, 1.5, 2, 3, 4, 6, 8]
+  const ROOMS = [0, 600, 1200, 4000]
+
+  it('добавка не дорастает до отдельного приёма пищи', () => {
+    for (const recipe of RECIPES) {
+      const serving = Math.round(cookedYieldPerServing(recipe).grams)
+      for (const portions of NEEDS) {
+        for (const freezerRoomGrams of ROOMS) {
+          const neededGrams = cookedGrams(recipe, portions)
+          const plan = planBatch(recipe, { neededGrams, hasFreezer: true, freezerRoomGrams })
+          if (!plan) continue
+          // порция плюс грамм на округление: больше — это уже чей-то обед
+          expect(
+            plan.chosen.tailGrams,
+            `${recipe.title} ×${portions}: добавка ${plan.chosen.tailGrams} г при порции ${serving} г`,
+          ).toBeLessThanOrEqual(serving + 1)
+        }
+      }
+    }
+  })
+
+  it('кастрюлю наливают сколько нужно, а не по сетке', () => {
+    /*
+     * «Меньше кастрюли непрактично» — ограничение снизу, а не требование варить
+     * строго кратно кастрюле: налить её на три четверти можно, и это обычное
+     * дело. Пока варианты брались только из сетки 1/1¼/1½, потребность почти
+     * никогда не попадала в её узел, и разница оседала добавкой: замер по 60
+     * неделям — 715 г/нед, из них 683 г у блюд, которые варят объёмом.
+     *
+     * Проверяем там, где потребность и так не меньше кастрюли: 144 сочетания
+     * блюда и потребности, все до одного — ровно под потребность.
+     */
+    let cases = 0
+    for (const recipe of RECIPES) {
+      const batch = recipe.batch
+      if (!batch || (batch.reason !== 'pot' && batch.reason !== 'form') || batch.piece) continue
+      for (const portions of [4, 5, 6, 7, 8]) {
+        for (const freezerRoomGrams of [0, 1200]) {
+          const neededGrams = cookedGrams(recipe, portions)
+          if (neededGrams < batch.yieldGrams * batch.minScale) continue
+          const plan = planBatch(recipe, { neededGrams, hasFreezer: true, freezerRoomGrams })!
+          cases++
+          expect(
+            plan.chosen.yieldGrams,
+            `${recipe.title} ×${portions}, место ${freezerRoomGrams}`,
+          ).toBe(neededGrams)
+          expect(plan.chosen.tailGrams, recipe.title).toBe(0)
+        }
+      }
+    }
+    expect(cases).toBe(144)
+  })
+
+  it('а пачку не вскрывают на три четверти', () => {
+    /*
+     * Обратная сторона: у блюд под упаковку такого варианта нет и быть не
+     * должно. Отрезать от пачки фарша ровно под потребность значит оставить
+     * сырой остаток, который надо куда-то девать сегодня же. Замер по всей
+     * базе (228 случаев): с непрерывным вариантом пачка уходила в ноль в 39.9%
+     * случаев вместо 48.2%, а средний сырой остаток рос с 57 до 66 г.
+     */
+    for (const recipe of RECIPES) {
+      const batch = recipe.batch
+      if (batch?.reason !== 'anchor-pack' || batch.piece) continue
+      for (const portions of [3, 4, 5]) {
+        const neededGrams = cookedGrams(recipe, portions)
+        const plan = planBatch(recipe, {
+          neededGrams,
+          hasFreezer: true,
+          freezerRoomGrams: 1200,
+        })!
+        // множитель — из сетки закладок, а не любой; сверх сетки допускается
+        // только то, что закрывает потребность, когда сетки не хватает
+        const fromGrid = batch.scales.includes(plan.chosen.scale)
+        const covering = plan.chosen.scale > Math.max(...batch.scales)
+        expect(fromGrid || covering, `${recipe.title} ×${portions}: ×${plan.chosen.scale}`).toBe(
+          true,
+        )
+      }
+    }
+  })
+
+  it('вариант с непристроенным остатком не рекомендуется, если есть другой', () => {
+    /*
+     * Замер по всей базе: 4368 сочетаний блюда, потребности и свободного
+     * места. Рекомендованный вариант оставляет непристроенное в 396 случаях —
+     * и почти всегда потому, что деваться некуда: меньше кастрюли не сваришь,
+     * а морозилка занята. Ровно в одном случае из 4368 — «Борщ» на полторы
+     * доли — есть вариант чище, и проигрывает он на один грамм.
+     *
+     * Ложка допуска здесь и стоит: ниже пятидесяти граммов карточка об
+     * остатке вообще не говорит, потому что это остаток округления, а не еда.
+     */
+    let cases = 0
+    let worse = 0
+    for (const recipe of RECIPES) {
+      for (const portions of NEEDS) {
+        for (const freezerRoomGrams of ROOMS) {
+          for (const hasFreezer of [true, false]) {
+            const neededGrams = cookedGrams(recipe, portions)
+            const plan = planBatch(recipe, { neededGrams, hasFreezer, freezerRoomGrams })
+            if (!plan) continue
+            cases++
+            const clean = [plan.chosen, ...plan.alternatives].filter(
+              (o) => o.unplacedGrams === 0 && o.shortfallGrams === 0,
+            )
+            if (clean.length === 0) continue
+            if (plan.chosen.unplacedGrams > 50) {
+              worse++
+              expect(
+                plan.chosen.unplacedGrams,
+                `${recipe.title} ×${portions}, место ${freezerRoomGrams}: выбрано ${plan.chosen.yieldGrams} г при нужных ${neededGrams}, некуда ${plan.chosen.unplacedGrams} г — а вариант без остатка был`,
+              ).toBe(0)
+            }
+          }
+        }
+      }
+    }
+    expect(cases).toBeGreaterThan(4000)
+    expect(worse).toBe(0)
+  })
+
+  it('калории сходятся: приготовлено = роздано + заморожено + добавка + списано', () => {
+    /*
+     * Инвариант, ради которого всё и затевалось. У йогурта вся готовка
+     * содержала 1631 ккал, а два запланированных завтрака — 790: 841 ккал
+     * оставались без адреса, и карточка называла их «доесть в ближайшие дни».
+     *
+     * Калории пропорциональны граммам внутри одного блюда, поэтому достаточно
+     * проверить граммы — и отдельно то, что доля розданного совпадает с долей
+     * калорий, которую карточка показывает людям.
+     */
+    for (const recipe of RECIPES) {
+      const kcalPerServing = recipeStats(recipe).kcal
+      for (const portions of NEEDS) {
+        for (const freezerRoomGrams of ROOMS) {
+          const neededGrams = cookedGrams(recipe, portions)
+          const plan = planBatch(recipe, { neededGrams, hasFreezer: true, freezerRoomGrams })
+          if (!plan) continue
+          const o = plan.chosen
+          const cookedKcal = kcalPerServing * o.servings
+          const share = (grams: number) => (grams / Math.max(1, o.yieldGrams)) * cookedKcal
+          const sum =
+            share(o.servedGrams) + share(o.freezeGrams) + share(o.tailGrams) + share(o.unplacedGrams)
+          expect(
+            Math.abs(sum - cookedKcal),
+            `${recipe.title} ×${portions}: ${Math.round(cookedKcal)} ккал готовки против ${Math.round(sum)} розданных`,
+          ).toBeLessThan(Math.max(2, cookedKcal * 0.005))
+        }
+      }
+    }
+  })
+
+  it('у блюда без партии вся готовка уходит людям', () => {
+    /*
+     * Сильная половина того же инварианта: там, где партии нет, в морозилку и
+     * в списание не уходит ничего вовсе — всё приготовленное лежит на
+     * тарелках запланированных приёмов пищи.
+     */
+    let checked = 0
+    for (const recipe of RECIPES) {
+      if (recipe.batch?.reason !== 'fresh') continue
+      for (const portions of NEEDS) {
+        const neededGrams = cookedGrams(recipe, portions)
+        const plan = planBatch(recipe, { neededGrams, hasFreezer: true, freezerRoomGrams: 4000 })!
+        checked++
+        expect(plan.chosen.servedGrams, `${recipe.title} ×${portions}`).toBe(neededGrams)
+        expect(plan.chosen.freezeGrams, recipe.title).toBe(0)
+        expect(plan.chosen.tailGrams, recipe.title).toBe(0)
+        expect(plan.chosen.unplacedGrams, recipe.title).toBe(0)
+      }
+    }
+    // блюд без подтверждённой партии — 38 из 78
+    expect(checked).toBe(38 * NEEDS.length)
   })
 })
 

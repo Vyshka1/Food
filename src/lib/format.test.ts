@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { decimal, plural, portionsLabel, shortDate} from './format'
-import { formatQty, shoppingListText } from './shopping'
+import { formatQty, remainingToBuy, shoppingListText } from './shopping'
+import { STORE_LABEL, shoppingByStore } from './stores'
+import { CATEGORY_ORDER } from '../data/ingredients'
 import { WEEKDAYS_ACC, WEEKDAYS_FULL } from './menu'
 import { formatDuration } from './cookingPlan'
 
@@ -64,20 +66,120 @@ describe('shoppingListText', () => {
     ],
   }
 
-  it('группирует по категориям и считает итог', () => {
-    const text = shoppingListText(list, { atHome: [], weekStart: '2026-09-07' })
+  const send = (opts: { atHome?: string[]; bought?: string[] } = {}) =>
+    shoppingListText(list, {
+      atHome: opts.atHome ?? [],
+      bought: opts.bought ?? [],
+      weekStart: '2026-09-07',
+    })
+
+  it('группирует по отделам зала и считает итог', () => {
+    const text = send()
     expect(text).toContain('Продукты на неделю 7.09–13.09')
-    expect(text).toContain('Овощи и зелень')
+    // отдел, а не категория: «Овощи и фрукты», а не «Овощи и зелень»
+    expect(text).toContain('Овощи и фрукты')
+    expect(text).not.toContain('Овощи и зелень')
     expect(text).toContain('— Картофель, 1,2 кг')
     expect(text).toContain('— Молоко, 1 л')
     expect(text).toContain('Итого примерно 150 ₽')
   })
 
+  /*
+   * Маршрут в сообщении — тот же, что на экране. Пока текст шёл по категориям,
+   * получатель списка ходил по залу иначе, чем его автор: «Мясо и птица»,
+   * потом отдельной строкой «Рыба» (тот же прилавок) и «Яйца» отдельным
+   * разделом вдали от молочного холодильника.
+   */
+  it('отделы идут в том же порядке, что и на экране', () => {
+    const lines = [
+      { ingredientId: 'egg', name: 'Яйца', category: 'egg' as const, unit: 'pcs' as const, needed: 10, buy: 10, price: 100, staple: false },
+      { ingredientId: 'cod', name: 'Треска', category: 'fish' as const, unit: 'g' as const, needed: 500, buy: 500, price: 300, staple: false },
+      { ingredientId: 'beef', name: 'Говядина', category: 'meat' as const, unit: 'g' as const, needed: 500, buy: 500, price: 400, staple: false },
+      { ingredientId: 'rice', name: 'Рис', category: 'grain' as const, unit: 'g' as const, needed: 900, buy: 1000, price: 120, staple: false },
+      { ingredientId: 'apple', name: 'Яблоко', category: 'fruit' as const, unit: 'pcs' as const, needed: 4, buy: 4, price: 80, staple: false },
+    ]
+    const sorted = [...lines].sort(
+      (a, b) => CATEGORY_ORDER.indexOf(a.category) - CATEGORY_ORDER.indexOf(b.category),
+    )
+    const text = shoppingListText(
+      { lines: sorted, total: 1000 },
+      { atHome: [], bought: [], weekStart: '2026-09-07' },
+    )
+    const heads = new Set(Object.values(STORE_LABEL))
+    const shown = text.split('\n').filter((s) => heads.has(s))
+    // тот же порядок обхода, что и у экрана, — и оба берут его из lib/stores
+    expect(shown).toEqual(shoppingByStore(sorted).map((s) => s.label))
+    // рыба идёт у того же прилавка, что и мясо, а яйца — в молочном отделе
+    expect(text).not.toContain('Рыба\n')
+    expect(text).not.toContain('Яйца\n— ')
+    const at = (name: string) => text.indexOf(name)
+    expect(at('— Треска,')).toBeGreaterThan(at(STORE_LABEL.meat))
+    expect(at('— Треска,')).toBeLessThan(at(STORE_LABEL.dairy))
+    expect(at('— Яйца,')).toBeGreaterThan(at(STORE_LABEL.dairy))
+  })
+
   it('не пишет то, что есть дома, и специи', () => {
-    const text = shoppingListText(list, { atHome: ['milk'], weekStart: '2026-09-07' })
+    const text = send({ atHome: ['milk'] })
     expect(text).not.toContain('Молоко')
     expect(text).not.toContain('Соль')
     expect(text).toContain('Итого примерно 60 ₽')
+  })
+
+  /*
+   * Главное свойство: отправленный список и счётчик над кнопкой отвечают на
+   * один вопрос. Раньше из магазина уходил весь список с полной суммой, хотя
+   * половина строк была вычеркнута на экране.
+   */
+  it('отмеченное в магазине не уходит в сообщение — ни строкой, ни рублём', () => {
+    const text = send({ bought: ['potato'] })
+    expect(text).not.toContain('Картофель')
+    expect(text).toContain('— Молоко, 1 л')
+    expect(text).toContain('Итого примерно 90 ₽')
+  })
+
+  it('отмеченный список и целый различаются заголовком, а не молча', () => {
+    expect(send()).toContain('Продукты на неделю 7.09–13.09')
+    expect(send({ bought: ['potato'] })).toContain('Осталось купить на неделю 7.09–13.09')
+    // «зайди по дороге»: до магазина ничего не отмечено — и уходит весь список
+    expect(send({ bought: [] })).not.toContain('Осталось купить')
+  })
+
+  it('отметки на продуктах не из списка заголовок не меняют', () => {
+    // в `bought` остаются продукты прошлой недели; списка они не касаются, и
+    // называть из-за них целый список «остатком» — неправда
+    const text = send({ bought: ['buckwheat'] })
+    expect(text).toContain('Продукты на неделю 7.09–13.09')
+    expect(text).toContain('Итого примерно 150 ₽')
+  })
+
+  it('вместо пустого списка с нулём называет причину пустоты', () => {
+    expect(send({ bought: ['potato', 'milk'] })).toContain('Всё уже куплено.')
+    expect(send({ bought: ['potato', 'milk'] })).not.toContain('Итого примерно 0 ₽')
+    expect(send({ atHome: ['potato', 'milk'] })).toContain('Покупать нечего.')
+  })
+})
+
+describe('remainingToBuy', () => {
+  const list = {
+    total: 150,
+    lines: [
+      { ingredientId: 'potato', name: 'Картофель', category: 'veg' as const, unit: 'g' as const, needed: 1200, buy: 1200, price: 60, staple: false },
+      { ingredientId: 'salt', name: 'Соль', category: 'pantry' as const, unit: 'g' as const, needed: 30, buy: 1000, price: 30, staple: true },
+      { ingredientId: 'milk', name: 'Молоко', category: 'dairy' as const, unit: 'ml' as const, needed: 900, buy: 1000, price: 90, staple: false },
+    ],
+  }
+
+  it('убирает постоянные, домашние и уже купленное — и сумму считает по ним же', () => {
+    expect(remainingToBuy(list, { atHome: [], bought: [] })).toEqual({
+      lines: [list.lines[0], list.lines[2]],
+      total: 150,
+    })
+    expect(remainingToBuy(list, { atHome: ['milk'], bought: [] }).total).toBe(60)
+    expect(remainingToBuy(list, { atHome: [], bought: ['milk'] }).total).toBe(60)
+    expect(remainingToBuy(list, { atHome: [], bought: ['potato', 'milk'] })).toEqual({
+      lines: [],
+      total: 0,
+    })
   })
 })
 

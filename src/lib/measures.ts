@@ -1,5 +1,5 @@
 import type { Ingredient } from '../types'
-import { plural } from './format'
+import { decimal, plural } from './format'
 
 /**
  * Кухонные меры вместо аптечных.
@@ -127,6 +127,27 @@ export function householdQty(ing: Ingredient, qty: number): Measure {
   if (ing.staple && qty < 15) return { text: 'по вкусу' }
 
   return { text: `${roundTo(qty, qty < 100 ? GRAIN_STEP : 10)} ${unit}` }
+}
+
+/**
+ * Количество, как оно записано в составе рецепта, — без закупочного округления.
+ *
+ * От `householdQty` отличается ровно одним: штучное не округляется вверх.
+ * Округление вверх — правило закупки и готовки: в корзину и на стол яйцо
+ * попадает целым. Но состав рецепта хранится на одну порцию, и там доля штуки
+ * — обычное дело: «2 яйца на 4 порции» это полъяйца на порцию, и такой рецепт
+ * на восьмерых честно попросит четыре яйца.
+ *
+ * Разбор вставленного рецепта показывал состав через `householdQty` — и экран,
+ * чья работа «проверьте количества», расходился сам с собой: в разборе «Яйцо —
+ * 1 шт», а в редакторе, который открывается следующим нажатием, 0,5. Правда
+ * здесь та, что уйдёт в рецепт, поэтому чинится показ, а не правило.
+ */
+export function recipeQty(ing: Ingredient, qty: number): Measure {
+  if (ing.unit !== 'pcs') return householdQty(ing, qty)
+  if (qty <= 0) return { text: '—' }
+  // та же запись, что в поле редактора, только с русской запятой
+  return { text: `${decimal(qty, 2)} шт` }
 }
 
 function roundTo(value: number, step: number): number {

@@ -11,6 +11,13 @@ import { COOK_LOSS, rawGramsPerServing } from './nutrition'
  * продукт. У котлет это упаковка фарша, у сырников — пачка творога, у супа
  * такого продукта нет вовсе, и его можно варить сколько угодно.
  *
+ * Первый вопрос здесь — не «какого размера партия», а «бывает ли у этого блюда
+ * партия вообще». На него отвечает режим приготовления (lib/cookMode): у
+ * собираемых, заготавливаемых и просто раскладываемых блюд партии нет, и
+ * готовят их ровно на то, что съедят. Ни кастрюля, ни упаковка на это не
+ * влияют: и та и другая отвечают на вопрос «сколько купить и во что налить»,
+ * а не «сколько смешать с гранолой».
+ *
  * Всё, что выводится здесь, помечается `derived`. Это характеристика
  * происхождения для аудита, а не разрешение показывать ложную точность:
  * число изделий у derived не показывается никогда.
@@ -25,8 +32,17 @@ import { COOK_LOSS, rawGramsPerServing } from './nutrition'
  */
 const ANCHOR_CATEGORIES: string[] = ['meat', 'fish', 'dairy']
 
-/** Дольше этого срока вскрытый остаток не поджимает — значит, и не якорь. */
-const ANCHOR_MAX_OPENED_DAYS = 7
+/**
+ * Дольше этого срока вскрытый остаток не поджимает — значит, и не якорь.
+ *
+ * Сутки: столько живёт вскрытая пачка сырого мяса или рыбы, и только она и
+ * заставляет готовить всю упаковку разом. Молоко и йогурт живут четыре дня и
+ * уходят в чай, кашу и другие блюда недели — под них подгонять размер готовки
+ * незачем. Порог стоял на семи днях, и правило звало к партии всё подряд:
+ * овсянку на молоке, чиа-пудинг на овсяном молоке, творог с ягодами — 23 блюда
+ * сверх подтверждённых. С сутками таких не остаётся.
+ */
+const ANCHOR_MAX_OPENED_DAYS = 1
 
 /** Сколько долей помещается в кастрюлю, когда якорного продукта нет. */
 const POT_BATCH = 4
@@ -47,12 +63,6 @@ function bakedInForm(recipe: Recipe): boolean {
     /запеканк|маффин|пирог|кекс/i.test(recipe.title)
   )
 }
-
-/** Блюдо, которое не доживёт до второго дня, готовят свежим — партии нет. */
-function keepsWell(recipe: Recipe): boolean {
-  return recipe.freezable || recipe.fridgeDays >= 3
-}
-
 
 /** Главный неудобно делимый продукт: самый «дорогой и фасованный» в рецепте. */
 export function anchorIngredient(recipe: Recipe): string | undefined {
@@ -97,72 +107,57 @@ export function baseScaleOf(recipe: Recipe, anchorId: string | undefined): numbe
   return scale >= 1.2 && scale <= 8 ? Math.round(scale * 4) / 4 : 1
 }
 
+/**
+ * Партия блюда, о котором никто ничего не подтверждал.
+ *
+ * Ответ всегда один: партии нет, готовим ровно потребность меню. Это и есть
+ * безопасное умолчание — оно не может ни испортить еду, ни раздуть чек. Партия
+ * бывает только у блюд, для которых её выставили руками в data/verifiedBatches.
+ *
+ * Раньше здесь работало правило: якорный продукт задаёт закладку по упаковке,
+ * а если якоря нет — кастрюля в четыре доли. Оно назначало партию 44 блюдам из
+ * 78 и пяти из них — зря. Замер по каждому из пяти:
+ *   Йогурт с гранолой   — кастрюля ×4; пачка йогурта здесь 130 г и ни при чём
+ *   Гречка с яйцом      — кастрюля ×4, якорного продукта нет
+ *   Орехи с финиками    — кастрюля ×4, якорного продукта нет
+ *   Чиа-пудинг          — упаковка овсяного молока: литр на 180 г в долю, ×5.5
+ *   Боул с курицей      — упаковка куриного филе: 500 г на 130 г в долю, ×3.75
+ * Причины разные, и общего правила, которое отделило бы их от супов, из текста
+ * шагов не выходит: боул и йогурт пишутся одинаково, а обращаться с ними надо
+ * по-разному — у боула партия компонентов настоящая. Поэтому правило переехало
+ * в аудит (`looksBatchable` и `looksBatchableRecipe` в lib/cookMode), а решение
+ * стало ручным.
+ *
+ * Своё блюдо пользователя проходит той же дорогой и получает то же умолчание.
+ */
 export function batchInfoOf(recipe: Recipe): RecipeBatch {
-  // блюдо, которое не хранится, готовят на один раз: партии у него нет
-  if (!keepsWell(recipe)) {
-    return {
-      source: 'derived',
-      baseScale: 1,
-      scales: [1],
-      minScale: 1,
-      yieldGrams: Math.round(rawGramsPerServing(recipe) * (1 - COOK_LOSS)),
-      freezeCooked: false,
-      freezeRawAnchor: false,
-      reason: 'fresh',
-    }
-  }
-
-  const anchorIngredientId = anchorIngredient(recipe)
-  const anchor = anchorIngredientId ? INGREDIENT_BY_ID[anchorIngredientId] : undefined
-  const anchorInfo = anchor ? purchaseInfo(anchor) : undefined
-  const anchorScale = baseScaleOf(recipe, anchorIngredientId)
-  // якоря нет, но блюдо хранится — значит, его готовят кастрюлей
-  const usesAnchor = anchorScale > 1
-  const perServing = rawGramsPerServing(recipe)
-  let baseScale = usesAnchor ? anchorScale : POT_BATCH
-  let reason: RecipeBatch['reason'] = usesAnchor ? 'anchor-pack' : 'pot'
-  // Форма ограничивает сильнее любой упаковки: больше в неё просто не влезет.
-  // И называть партию запеканки «кастрюлей» неверно, даже когда число совпало.
-  if (bakedInForm(recipe)) {
-    const fits = Math.max(1, Math.round((FORM_CAPACITY_G / Math.max(1, perServing)) * 4) / 4)
-    if (fits < baseScale) {
-      baseScale = fits
-      reason = 'form'
-    } else if (reason === 'pot') {
-      reason = 'form'
-    }
-  }
-  const yieldGrams = Math.round(rawGramsPerServing(recipe) * baseScale * (1 - COOK_LOSS))
   return {
     source: 'derived',
-    baseScale,
-    anchorIngredientId: reason === 'anchor-pack' ? anchorIngredientId : undefined,
-    reason,
-    // Половина закладки практична только там, где упаковку можно вскрыть.
-    // Для кастрюли половины нет вовсе: если причина партии в том, что меньше
-    // кастрюли готовить непрактично, предлагать полкастрюли — противоречие
-    // самому себе.
-    /*
-     * Шаг партии мельче там, где его не задаёт физика.
-     *
-     * Кастрюлю и форму можно наполнить неполностью: «меньше кастрюли
-     * непрактично» — это ограничение снизу, а не требование варить строго
-     * кратно кастрюле. Пока шаг был в целую кастрюлю, потребность в 4,4 доли
-     * превращалась в 6 сваренных — полтора лишних приёма пищи.
-     *
-     * У упаковки шаг настоящий: отрезать от пачки фарша 375 г значит оставить
-     * 125 г сырого остатка, который надо куда-то девать. Там излишек в готовом
-     * виде лучше сырого, и шаг остаётся крупным.
-     */
-    scales:
-      reason === 'anchor-pack' && anchorInfo?.partialUse !== false
-        ? [0.5, 1, 1.5, 2]
-        : [1, 1.25, 1.5, 1.75, 2],
-    minScale: reason !== 'anchor-pack' || anchorInfo?.partialUse === false ? 1 : 0.5,
-    yieldGrams,
-    // число изделий у derived не выставляем: выдумывать «8 голубцов» нельзя
-    yieldPieces: undefined,
-    freezeCooked: recipe.freezable,
-    freezeRawAnchor: anchorInfo?.rawFreezable ?? false,
+    baseScale: 1,
+    scales: [1],
+    minScale: 1,
+    yieldGrams: Math.round(rawGramsPerServing(recipe) * (1 - COOK_LOSS)),
+    freezeCooked: false,
+    freezeRawAnchor: false,
+    reason: 'fresh',
   }
+}
+
+/**
+ * Доживает ли блюдо до второго дня. Нижнее условие для любой партии.
+ *
+ * Прежний `keepsWell`: партия имеет смысл только у того, что можно съесть не
+ * сегодня. Духовка сюда не входит, хотя раньше входила: треска с картофелем
+ * печётся в форме, но живёт два дня и делается на один раз — правило звало её к
+ * партии зря, вместе с лососем и минтаем.
+ */
+export function looksBatchable(recipe: Recipe): boolean {
+  return recipe.freezable || recipe.fridgeDays >= 3
+}
+
+/** Сколько долей влезает в кастрюлю или в форму, если партию подтвердят. */
+export function potBatchOf(recipe: Recipe): number {
+  const perServing = rawGramsPerServing(recipe)
+  const fits = Math.max(1, Math.round((FORM_CAPACITY_G / Math.max(1, perServing)) * 4) / 4)
+  return bakedInForm(recipe) ? Math.min(POT_BATCH, fits) : POT_BATCH
 }

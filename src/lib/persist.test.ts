@@ -175,6 +175,28 @@ describe('нечитаемые данные', () => {
     expect(parseState(saved({ version: SCHEMA_VERSION - 1 })).broken).toBe(false)
     expect(parseState(saved({ version: undefined })).broken).toBe(false)
   })
+
+  /*
+   * Поле «разложенные покупки» завелось вместе с починкой раскладки, и в
+   * сохранениях, которые сейчас лежат у людей в браузере, его нет. Пустой
+   * список — честный ответ: прежняя раскладка про себя ничего не помнила, она
+   * просто стирала отметки о покупках. Всё остальное обязано открыться целым:
+   * это накопленное за месяцы, а не то, что пересоберётся.
+   */
+  it('сохранение без «разложенных покупок» открывается без потерь', () => {
+    const raw = saved({ version: SCHEMA_VERSION - 1, atHome: ['pepper'], bought: ['ris'] })
+    const { state, broken } = parseState(raw)
+
+    expect(broken).toBe(false)
+    expect(state.stored).toEqual([])
+    expect(state.atHome).toEqual(['pepper'])
+    expect(state.bought).toEqual(['ris'])
+    expect(state.household?.eaters).toHaveLength(1)
+    expect(state.menu?.entries).toHaveLength(1)
+    expect(state.pantry.always).toEqual(['salt'])
+    // а записанное этой сборкой читается обратно как есть
+    expect(parseState(serialize({ ...state, stored: ['ris'] })).state.stored).toEqual(['ris'])
+  })
 })
 
 describe('починка полей', () => {
@@ -182,6 +204,7 @@ describe('починка полей', () => {
     const raw = saved({
       atHome: null,
       bought: null,
+      stored: null,
       warnings: null,
       customRecipes: null,
       history: null,
@@ -192,6 +215,7 @@ describe('починка полей', () => {
     for (const list of [
       state.atHome,
       state.bought,
+      state.stored,
       state.warnings,
       state.customRecipes,
       state.history,
@@ -382,7 +406,9 @@ describe('смена недели', () => {
       ...blankState(),
       household: household() as unknown as Household,
       menu: { weekStart: '2026-09-07', seed: 1, entries: [entry() as unknown as MenuEntry] },
+      atHome: ['pepper'],
       bought: ['ris'],
+      stored: ['ris'],
       cookEvents: [
         { taskId: '2026-09-07|omlet|0', at: '2026-09-07', recipeId: 'omlet', servings: 2, cookedGrams: 500, used: [] },
         { taskId: '2026-01-05|old|0', at: '2026-01-05', recipeId: 'old', servings: 1, cookedGrams: 100, used: [] },
@@ -398,6 +424,20 @@ describe('смена недели', () => {
     expect(next.menu).toBe(menu)
     expect(next.household?.weekStart).toBe('2026-09-14')
     expect(next.bought).toEqual([])
+  })
+
+  /*
+   * «Уже есть дома» — пометка на списке этой недели, и кончается она вместе с
+   * неделей. Пока она не кончалась никогда, отмеченный в августе кабачок
+   * вычитался из закупки и в сентябре: «Болгарский перец — нужно 1,4 кг — есть
+   * дома», в режиме магазина его не показывали вовсе, и семья уезжала без него.
+   * То, что живёт дольше недели, живёт количеством в кладовой, а не галочкой.
+   */
+  it('и «уже есть дома» кончается вместе со своей неделей', () => {
+    const next = rotateWeek(weekState(), '2026-09-14', menu, [], '2026-09-14T08:00:00.000Z')
+    expect(next.atHome).toEqual([])
+    // вместе с памятью о том, что из прошлой покупки уже разложено по кладовой
+    expect(next.stored).toEqual([])
   })
 
   it('факты готовки живут столько же, сколько недели, к которым относятся', () => {

@@ -1,4 +1,4 @@
-import type { MealSlot, Recipe, RecipeBatch, Station } from '../types'
+import type { MealSlot, PreparationMode, Recipe, RecipeBatch, Station } from '../types'
 import { deriveRecipeSteps } from '../lib/stepDetail'
 import { normalizeRecipe } from './normalize'
 
@@ -7,8 +7,24 @@ type StepTuple = [text: string, minutes: number, station: Station, handsOn?: boo
 
 interface Opts {
   tags?: string[]
-  /** Проверенная вручную партия. Без неё считается правилами. */
+  /**
+   * Подтверждённая производственная партия. Без неё блюдо готовится ровно на
+   * потребность меню — это безопасное умолчание, и правилами партия больше не
+   * выводится. Общий список подтверждённых — в data/verifiedBatches.
+   */
   batch?: RecipeBatch
+  /**
+   * Как блюдо подготавливают. Пусто — `cookComplete`: довели до готового вида,
+   * дальше только съесть. Это вторая ось модели (см. lib/cookMode) и она
+   * независима от количества: боул собирают перед едой, но компоненты к нему
+   * варят подтверждённой партией под упаковку филе.
+   *
+   * Проставлено руками, а не выведено по тексту шагов: правило по тексту тут
+   * есть (`suggestedPreparation`), но оно служит проверкой разметки. Оно,
+   * например, не видит сборку в середине строки — «Размять авокадо с лимоном,
+   * собрать».
+   */
+  preparation?: PreparationMode
   freezable?: boolean
   fridgeDays?: number
   needs?: ('oven' | 'blender')[]
@@ -43,6 +59,7 @@ function r(
     freezable: opts.freezable ?? false,
     fridgeDays: opts.fridgeDays ?? 3,
     needs: opts.needs,
+    preparation: opts.preparation,
   }
   // разметку заморозки и партию дописывает normalizeRecipe — тем же способом,
   // что и своим рецептам пользователя
@@ -152,7 +169,7 @@ export const RECIPES: Recipe[] = [
       ['Нарезать яблоко, порубить орехи', 4, 'prep'],
       ['Собрать слоями в банку', 3, 'prep'],
     ],
-    { fridgeDays: 3 },
+    { fridgeDays: 3, preparation: 'assembleBeforeEating' },
   ),
   r(
     'omelet_spinach',
@@ -193,7 +210,7 @@ export const RECIPES: Recipe[] = [
       ['Отварить яйцо', 8, 'stove', false],
       ['Собрать: крупа, масло, яйцо, зелень', 4, 'prep'],
     ],
-    { fridgeDays: 3 },
+    { fridgeDays: 3, preparation: 'assembleBeforeEating' },
   ),
   r(
     'pumpkin_rice_porridge',
@@ -233,7 +250,7 @@ export const RECIPES: Recipe[] = [
       ['Размять авокадо с лимоном и солью', 4, 'prep'],
       ['Собрать тост', 2, 'prep'],
     ],
-    { fridgeDays: 1 },
+    { fridgeDays: 1, preparation: 'assembleBeforeEating' },
   ),
   r(
     'oat_pancake_banana',
@@ -703,7 +720,7 @@ export const RECIPES: Recipe[] = [
       ['Нарезать овощи и сыр', 8, 'prep'],
       ['Собрать салат, заправить', 4, 'prep'],
     ],
-    { fridgeDays: 1, tags: ['olives'] },
+    { fridgeDays: 1, tags: ['olives'], preparation: 'assembleBeforeEating' },
   ),
   r(
     'bean_veg_stew',
@@ -769,7 +786,7 @@ export const RECIPES: Recipe[] = [
       ['Добавить овощи, довести', 8, 'stove', false],
       ['Собрать боул, полить лимоном', 3, 'prep'],
     ],
-    { freezable: true, fridgeDays: 3 },
+    { freezable: true, fridgeDays: 3, preparation: 'assembleBeforeEating' },
   ),
 
   // ── Перекусы ──────────────────────────────────────────────────────────────
@@ -791,7 +808,7 @@ export const RECIPES: Recipe[] = [
       ['Пробить всё блендером', 5, 'prep'],
       ['Переложить в контейнер', 2, 'prep'],
     ],
-    { fridgeDays: 4, needs: ['blender'], tags: ['garlic'] },
+    { fridgeDays: 4, needs: ['blender'], tags: ['garlic'], preparation: 'prepareComponents' },
   ),
   r(
     'cottage_berries',
@@ -807,7 +824,7 @@ export const RECIPES: Recipe[] = [
       ['Разморозить ягоды', 10, 'wait', false],
       ['Смешать творог с ягодами и мёдом', 3, 'prep'],
     ],
-    { fridgeDays: 2 },
+    { fridgeDays: 2, preparation: 'portionOnly' },
   ),
   r(
     'apple_peanut',
@@ -819,7 +836,7 @@ export const RECIPES: Recipe[] = [
       ['peanut_butter', 20],
     ],
     [['Нарезать яблоко, подать с пастой', 3, 'prep']],
-    { fridgeDays: 1 },
+    { fridgeDays: 1, preparation: 'portionOnly' },
   ),
   r(
     'nuts_dates',
@@ -831,7 +848,7 @@ export const RECIPES: Recipe[] = [
       ['dates', 30],
     ],
     [['Разложить по контейнерам порции', 3, 'prep']],
-    { fridgeDays: 7 },
+    { fridgeDays: 7, preparation: 'portionOnly' },
   ),
   r(
     'veg_sticks_dip',
@@ -849,7 +866,7 @@ export const RECIPES: Recipe[] = [
       ['Нарезать овощи палочками', 6, 'prep'],
       ['Смешать соус', 3, 'prep'],
     ],
-    { fridgeDays: 2, tags: ['garlic'] },
+    { fridgeDays: 2, tags: ['garlic'], preparation: 'portionOnly' },
   ),
   r(
     'fruit_seed_bowl',
@@ -862,7 +879,7 @@ export const RECIPES: Recipe[] = [
       ['pumpkin_seeds', 20],
     ],
     [['Нарезать фрукты, посыпать семечками', 4, 'prep']],
-    { fridgeDays: 1 },
+    { fridgeDays: 1, preparation: 'portionOnly' },
   ),
   r(
     'oat_cocoa_balls',
@@ -880,7 +897,7 @@ export const RECIPES: Recipe[] = [
       ['Смешать с хлопьями и какао, скатать', 8, 'prep'],
       ['Убрать в холод', 20, 'wait', false],
     ],
-    { freezable: true, fridgeDays: 7, needs: ['blender'] },
+    { freezable: true, fridgeDays: 7, needs: ['blender'], preparation: 'prepareComponents' },
   ),
   // ── Добавлено: расширение базы ────────────────────────────────────────────
   // Завтраки
@@ -1044,7 +1061,7 @@ export const RECIPES: Recipe[] = [
       ['Пожарить яйцо', 5, 'stove', true],
       ['Собрать: рис, яйцо, соус, лук, кунжут', 4, 'prep'],
     ],
-    { fridgeDays: 2, tags: ['onion'] },
+    { fridgeDays: 2, tags: ['onion'], preparation: 'assembleBeforeEating' },
   ),
 
   // Обеды
@@ -1311,7 +1328,7 @@ export const RECIPES: Recipe[] = [
       ['Нарезать овощи и фету', 7, 'prep'],
       ['Собрать салат, заправить маслом', 4, 'prep'],
     ],
-    { fridgeDays: 1 },
+    { fridgeDays: 1, preparation: 'assembleBeforeEating' },
   ),
   r(
     'tofu_veg_curry',
@@ -1356,7 +1373,7 @@ export const RECIPES: Recipe[] = [
       ['Пробить блендером с лимоном и маслом', 6, 'prep'],
       ['Переложить в контейнер', 2, 'prep'],
     ],
-    { fridgeDays: 4, needs: ['blender'], tags: ['garlic'] },
+    { fridgeDays: 4, needs: ['blender'], tags: ['garlic'], preparation: 'prepareComponents' },
   ),
   r(
     'baked_apple',
@@ -1381,7 +1398,7 @@ export const RECIPES: Recipe[] = [
       ['Нарезать огурец и зелень', 5, 'prep'],
       ['Смешать с творогом и сметаной', 3, 'prep'],
     ],
-    { fridgeDays: 2 },
+    { fridgeDays: 2, preparation: 'portionOnly' },
   ),
   r(
     'coconut_yogurt_berries',
@@ -1393,7 +1410,7 @@ export const RECIPES: Recipe[] = [
       ['Разморозить ягоды', 10, 'wait', false],
       ['Собрать: йогурт, ягоды, семечки, мёд', 4, 'prep'],
     ],
-    { fridgeDays: 2 },
+    { fridgeDays: 2, preparation: 'assembleBeforeEating' },
   ),
   r(
     'egg_avocado_snack',
@@ -1405,7 +1422,7 @@ export const RECIPES: Recipe[] = [
       ['Отварить яйцо', 9, 'stove', false],
       ['Размять авокадо с лимоном, собрать', 5, 'prep'],
     ],
-    { fridgeDays: 1 },
+    { fridgeDays: 1, preparation: 'assembleBeforeEating' },
   ),
   r(
     'mint_fruit_salad',
@@ -1414,7 +1431,7 @@ export const RECIPES: Recipe[] = [
     ['snack'],
     [['orange', 1], ['apple', 0.7], ['mint', 4], ['honey', 6]],
     [['Нарезать фрукты, добавить мяту и мёд', 6, 'prep']],
-    { fridgeDays: 1 },
+    { fridgeDays: 1, preparation: 'portionOnly' },
   ),
 ]
 

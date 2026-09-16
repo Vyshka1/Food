@@ -55,6 +55,7 @@ export function blankState(): AppState {
     pantry: emptyPantry(),
     notifications: false,
     bought: [],
+    stored: [],
     warnings: [],
     customRecipes: [],
     history: [],
@@ -335,6 +336,19 @@ export function parseState(raw: string | null): LoadResult {
       version: SCHEMA_VERSION,
       atHome: list<string>(parsed.atHome, 'что есть дома'),
       bought: list<string>(parsed.bought, 'отметки о покупках'),
+      /*
+       * Поля `stored` в сохранениях до этой сборки нет, и это не потеря: пустой
+       * список значит «излишек этой покупки ещё никуда не раскладывали» — ровно
+       * то, что было правдой, пока раскладка стирала отметки о покупках.
+       *
+       * Номер схемы из-за него не меняется намеренно. Он поднимается тогда,
+       * когда старая сборка поняла бы новые данные неправильно; здесь же она
+       * просто не знает про одно поле и переносит его в запись нетронутым
+       * (разбор и запись идут через `...parsed`). Поднять номер значило бы
+       * запереть человека с открытой из кэша прошлой вкладкой без данных —
+       * ради поля, которого она не касается.
+       */
+      stored: list<string>(parsed.stored, 'разложенные покупки'),
       warnings: list<string>(parsed.warnings, 'предупреждения'),
       customRecipes: list<Recipe>(parsed.customRecipes, 'свои рецепты'),
       history: list<WeekRecord>(parsed.history, 'история недель'),
@@ -420,6 +434,16 @@ export function needsRebuild(state: AppState): boolean {
 /**
  * Наступила новая неделя: прошлую убираем в историю вместе с отметками, а не
  * затираем молча. Меню и дата приходят снаружи — здесь ни часов, ни случайности.
+ *
+ * Недельные отметки кончаются вместе со своей неделей — все три сразу.
+ * «Уже есть дома» до сих пор не кончалась никогда: отмеченный в августе
+ * кабачок вычитался из закупки и в сентябре, и в октябре — причём на любое
+ * количество, хотя отмечали один кабачок и на одну неделю. Семья уезжала из
+ * магазина без 1,4 кг перца, которого дома не было.
+ *
+ * То, что живёт дольше недели, живёт не отметкой, а кладовой: «есть всегда» —
+ * это `pantry.always`, а «лежит столько-то» — количество в `pantry.stock`,
+ * которое тратится по мере готовки (см. `lib/pantry`).
  */
 export function rotateWeek(
   state: AppState,
@@ -436,5 +460,15 @@ export function rotateWeek(
   // факты готовки живут столько же, сколько недели, к которым они относятся
   const weeks = new Set([menu.weekStart, ...history.map((r) => r.weekStart)])
   const cookEvents = state.cookEvents.filter((e) => weeks.has(e.taskId.split('|')[0]))
-  return { ...state, household, menu, warnings, history, cookEvents, bought: [] }
+  return {
+    ...state,
+    household,
+    menu,
+    warnings,
+    history,
+    cookEvents,
+    atHome: [],
+    bought: [],
+    stored: [],
+  }
 }

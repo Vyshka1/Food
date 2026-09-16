@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { CATEGORY_LABEL, CATEGORY_ORDER, INGREDIENTS, INGREDIENT_BY_ID } from '../data/ingredients'
 import { MEAL_SLOTS } from '../types'
 import type { MealSlot, Recipe, RecipeItem, RecipeStep, Station } from '../types'
@@ -340,6 +340,15 @@ export function MyRecipesScreen({ onBack }: { onBack: () => void }) {
   const { customRecipes, saveCustomRecipe, deleteCustomRecipe, household } = useStore()
   const [editing, setEditing] = useState<Recipe | null>(null)
   const [importing, setImporting] = useState(false)
+  /**
+   * Чей рецепт сейчас спрашиваем перед удалением.
+   *
+   * Одного нажатия мало. «Удалить» стоит вплотную к «Править», того же
+   * размера, а уносит оно то, что человек набивал руками: рецепт исчезает,
+   * неделя пересобирается, и вернуть нечем — своих рецептов нет ни в истории,
+   * ни в переносе. Поэтому первое нажатие только спрашивает.
+   */
+  const [confirming, setConfirming] = useState<string | null>(null)
   const targets = useMemo(() => (household ? slotTargets(household) : {}), [household])
 
   if (importing) {
@@ -402,38 +411,65 @@ export function MyRecipesScreen({ onBack }: { onBack: () => void }) {
 
       {customRecipes.map((recipe) => {
         const stats = recipeStats(recipe)
+        const asking = confirming === recipe.id
         return (
-          <div className="dish" key={recipe.id}>
-            <span className="dish__emoji">
-              <Icon name={recipeIcon(recipe)} size={24} />
-            </span>
-            <span style={{ flex: 1 }}>
-              <span className="dish__title">{recipe.title}</span>
-              <span className="dish__meta">
-                {stats.kcal} ккал · {recipe.items.length}{' '}
-                {plural(recipe.items.length, ['продукт', 'продукта', 'продуктов'])} ·{' '}
-                {recipe.steps.reduce((s, x) => s + x.minutes, 0)} мин
+          <Fragment key={recipe.id}>
+            <div className="dish">
+              <span className="dish__emoji">
+                <Icon name={recipeIcon(recipe)} size={24} />
               </span>
-              <span className="dish__meta">
-                {recipe.items
-                  .map((i) => INGREDIENT_BY_ID[i.ingredientId]?.name)
-                  .filter(Boolean)
-                  .slice(0, 4)
-                  .join(', ')}
+              <span style={{ flex: 1 }}>
+                <span className="dish__title">{recipe.title}</span>
+                <span className="dish__meta">
+                  {stats.kcal} ккал · {recipe.items.length}{' '}
+                  {plural(recipe.items.length, ['продукт', 'продукта', 'продуктов'])} ·{' '}
+                  {recipe.steps.reduce((s, x) => s + x.minutes, 0)} мин
+                </span>
+                <span className="dish__meta">
+                  {recipe.items
+                    .map((i) => INGREDIENT_BY_ID[i.ingredientId]?.name)
+                    .filter(Boolean)
+                    .slice(0, 4)
+                    .join(', ')}
+                </span>
               </span>
-            </span>
-            <span className="stack" style={{ gap: 6 }}>
-              <button className="btn btn--soft btn--small" onClick={() => setEditing(recipe)}>
-                Править
-              </button>
-              <button
-                className="btn btn--ghost btn--small"
-                onClick={() => deleteCustomRecipe(recipe.id)}
-              >
-                Удалить
-              </button>
-            </span>
-          </div>
+              <span className="stack" style={{ gap: 6 }}>
+                <button className="btn btn--soft btn--small" onClick={() => setEditing(recipe)}>
+                  Править
+                </button>
+                <button
+                  className="btn btn--ghost btn--small"
+                  // повторное нажатие снимает вопрос: выйти из него должно быть
+                  // так же просто, как войти
+                  onClick={() => setConfirming((id) => (id === recipe.id ? null : recipe.id))}
+                >
+                  Удалить
+                </button>
+              </span>
+            </div>
+            {asking && (
+              <div className="warning" style={{ flexDirection: 'column', gap: 8 }}>
+                <span>
+                  Удалить «{recipe.title}»? Рецепт набран руками, и вернуть его будет нечем —
+                  только набрать заново. Меню пересоберётся без него.
+                </span>
+                <span className="row" style={{ gap: 8 }}>
+                  <button
+                    className="btn btn--small"
+                    onClick={() => {
+                      deleteCustomRecipe(recipe.id)
+                      setConfirming(null)
+                    }}
+                  >
+                    Да, удалить
+                  </button>
+                  <button className="btn btn--ghost btn--small" onClick={() => setConfirming(null)}>
+                    Отмена
+                  </button>
+                </span>
+              </div>
+            )}
+          </Fragment>
         )
       })}
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { INGREDIENT_BY_ID } from '../data/ingredients'
-import { householdQty, measureText } from './measures'
+import { householdQty, measureText, recipeQty } from './measures'
 import { packPlan } from './purchase'
 
 describe('то, что считают штуками', () => {
@@ -65,6 +65,34 @@ describe('штучное остаётся штучным', () => {
         expect(card, `${ing.name} ${qty}`).toBe(packPlan(ing, qty).buy)
       }
     }
+  })
+})
+
+describe('состав рецепта — без закупочного округления', () => {
+  it('доля штуки остаётся долей', () => {
+    // «2 яйца на 4 порции» — это полъяйца на порцию, и ровно это число уйдёт
+    // в рецепт и встанет в поле редактора
+    expect(recipeQty(INGREDIENT_BY_ID['egg'], 0.5).text).toBe('0,5 шт')
+    expect(recipeQty(INGREDIENT_BY_ID['banana'], 1.5).text).toBe('1,5 шт')
+  })
+
+  it('целое остаётся целым, без хвоста запятой', () => {
+    expect(recipeQty(INGREDIENT_BY_ID['egg'], 2).text).toBe('2 шт')
+  })
+
+  it('всё, кроме штучного, считается ровно как везде', () => {
+    // кухонные меры — общее правило приложения, и второго их варианта нет
+    for (const id of ['onion', 'sour_cream', 'oats', 'rice', 'milk', 'salt']) {
+      const ing = INGREDIENT_BY_ID[id]
+      for (const qty of [1, 11.25, 45, 224, 300]) {
+        expect(recipeQty(ing, qty), `${ing.name} ${qty}`).toEqual(householdQty(ing, qty))
+      }
+    }
+  })
+
+  it('закупочное правило при этом не тронуто', () => {
+    // половину яйца не купить: список покупок и карточка блюда округляют вверх
+    expect(householdQty(INGREDIENT_BY_ID['egg'], 0.5).text).toBe('1 шт')
   })
 })
 

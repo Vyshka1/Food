@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { PlannedStep } from '../types'
+import type { Eater, Household, Kitchen, PlannedStep } from '../types'
 import {
   BLOCK_GAP_MINUTES,
   BLOCK_MAX_STEPS,
@@ -9,6 +9,9 @@ import {
   blockTitle,
   cookBlocks,
 } from './cookBlocks'
+import { buildWeekMenu, defaultRepeats } from './menu'
+import { buildCookingPlans } from './cookingPlan'
+import { defaultOils } from './oil'
 
 /*
  * Блоки отвечают на вопрос «что делать сейчас». Проверяем не форму, а три
@@ -29,6 +32,50 @@ function step(patch: Partial<PlannedStep> & { start: number; end: number }): Pla
     unattended: false,
     cook: 0,
     ...patch,
+  }
+}
+
+/** Семья из двух едоков: на ней меряли повторы заголовков. */
+function household(cookingDays: number[]): Household {
+  const eater = (id: string, name: string, sex: 'female' | 'male'): Eater => ({
+    id,
+    name,
+    sex,
+    age: 32,
+    heightCm: 170,
+    weightKg: 70,
+    activity: 'light',
+    goal: 'keep',
+    allergies: [],
+    customAllergens: [],
+    dislikes: [],
+    bannedRecipes: [],
+    mealPlaces: {},
+    ratings: {},
+  })
+  const kitchen: Kitchen = {
+    burners: 4,
+    ovens: 1,
+    hasAirfryer: false,
+    hasMulticooker: false,
+    hasBlender: true,
+    hasProcessor: false,
+    hasMicrowave: true,
+    hasDishwasher: false,
+    containers: 12,
+    hasFreezer: true,
+  }
+  return {
+    eaters: [eater('e1', 'Аня', 'female'), eater('e2', 'Борис', 'male')],
+    cookingDays,
+    meals: ['breakfast', 'lunch', 'dinner'],
+    kitchen,
+    budgetPerWeek: 0,
+    drinks: [],
+    oils: defaultOils(),
+    repeats: defaultRepeats(),
+    extras: [],
+    weekStart: '2026-09-07',
   }
 }
 
@@ -186,5 +233,244 @@ describe('блоки готовки', () => {
 
   it('пустой план не выдумывает блоков', () => {
     expect(cookBlocks([])).toEqual([])
+  })
+})
+
+/*
+ * Середина плана говорила про себя двумя фразами на все блоки, и соседние
+ * карточки выходили дословно одинаковыми: замер на 800 планах дал 35% таких
+ * пар. Заголовок «Ставим в духовку» и подсказка по составу блока снимают
+ * часть — но ровно там, где это правда. Ниже проверяется именно правда, а не
+ * разнообразие.
+ */
+describe('заголовок и подсказка середины плана', () => {
+  /** Что-то печётся само: духовка названа прибором и шаг можно оставить. */
+  const baking = (patch: Partial<PlannedStep> & { start: number; end: number }) =>
+    step({
+      station: 'oven',
+      appliance: 'oven',
+      handsOn: false,
+      activeMinutes: 0,
+      unattended: true,
+      ...patch,
+    })
+
+  /** План из четырёх блоков: крайние заняты, середину и проверяем. */
+  function middle(inner: PlannedStep[]): PlannedStep[] {
+    return [
+      step({ start: 0, end: 2, stepIndex: 90 }),
+      ...inner,
+      step({ start: 100, end: 102, stepIndex: 99 }),
+    ]
+  }
+
+  it('«ставим в духовку» — когда в блоке правда что-то отправляют печься', () => {
+    const blocks = cookBlocks([
+      step({ start: 0, end: 45, unattended: true, activeMinutes: 2 }),
+      step({ start: 10, end: 12, stepIndex: 1 }),
+      baking({ start: 11, end: 41, stepIndex: 2 }),
+      step({ start: 60, end: 62, stepIndex: 3 }),
+    ])
+    expect(blocks).toHaveLength(3)
+    const oven = blocks[1]
+    expect(oven.steps.map((s) => s.stepIndex)).toEqual([1, 2])
+    // к началу блока и правда что-то варится — но духовка про этот блок точнее
+    expect(oven.waiting).toBe(true)
+    expect(blockTitle(oven, 1, blocks.length)).toBe('Ставим в духовку')
+    /*
+     * Подсказка про духовку не говорит: заголовок это уже сказал. Она
+     * отвечает на свой вопрос — можно ли отойти, — и здесь ответ «наполовину»:
+     * в блоке есть и духовка, и шаг руками.
+     */
+    expect(blockHint(oven, 1, blocks.length, 1)).toBe(
+      'Поставьте то, что идёт само, и займитесь остальным.',
+    )
+  })
+
+  /*
+   * Раньше у духовочного блока и заголовок, и подсказка считались по одному
+   * `goesToOven`, и подсказка выходила заголовком, сказанным дважды: 720
+   * духовочных блоков из 720 получали «Дальше духовка печёт сама». При этом
+   * в 440 из них (61%) после духовки в том же блоке оставались шаги с
+   * занятыми руками, в среднем 1,3 штуки, — «поставили и свободны» было
+   * неправдой. Духовка стоит последним шагом блока лишь в 39% случаев.
+   */
+  it('после духовки в блоке ещё работа — подсказка про это и говорит', () => {
+    const blocks = cookBlocks(
+      middle([
+        baking({ start: 10, end: 40, stepIndex: 1 }),
+        step({ start: 12, end: 24, stepIndex: 2, activeMinutes: 12 }),
+      ]),
+    )
+    const block = blocks[1]
+    expect(block.steps.map((s) => s.stepIndex)).toEqual([1, 2])
+    expect(blockTitle(block, 1, blocks.length)).toBe('Ставим в духовку')
+    expect(blockHint(block, 1, blocks.length, 1)).not.toBe('Дальше духовка печёт сама.')
+    expect(blockHint(block, 1, blocks.length, 1)).toBe(
+      'Поставьте то, что идёт само, и займитесь остальным.',
+    )
+  })
+
+  /*
+   * «Заканчиваем» сильнее духовки: последний блок дня — это про конец дня, а
+   * не про прибор. Замер: последний блок плана духовочный в 2% планов, и то,
+   * что здесь побеждает, не было закреплено ничем.
+   */
+  it('последний блок остаётся «Заканчиваем», даже если в нём духовка', () => {
+    const blocks = cookBlocks([
+      step({ start: 0, end: 2 }),
+      step({ start: 30, end: 32, stepIndex: 1 }),
+      baking({ start: 60, end: 90, stepIndex: 2 }),
+    ])
+    const last = blocks.length - 1
+    expect(blocks[last].steps.some((x) => x.appliance === 'oven' && x.unattended)).toBe(true)
+    expect(blockTitle(blocks[last], last, blocks.length)).toBe('Заканчиваем')
+  })
+
+  /*
+   * «Руки заняты» — про весь блок, а не про один шаг в нём. Мутация
+   * `every` → `some` переживала весь прогон, хотя меняет подсказку у 193
+   * блоков из 455: прежний тест строил блок из одного шага, где `every` и
+   * `some` совпадают.
+   */
+  it('«руки заняты» — только когда заняты на всех шагах блока', () => {
+    const busy = cookBlocks(
+      middle([
+        step({ start: 10, end: 14, stepIndex: 1, activeMinutes: 4 }),
+        step({ start: 14, end: 18, stepIndex: 2, activeMinutes: 4 }),
+      ]),
+    )[1]
+    expect(busy.steps).toHaveLength(2)
+    expect(blockHint(busy, 1, 4, 1)).toBe('Эти шаги не оставить: руки заняты.')
+
+    // тот же блок, но второй шаг руки занимает не целиком — это уже присмотр
+    const watch = cookBlocks(
+      middle([
+        step({ start: 10, end: 14, stepIndex: 1, activeMinutes: 4 }),
+        step({ start: 14, end: 24, stepIndex: 2, handsOn: false, activeMinutes: 3 }),
+      ]),
+    )[1]
+    expect(watch.steps).toHaveLength(2)
+    expect(blockHint(watch, 1, 4, 1)).toBe('Нужно приглядывать: помешать и проверить.')
+  })
+
+  it('разогрев духовки — ещё не «ставим в духовку»: внутри пусто', () => {
+    /*
+     * «Разогреть духовку до 200°» размечается прибором oven, но руками и без
+     * unattended: еда в неё не поставлена. Замер на 800 планах: шагов с
+     * духовкой 1342, из них 670 — именно такой разогрев.
+     */
+    const blocks = cookBlocks(
+      middle([
+        step({ start: 10, end: 14, stepIndex: 1, appliance: 'oven', station: 'prep' }),
+        step({ start: 50, end: 52, stepIndex: 2 }),
+      ]),
+    )
+    expect(blocks).toHaveLength(4)
+    expect(blockTitle(blocks[1], 1, blocks.length)).toBe('Готовим дальше')
+    expect(blockTitle(blocks[1], 1, blocks.length)).not.toBe('Ставим в духовку')
+  })
+
+  it('аэрогриль духовкой не называем — это другой прибор', () => {
+    const blocks = cookBlocks(
+      middle([
+        baking({ start: 10, end: 40, stepIndex: 1, appliance: 'airfryer' }),
+        step({ start: 50, end: 52, stepIndex: 2 }),
+      ]),
+    )
+    expect(blocks).toHaveLength(4)
+    expect(blockTitle(blocks[1], 1, blocks.length)).not.toBe('Ставим в духовку')
+  })
+
+  it('подсказка отвечает, можно ли отойти, и считается по шагам блока', () => {
+    const blocks = cookBlocks(
+      middle([
+        // руки заняты целиком
+        step({ start: 10, end: 12, stepIndex: 1 }),
+        // ни бросить, ни занять руки: «варить, помешивая»
+        step({ start: 20, end: 30, stepIndex: 2, handsOn: false, activeMinutes: 3 }),
+        // поставил и отошёл
+        step({ start: 40, end: 70, stepIndex: 3, handsOn: false, activeMinutes: 0, unattended: true }),
+      ]),
+    )
+    expect(blocks).toHaveLength(5)
+    // блок из одного шага говорит о себе в единственном числе
+    expect(blocks[1].steps).toHaveLength(1)
+    expect(blockHint(blocks[1], 1, blocks.length, 1)).toBe('Этот шаг не оставить: руки заняты.')
+    expect(blockHint(blocks[2], 2, blocks.length, 1)).toBe(
+      'Нужно приглядывать: помешать и проверить.',
+    )
+    expect(blockHint(blocks[3], 3, blocks.length, 1)).toBe(
+      'Поставьте и отойдите — дальше идёт само.',
+    )
+  })
+
+  it('одинаковый заголовок не тянет за собой одинаковую подсказку', () => {
+    /*
+     * Прежде подсказка считалась по тому же `waiting`, что и заголовок, и
+     * повторялась вместе с ним слово в слово. Здесь у двух соседних блоков
+     * заголовок один и тот же честно — а состав разный, и подсказка это
+     * видит.
+     */
+    const blocks = cookBlocks(
+      middle([
+        step({ start: 10, end: 12, stepIndex: 1 }),
+        step({ start: 20, end: 30, stepIndex: 2, handsOn: false, activeMinutes: 3 }),
+      ]),
+    )
+    expect(blocks).toHaveLength(4)
+    const titles = blocks.map((b, i) => blockTitle(b, i, blocks.length))
+    expect(titles[1]).toBe(titles[2])
+    expect(blockHint(blocks[1], 1, blocks.length, 1)).not.toBe(
+      blockHint(blocks[2], 2, blocks.length, 1),
+    )
+  })
+
+  it('на настоящих планах соседних карточек-близнецов заметно меньше', () => {
+    /*
+     * Настоящая проверка изменения: не форма фраз, а доля соседних пар с
+     * дословно одинаковыми заголовком и подсказкой. Набор — 3 набора дней
+     * готовки × 5 зёрен × один повар и двое, семья из двух едоков: 90 планов,
+     * 388 соседних пар.
+     *
+     * Меряем обе доли: одинаковый заголовок и одинаковую пару «заголовок и
+     * подсказка». Одной мало — первая версия теста мерила только пару, и
+     * заголовок «Ставим в духовку» она не охраняла вовсе: его можно было
+     * удалить, а тест оставался зелёным. Таблица тогда же была записана
+     * неверно, две строки стояли не на своих местах; здесь — пересчитанная:
+     *
+     *                                                заголовок   и подсказка
+     *   заголовок и подсказка по одному `waiting`       30%          30%
+     *   без заголовка про духовку                       30%          21%
+     *   как сейчас                                      21%          13%
+     *
+     * Пороги 25% и 18% ловят каждый свой откат и оставляют по четыре-пять
+     * пунктов запаса: меню и расписание правят другие, и дрожание в пару
+     * пунктов не должно красить тест красным.
+     */
+    let pairs = 0
+    let same = 0
+    let sameTitle = 0
+    for (const days of [[0, 3], [2, 6], [1, 3, 5]]) {
+      const h = household(days)
+      for (const seed of [1, 2, 3, 4, 5]) {
+        const { menu } = buildWeekMenu(h, seed)
+        for (const cooks of [1, 2]) {
+          for (const plan of buildCookingPlans(menu, h, cooks)) {
+            const blocks = cookBlocks(plan.steps)
+            const titles = blocks.map((b, i) => blockTitle(b, i, blocks.length))
+            const hints = blocks.map((b, i) => blockHint(b, i, blocks.length, cooks))
+            for (let i = 1; i < blocks.length; i++) {
+              pairs++
+              if (titles[i] === titles[i - 1]) sameTitle++
+              if (titles[i] === titles[i - 1] && hints[i] === hints[i - 1]) same++
+            }
+          }
+        }
+      }
+    }
+    expect(pairs).toBeGreaterThan(300)
+    expect(sameTitle / pairs).toBeLessThan(0.25)
+    expect(same / pairs).toBeLessThan(0.18)
   })
 })
